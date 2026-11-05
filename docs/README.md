@@ -1,4 +1,4 @@
-# Easy Law AI 설계 문서
+# AURORE 설계 문서
 
 2026-11-05에 기존 Markdown 및 참조 대화에서 확인 가능한 v1.2 결정과 후속 소프트 삭제 지시를 통합했다. **문서화 승인과 DB 구현 승인은 별개이며 전체 물리설계는 미승인이다.**
 
@@ -15,4 +15,4 @@
 
 ## 다른 PC에서 이어 보기
 
-처음 받는 PC에서는 `git clone https://github.com/orca305/easy-law-ai.git` 후 `docs/README.md`를 연다. 기존 작업 폴더에서는 미커밋 변경을 먼저 확인하고 `git pull --ff-only origin main`으로 갱신한다. 충돌이나 분기가 있으면 강제 덮어쓰기 없이 검토한다. 설계 변경은 결정 기록과 검토 상태를 함께 갱신하여 커밋·푸시한다. GitHub에는 실제 상담·개인정보·비밀정보를 넣지 않는다.
+처음 받는 PC에서는 `git clone https://github.com/orca305/AURORE.git` 후 `docs/README.md`를 연다. 기존 작업 폴더에서는 미커밋 변경을 먼저 확인하고 `git pull --ff-only origin main`으로 갱신한다. 충돌이나 분기가 있으면 강제 덮어쓰기 없이 검토한다. 설계 변경은 결정 기록과 검토 상태를 함께 갱신하여 커밋·푸시한다. GitHub에는 실제 상담·개인정보·비밀정보를 넣지 않는다.
