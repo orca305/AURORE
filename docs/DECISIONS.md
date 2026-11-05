@@ -1,36 +1,45 @@
-## ADR-006: Model legal provisions as hierarchical string identifiers
+# 설계 결정 기록
 
-Legal numbering is not assumed to be numeric.
+기준: v1.2 및 후속 삭제 지시. 방향 결정만 기록하며 전체 물리설계는 미승인이다. [검토 상태](DESIGN_REVIEW.md)와 [초안](DB_DESIGN.md)을 함께 읽는다. 과거 결정 번호 ADR-006·007은 추적을 위해 유지한다.
 
-Legal structures may use Arabic numerals, Roman numerals,
-Korean characters, alphabetic identifiers, branch numbers,
-or special characters.
+## ADR-006 — 조문 번호를 문자열 식별자로 보존 (유지)
 
-Examples include:
+아라비아·로마 숫자, 한글, 영문, 가지번호, 특수기호를 지원한다. `disp_no`에 원형, `norm_no`에 선택적 정규화 문자열을 저장한다. 숫자는 `sort_seq` 정렬에만 사용한다. 특정 법률 번호 체계에 스키마를 종속시키지 않는다.
 
-- 제10조의2
-- ①
-- 가.
-- IV
-- A-1
+## ADR-007 — 조문을 단일 자기참조 계층으로 표현 (유지·명칭 정리)
 
-Therefore:
+조·항·호·목·별표를 각각의 테이블로 나누지 않는다. 기존 `law_provisions` 제안은 `legal_provi`로 정리한다. `prnt_provi_id`로 같은 법규 버전 내부 구조를 표현한다. 기존 코드 변경이나 DB 리네임 승인은 아니다.
 
-- original display identifiers are stored as strings
-- normalized identifiers are optional
-- numeric values are used only for ordering
+## ADR-008 — 법규·버전·원문·검색 데이터 분리 (방향)
 
-This prevents the database schema from being coupled to one
-specific legal numbering convention.
+`legal`은 법규 자체, `legal_ver`는 개정·시행 시점의 버전, `legal_provi`는 그 내부 구조, `legal_prec`는 판례를 나타낸다. 원문을 청크·임베딩·AI 설명으로 대체하지 않는다. 위임·인용 관계와 판례 연결의 시점 제약은 후속 검토다.
 
-## ADR-007: Use a unified provision hierarchy
+## ADR-009 — 공통코드 단일 계층 및 별도 이력 (방향)
 
-Do not create separate tables for articles, paragraphs, items,
-and subitems.
+`cmmn_cd_grp`와 상세코드를 분리하던 제안 대신 `cmmn_cd` 하나에 루트 그룹·상위 분류·상세코드를 저장한다. `cmmn_cd_hist`는 별도로 유지한다. `LEGAL_GRP → LAW → ACT`처럼 하나의 부모 관계로 분류 계층을 표현한다. 별도 `LEGAL_TYPE` 소속과 법규 분류를 한 부모 컬럼에 혼합하지 않는다. 코드 유일성 범위와 무결성 구현은 미승인이다.
 
-Use `law_provisions` as a self-referencing hierarchy.
+## ADR-010 — 의미형 코드 사용 (사용자 명시 확정)
 
-This allows the system to support new or unusual legal structures
-without schema changes.
+사용자가 숫자형 코드 대신 의미형 코드를 선택했다. API에는 내부 PK 대신 `ACT`, `PRES_DEC` 등의 업무 코드를 전달한다. 외부 기관 코드는 출처별로 매핑한다. 코드값 불변성·사용 중지·부모 이동 제한은 상세 정책으로 검토한다.
 
-The `provi` prefix is used for provision-level columns.
+## ADR-011 — 회원·비회원 범위 (방향)
+
+비회원 대화 보관은 1개월, 첨부파일은 회원 전용이며 HWP/HWPX 초기 지원 목표를 유지한다. v1.2 초안의 비회원 사건 허용 제안은 사용자가 선택한 **회원 전용 사건관리**로 대체한다. 로그인 수단·회원 보유기간·비회원 만료 기준은 확정하지 않았다.
+
+## ADR-012 — 사건은 사용자 확인 후 저장 (v1.2 사용자 검토 반영)
+
+AI 추출 결과를 바로 사건으로 영구 저장하지 않는다. 사용자 확인을 거친 사건·사실관계만 저장하고 추출 후보와 확인된 사실을 구분한다. 확인 전 임시 데이터 보관 방식과 변경 이력은 후속 설계다.
+
+## ADR-013 — API 원본은 PostgreSQL (v1.2 사용자 검토 반영)
+
+초기 원본 보관 위치는 PostgreSQL `src_snapshot`이다. 객체 스토리지를 공식 API 원본의 기본 저장소로 가정하지 않는다. 사용자 첨부파일의 실물 저장 방식은 별도 미결 사항이다. 원본 형식·수집 메타데이터·중복 기준·보유기간은 물리설계에서 확정한다.
+
+## ADR-014 — 상태 표시 후 파기, 일반 업무 소프트 삭제 (최신 지시)
+
+v1.2 사용자는 상태 표시 후 파기를 선택했고, 이후 일반 쿼리의 `DELETE`를 사용하지 않도록 지시했다. 이전 초안의 즉시 삭제 및 물리 연쇄 삭제 제안은 폐기한다. 일반 업무에서는 `del_yn`, `del_dttm`, `del_id`를 갱신하며 삭제 데이터와 종속 데이터를 일반 조회에서 제외한다.
+
+개인정보 파기는 별도의 검토 과제다. 필드 제거·익명화·키 폐기·파일 실물 파기 등의 방법을 검토하되 소프트 삭제만으로 파기 완료라고 표시하지 않는다. 물리 행 삭제 예외는 승인되지 않았다. 법적 보유 근거·기간과 백업 처리까지 확인한 후 별도 승인한다.
+
+## ADR-015 — 문서 공유 허용, 구현 승인 보류 (최신 요청)
+
+이전의 Markdown 수정 보류는 이후 문서 작성·커밋 요청으로 해제되었다. 이번 범위는 문서 커밋·푸시까지이며 DB·Prisma·애플리케이션 변경 권한을 포함하지 않는다. GitHub 문서를 다른 PC에서 이어 보는 기준으로 사용한다.

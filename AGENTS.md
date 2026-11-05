@@ -1,43 +1,30 @@
-## Database Naming
+# Easy Law AI 작업 규칙
 
-- Database table and column names use snake_case.
-- Prefer abbreviations for column names.
-- Keep table names descriptive rather than excessively abbreviated.
+## 설계 기준과 변경 권한
 
-### Column Abbreviations
+- 한국어 설명을 우선하고 테이블·컬럼·코드 식별자는 영문으로 유지한다.
+- [설계 검토 상태](docs/DESIGN_REVIEW.md)를 먼저 읽는다. 방향 승인과 물리 스키마 승인은 별개다.
+- v1.2 및 후속 삭제 정책의 문서화는 승인되었다. DB·Prisma·마이그레이션·애플리케이션 적용은 최종 미승인이다. 문서 커밋을 구현 승인으로 해석하지 않는다.
+- 기존 코드에 `law` 등의 명칭이 있어도 문서 작업 중 코드를 변경하지 않는다.
+- 실제 개인정보, 상담 내용, 첨부파일, 인증정보, API 키를 Git에 넣지 않는다.
 
-- name -> nm
-- current -> curr
-- register -> rgst
-- update -> upt
-- datetime -> dttm
-- number -> no
-- code -> cd
-- type -> type
-- content -> cont
-- sequence -> seq
-- description -> desc
-- provision -> provi
-- version -> ver
-- parent -> prnt
-- relation -> rel
-- source -> src
-- target -> tgt
-- embedding -> embed
-- count -> cnt
-- context -> ctx
+## 데이터 규칙
 
-### Common Columns
+- 테이블·컬럼은 `snake_case`로 작성하고 [명명 규칙](docs/DB_CONVENTIONS.md)을 따른다. 컬럼은 약어를 선호하되 테이블은 의미를 알아볼 수 있게 작성한다.
+- 법규는 `legal`, 버전은 `legal_ver`, 내부 구조는 `legal_provi`로 설계한다. 조·항·호별 별도 테이블을 만들지 않는다.
+- 조문 번호는 문자열로 원형을 보존한다. `disp_no`는 원문 표기, `norm_no`는 선택적 정규화, `sort_seq`는 숫자 정렬값이다.
+- 공식 원문, 검색 청크, 임베딩, AI 설명을 분리한다. Verbatim RAG 인용문은 출처 원문과 검증한다.
+- 공통코드는 자기참조 단일 `cmmn_cd`와 별도 `cmmn_cd_hist`를 사용한다. API에는 `ACT`, `PRES_DEC` 같은 의미형 코드를 전달한다.
+- 사건 및 첨부파일은 회원 전용이다. 사건·구조화 사실관계는 사용자의 확인 후 저장한다.
+- 사용자 소유권을 모든 조회·연결·수정에서 확인한다. 비회원 대화 보관 방향은 1개월이다.
 
-- registration datetime -> rgst_dttm
-- update datetime -> upt_dttm
+## 삭제 규칙
 
-## Legal Data Modeling Rules
+- 일반 업무 삭제는 `UPDATE` 기반 소프트 삭제만 허용한다. SQL `DELETE`, Prisma `delete()`·`deleteMany()`, 물리 연쇄 삭제를 사용하지 않는다.
+- `del_yn`, `del_dttm`, `del_id`를 사용하고 일반 조회·검색·다운로드·RAG에서 삭제 데이터를 제외한다. 세부 타입과 적용 범위는 물리설계 검토 대상이다.
+- 부모 삭제 시 종속 데이터의 비노출·소프트 삭제를 함께 처리한다. FK의 `ON DELETE CASCADE`를 업무 삭제 수단으로 삼지 않는다.
+- 개인정보 파기는 소프트 삭제와 별개다. 별도 관리 절차에서 원본·복제본·추출문·인용·캐시·임베딩·백업을 함께 검토한다. 파기 수단과 물리 행 삭제 예외는 미승인이며 임의로 허용하지 않는다.
 
-- `law` represents the law itself.
-- `provi` represents an internal legal provision or structural node.
-- Do not assume legal provision numbers are numeric.
-- Preserve the original numbering text.
-- Use a separate numeric sequence only for sorting.
-- Preserve original legal text separately from RAG chunks.
-- Separate embeddings from source legal text.
+## 문서 안내
+
+[설계 목록](docs/README.md) · [결정 기록](docs/DECISIONS.md) · [DB 설계 초안](docs/DB_DESIGN.md) · [서비스 구조](docs/ARCHITECTURE.md) · [기능 및 단계](docs/FEATURES.md)

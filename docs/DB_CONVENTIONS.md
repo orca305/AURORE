@@ -1,70 +1,61 @@
-| Meaning     | Abbreviation |
-| ----------- | ------------ |
-| name        | nm           |
-| current     | curr         |
-| register    | rgst         |
-| update      | upt          |
-| datetime    | dttm         |
-| number      | no           |
-| code        | cd           |
-| type        | type         |
-| content     | cont         |
-| sequence    | seq          |
-| description | desc         |
-| provision   | provi        |
-| version     | ver          |
-| parent      | prnt         |
-| relation    | rel          |
-| source      | src          |
-| target      | tgt          |
-| embedding   | embed        |
-| count       | cnt          |
-| context     | ctx          |
+# DB 명명·데이터 규칙
 
-## Legal Provision Numbering
+기준: v1.2 및 후속 소프트 삭제 지시, 2026-11-05 문서 통합. 아래는 설계 규칙이며 현재 DB에 반영되었다는 의미가 아니다. [승인 상태](DESIGN_REVIEW.md)를 함께 확인한다.
 
-Legal provision numbers are identifiers, not numeric values.
+## 명명
 
-Do not store provision numbers solely as INTEGER.
+테이블·컬럼은 소문자 `snake_case`를 사용한다. 테이블은 의미를 알아볼 수 있게, 컬럼은 아래 약어로 작성한다.
 
-Possible values include:
+| 의미 | 약어 | 의미 | 약어 |
+| --- | --- | --- | --- |
+| 이름 | nm | 현재 | curr |
+| 등록 | rgst | 수정 | upt |
+| 일시 | dttm | 번호 | no |
+| 코드 | cd | 유형 | type |
+| 내용 | cont | 순서 | seq |
+| 설명 | desc | 조문·구조 노드 | provi |
+| 버전 | ver | 부모 | prnt |
+| 관계 | rel | 출처 | src |
+| 대상 | tgt | 임베딩 | embed |
+| 개수 | cnt | 문맥 | ctx |
+| 메시지 | msg | 세션 | sess |
+| 인용 | cite | 구간 | seg |
+| 상태 | stat | 삭제 | del |
+| 알림 | ntf | 평가 | fback |
 
-- 제10조
-- 제10조의2
-- ①
-- 1.
-- 1의2
-- 가.
-- I
-- II
-- IV
-- A
-- A-1
+감사 컬럼은 `rgst_id`, `rgst_dttm`, `upt_id`, `upt_dttm`을 사용한다. 시스템·비회원 행위자 표현, NULL 허용 및 FK는 상세 검토 대상이다. 일시는 `TIMESTAMPTZ`, 공포·시행 기준일은 `DATE`가 초안이며 시간대·경계 계산은 구현 전에 확정한다.
 
-Provision numbering should be separated into:
+## 도메인 식별자
 
-- `disp_no`: original display value
-- `norm_no`: optional normalized value for search/comparison
-- `sort_seq`: numeric ordering value
+| 이전 문서 표현 | 통합 설계 명칭 | 의미 |
+| --- | --- | --- |
+| `law` | `legal` | 법령·행정규칙 등을 포함하는 법규 |
+| `law_ver_id` | `legal_ver_id` | 특정 법규 버전 |
+| `law_provisions` | `legal_provi` | 버전 내부 자기참조 구조 |
+| `law_id` | `legal_id` | 법규 식별자 |
 
-Only `sort_seq` is treated as a numeric ordering value.
+이 표는 설계상 명칭 대응이다. 기존 모델·API·마이그레이션을 변경한 기록이 아니다. 판례는 `legal_prec`, 대화 메시지는 `chat_msg`, 답변 근거는 `ans_cite`를 사용한다.
 
-The original value in `disp_no` must not be lost during normalization.
+## 조문 번호
 
-## Domain Prefixes
+조문 번호는 수치가 아닌 식별 문자열이다. `제10조`, `제10조의2`, `①`, `1.`, `1의2`, `가.`, `IV`, `A-1` 등을 보존한다.
 
-- law: law-level data
-- provi: provision-level data
-- ver: version data
-- rel: relation data
-- embed: embedding data
+- `disp_no`: 원문 표시 문자열. 정규화 과정에서 손실시키지 않는다.
+- `norm_no`: 검색·비교용 선택적 정규화 문자열.
+- `sort_seq`: 숫자 정렬값. 법적 번호 자체를 대체하지 않는다.
 
-Examples:
+## 의미형 공통코드
 
-- law_id
-- law_ver_id
-- provi_type
-- provi_no
-- provi_nm
-- provi_cont
-- prnt_provi_id
+API·업무 로직은 `ACT`, `PRES_DEC`, `NOTICE`처럼 대문자 영문과 언더스코어로 된 의미형 코드를 사용한다. 내부 PK `id`와 업무 코드 `cd`를 구분한다. 외부 기관 숫자 코드는 출처별 매핑으로 변환하며 임의로 의미를 추정하지 않는다.
+
+코드 그룹·상세코드는 `cmmn_cd` 단일 트리로 관리하고 변경은 `cmmn_cd_hist`에 남긴다. `cmmn_cd_grp`는 채택하지 않는다. 예: `LEGAL_GRP → LAW → PRES_DEC`, `LEGAL_GRP → ADMIN_RULE → NOTICE`.
+
+코드 식별 범위(전역 또는 루트별), 문자열 FK와 내부 ID FK 선택, 중복 코드 처리, 순환 방지, 허용 부모 검증은 미확정이다. 서로 다른 트리에서 `ACTIVE` 등을 재사용할 수 있으므로 단순 `cd` 유일성을 승인된 제약으로 가정하지 않는다. 사용 중 코드의 값·부모 변경 제한, `use_yn = false`에 의한 신규 사용 중지, 시스템 코드 보호는 상세 정책 초안이다. 사용 중지와 `del_yn` 삭제는 구분하며 과거 참조 해석을 보장해야 한다.
+
+## 소프트 삭제와 파기
+
+일반 업무에서는 SQL `DELETE` 및 Prisma `delete()`·`deleteMany()`를 금지한다. `del_yn`(삭제 여부), `del_dttm`(삭제 일시), `del_id`(삭제 행위자)를 갱신한다. 일반 조회는 `del_yn = false`와 소유권을 함께 확인한다. 삭제된 부모의 자식도 직접 접근으로 노출되지 않도록 한다.
+
+복구 권한·이력, 활성 데이터만의 UNIQUE 범위, 재가입·재등록 충돌, 부모·자식 삭제의 트랜잭션 경계는 상세 검토 대상이다. 공개 법규 원문과 이력에 사용자 데이터와 동일한 연쇄 처리를 적용하지 않는다.
+
+소프트 삭제는 복구 불가능한 파기가 아니다. 개인정보 파기는 별도 절차로 설계하되 필드 제거·익명화·키 폐기·파일 실물 파기 등의 적합성과 물리 행 삭제 필요성은 미확정이다. 구체적인 보유기간 및 법적 요건은 별도 검토 후 승인한다. 이 문서는 법률 적합성 판정을 제공하지 않는다.
