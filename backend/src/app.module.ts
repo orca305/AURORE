@@ -4,6 +4,8 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { LawModule } from './law/law.module.js';
+import { LegalModule } from './legal/legal.module.js';
+import { CommonCodeController } from './common-code/common-code.controller.js';
 
 @Module({
   imports: [
@@ -13,8 +15,9 @@ import { LawModule } from './law/law.module.js';
     }),
     PrismaModule,
     LawModule,
+    LegalModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, CommonCodeController],
   providers: [AppService],
 })
 export class AppModule {}
