@@ -35,9 +35,38 @@ export class LegalController {
     return this.legal.create(input);
   }
 
+  @Get('precedents')
+  precedents(@Query() query: ListLegalsDto) {
+    return this.legal.precedents(query);
+  }
+
   @Get(':id/versions')
   versions(@Param('id') id: string, @Query() query: ListLegalsDto) {
     return this.legal.versions(parseId(id), query);
+  }
+
+  @Get(':id/versions/:versionId/revisions')
+  revisions(
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+    @Query() query: ListLegalsDto,
+  ) {
+    return this.legal.revisions(parseId(id), parseId(versionId), query);
+  }
+
+  @Get(':id/versions/:versionId/revisions/:revisionId/provisions')
+  revisionProvisions(
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+    @Param('revisionId') revisionId: string,
+    @Query() query: ListLegalsDto,
+  ) {
+    return this.legal.provisions(
+      parseId(id),
+      parseId(versionId),
+      query,
+      parseId(revisionId),
+    );
   }
 
   @Get(':id/versions/:versionId/provisions')

@@ -1,0 +1,24 @@
+name: aurore-dev-check
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg17
+    container_name: aurore-dev-check-postgres
+    environment:
+      POSTGRES_DB: aurore_dev_check
+      POSTGRES_USER: aurore_dev_check
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local-dev/.env}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "aurore_dev_check", "-d", "aurore_dev_check"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:
+    name: aurore-dev-check-pgdata

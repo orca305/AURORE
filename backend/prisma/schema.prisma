@@ -13,10 +13,10 @@ model Legal {
   srcKey   String     @map("src_key")
   legalNm  String     @map("legal_nm")
   delYn    Boolean    @default(false) @map("del_yn")
-  delDttm  DateTime?  @map("del_dttm") @db.Timestamptz(6)
+  delDttm  DateTime?  @map("del_dttm") @db.Timestamptz(0)
   delId    BigInt?    @map("del_id")
-  rgstDttm DateTime   @default(now()) @map("rgst_dttm") @db.Timestamptz(6)
-  uptDttm  DateTime   @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(6)
+  rgstDttm DateTime   @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  uptDttm  DateTime   @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
   versions LegalVer[]
 
   @@unique([srcCd, srcKey], map: "uq_legal_src")
@@ -31,11 +31,68 @@ model SrcSnapshot {
   contType String     @map("cont_type") @db.VarChar(100)
   srcCont  String     @map("src_cont") @db.Text
   contHash String     @map("cont_hash") @db.VarChar(64)
-  rgstDttm DateTime   @default(now()) @map("rgst_dttm") @db.Timestamptz(6)
-  versions LegalVer[]
+  rgstDttm DateTime   @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  revisions LegalVerRev[]
+  precedentRevisions LegalPrecRev[]
 
   @@unique([srcCd, srcKey, contHash], map: "uq_src_snapshot_content")
   @@map("src_snapshot")
+}
+
+model LegalPrec {
+  id         BigInt         @id @default(autoincrement())
+  srcCd      String         @map("src_cd") @db.VarChar(60)
+  srcKey     String         @map("src_key")
+  delYn      Boolean        @default(false) @map("del_yn")
+  delDttm    DateTime?      @map("del_dttm") @db.Timestamptz(0)
+  delId      BigInt?        @map("del_id")
+  rgstDttm   DateTime       @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  revisions  LegalPrecRev[]
+
+  @@unique([srcCd, srcKey], map: "uq_legal_prec_source")
+  @@map("legal_prec")
+}
+
+model LegalPrecRev {
+  id            BigInt      @id @default(autoincrement())
+  legalPrecId   BigInt      @map("legal_prec_id")
+  srcSnapshotId BigInt      @map("src_snapshot_id")
+  revNo         Int         @map("rev_no")
+  currentYn     Boolean     @default(false) @map("current_yn")
+  caseNo        String      @map("case_no")
+  caseNm        String      @map("case_nm")
+  courtNm       String      @map("court_nm")
+  decisionDt    DateTime    @map("decision_dt") @db.Date
+  issueCont     String?     @map("issue_cont") @db.Text
+  summaryCont   String?     @map("summary_cont") @db.Text
+  decisionCont  String      @map("decision_cont") @db.Text
+  rgstDttm      DateTime    @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  precedent     LegalPrec   @relation(fields: [legalPrecId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  snapshot      SrcSnapshot @relation(fields: [srcSnapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  provisionRefs LegalPrecProvi[]
+
+  @@unique([legalPrecId, revNo], map: "uq_legal_prec_rev_no")
+  @@unique([legalPrecId, srcSnapshotId], map: "uq_legal_prec_rev_source")
+  @@index([caseNo], map: "idx_legal_prec_rev_case_no")
+  @@map("legal_prec_rev")
+}
+
+model LegalPrecProvi {
+  id             BigInt       @id @default(autoincrement())
+  legalPrecRevId BigInt       @map("legal_prec_rev_id")
+  refKey         String       @map("ref_key")
+  legalProviId   BigInt?      @map("legal_provi_id")
+  statCd         String       @map("stat_cd") @db.VarChar(20)
+  evidenceDesc   String       @map("evidence_desc")
+  delYn          Boolean      @default(false) @map("del_yn")
+  delDttm        DateTime?    @map("del_dttm") @db.Timestamptz(0)
+  delId          BigInt?      @map("del_id")
+  rgstDttm       DateTime     @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  precedentRev   LegalPrecRev @relation(fields: [legalPrecRevId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "legal_prec_provi_legal_prec_rev_id_fkey")
+  provision      LegalProvi?  @relation(fields: [legalProviId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "legal_prec_provi_legal_provi_id_fkey")
+
+  @@map("legal_prec_provi")
 }
 
 model LegalVer {
@@ -44,23 +101,38 @@ model LegalVer {
   verKey        String       @map("ver_key")
   prmlDt        DateTime?    @map("prml_dt") @db.Date
   enfcDt        DateTime?    @map("enfc_dt") @db.Date
-  srcSnapshotId BigInt?      @map("src_snapshot_id")
   delYn         Boolean      @default(false) @map("del_yn")
-  delDttm       DateTime?    @map("del_dttm") @db.Timestamptz(6)
+  delDttm       DateTime?    @map("del_dttm") @db.Timestamptz(0)
   delId         BigInt?      @map("del_id")
-  rgstDttm      DateTime     @default(now()) @map("rgst_dttm") @db.Timestamptz(6)
-  uptDttm       DateTime     @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(6)
+  rgstDttm      DateTime     @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  uptDttm       DateTime     @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
   legal         Legal        @relation(fields: [legalId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  snapshot      SrcSnapshot? @relation(fields: [srcSnapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  provisions    LegalProvi[]
+  revisions     LegalVerRev[]
 
   @@unique([legalId, verKey], map: "uq_legal_ver_key")
   @@map("legal_ver")
 }
 
+model LegalVerRev {
+  id            BigInt       @id @default(autoincrement())
+  legalVerId    BigInt       @map("legal_ver_id")
+  revNo         Int          @map("rev_no")
+  srcSnapshotId BigInt?      @map("src_snapshot_id")
+  currentYn     Boolean      @default(false) @map("current_yn")
+  rgstDttm      DateTime     @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  version       LegalVer     @relation(fields: [legalVerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  snapshot      SrcSnapshot? @relation(fields: [srcSnapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  provisions    LegalProvi[]
+
+  @@unique([legalVerId, revNo], map: "uq_legal_ver_rev_no")
+  @@unique([legalVerId, srcSnapshotId], map: "uq_legal_ver_rev_source")
+  @@index([srcSnapshotId], map: "idx_legal_ver_rev_snapshot")
+  @@map("legal_ver_rev")
+}
+
 model LegalProvi {
   id          BigInt       @id @default(autoincrement())
-  legalVerId  BigInt       @map("legal_ver_id")
+  legalVerRevId BigInt     @map("legal_ver_rev_id")
   prntProviId BigInt?      @map("prnt_provi_id")
   proviTypeCd String       @map("provi_type_cd") @db.VarChar(30)
   dispNo      String       @map("disp_no")
@@ -68,18 +140,21 @@ model LegalProvi {
   sortSeq     Int          @map("sort_seq")
   proviNm     String?      @map("provi_nm")
   proviCont   String       @map("provi_cont") @db.Text
+  srcParts    Json?        @map("src_parts")
   enfcDt      DateTime?    @map("enfc_dt") @db.Date
   delYn       Boolean      @default(false) @map("del_yn")
-  delDttm     DateTime?    @map("del_dttm") @db.Timestamptz(6)
+  delDttm     DateTime?    @map("del_dttm") @db.Timestamptz(0)
   delId       BigInt?      @map("del_id")
-  rgstDttm    DateTime     @default(now()) @map("rgst_dttm") @db.Timestamptz(6)
-  uptDttm     DateTime     @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(6)
-  version     LegalVer     @relation(fields: [legalVerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  parent      LegalProvi?  @relation("ProviTree", fields: [prntProviId, legalVerId], references: [id, legalVerId], onDelete: Restrict, onUpdate: Restrict)
+  rgstDttm    DateTime     @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  uptDttm     DateTime     @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
+  revision    LegalVerRev  @relation(fields: [legalVerRevId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  parent      LegalProvi?  @relation("ProviTree", fields: [prntProviId, legalVerRevId], references: [id, legalVerRevId], onDelete: Restrict, onUpdate: Restrict)
   children    LegalProvi[] @relation("ProviTree")
 
-  @@unique([id, legalVerId], map: "uq_legal_provi_id_ver")
-  @@index([legalVerId, sortSeq, id], map: "idx_legal_provi_sort")
+  precedentRefs LegalPrecProvi[]
+
+  @@unique([id, legalVerRevId], map: "uq_legal_provi_id_rev")
+  @@index([legalVerRevId, sortSeq, id], map: "idx_legal_provi_sort")
   @@map("legal_provi")
 }
 
@@ -94,12 +169,12 @@ model CmmnCd {
   useYn      Boolean      @default(true) @map("use_yn")
   sysYn      Boolean      @default(false) @map("sys_yn")
   delYn      Boolean      @default(false) @map("del_yn")
-  delDttm    DateTime?    @map("del_dttm") @db.Timestamptz(6)
+  delDttm    DateTime?    @map("del_dttm") @db.Timestamptz(0)
   delId      BigInt?      @map("del_id")
   rgstId     BigInt?      @map("rgst_id")
-  rgstDttm   DateTime     @default(now()) @map("rgst_dttm") @db.Timestamptz(6)
+  rgstDttm   DateTime     @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
   uptId      BigInt?      @map("upt_id")
-  uptDttm    DateTime     @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(6)
+  uptDttm    DateTime     @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
   parent     CmmnCd?      @relation("CmmnCdTree", fields: [prntCdId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   children   CmmnCd[]     @relation("CmmnCdTree")
   histories  CmmnCdHist[]
@@ -117,7 +192,7 @@ model CmmnCdHist {
   bfData    Json?    @map("bf_data") @db.JsonB
   afData    Json?    @map("af_data") @db.JsonB
   rgstId    BigInt?  @map("rgst_id")
-  rgstDttm  DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(6)
+  rgstDttm  DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
   code      CmmnCd   @relation(fields: [cmmnCdId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([cmmnCdId, rgstDttm(sort: Desc), id(sort: Desc)], map: "idx_cmmn_cd_hist_code_date")
