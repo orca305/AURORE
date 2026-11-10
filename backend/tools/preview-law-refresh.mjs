@@ -24,7 +24,7 @@ function iso(date) {
   return value;
 }
 
-async function preview(db, candidate, oc) {
+export async function previewLawRefresh(db, candidate, oc) {
   const { lawId, mst, effectiveDate } = candidate;
   const date = iso(effectiveDate);
   const { rows: [law] } = await db.query(
@@ -70,7 +70,7 @@ async function main() {
   try {
     await db.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const results = [];
-    for (const candidate of unique.values()) results.push(await preview(db, candidate, oc));
+    for (const candidate of unique.values()) results.push(await previewLawRefresh(db, candidate, oc));
     for (const result of results) {
       if (results.some(other => other.lawId === result.lawId && other.versionKey === result.versionKey &&
           other.effectiveDate === result.effectiveDate && other.hash !== result.hash)) result.status = "source-conflict";

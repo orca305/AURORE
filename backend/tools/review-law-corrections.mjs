@@ -35,7 +35,7 @@ export function compareProvisions(before, after) {
   return changes;
 }
 
-async function review(db, candidate, oc, outputParent) {
+export async function reviewLawCorrection(db, candidate, oc, outputParent) {
   const { lawId, mst, effectiveDate, versionKey } = candidate;
   const sample = { target: "eflaw", lawId, MST: mst, efYd: effectiveDate.replaceAll("-", "") };
   const { rows: [stored] } = await db.query(
@@ -101,7 +101,7 @@ async function main() {
     await db.connect();
     try {
       await db.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      for (const candidate of candidates) corrections.push(await review(db, candidate, oc, outputParent));
+      for (const candidate of candidates) corrections.push(await reviewLawCorrection(db, candidate, oc, outputParent));
     } finally {
       await db.end();
     }

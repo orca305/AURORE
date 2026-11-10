@@ -81,7 +81,7 @@ export async function checkCorrection(db, correction, lock = false) {
   })) };
 }
 
-async function getReviewedSample(correction, oc) {
+export async function getReviewedSample(correction, oc) {
   const { lawId, mst, effectiveDate, versionKey, afterHash, chunks } = correction;
   const efYd = effectiveDate.replaceAll("-", "");
   const { identity, bytes, payload } = await readOfficialSample({ target: "eflaw", lawId, MST: mst, efYd }, oc);

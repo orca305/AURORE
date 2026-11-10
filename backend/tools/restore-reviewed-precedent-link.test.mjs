@@ -1,19 +1,26 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
+import { checkCorrection, getReviewedSample, publishCorrection, readCorrection } from "./check-law-correction.mjs";
 import { importEdition } from "./import-law-samples.mjs";
 import { listPrecedentReviews } from "./list-precedent-reviews.mjs";
 import { verifiedEvidenceForPrecedent } from "./precedent-citation-evidence.mjs";
+import { previewLawRefresh } from "./preview-law-refresh.mjs";
 import { restoreReviewedLink } from "./restore-reviewed-precedent-link.mjs";
+import { reviewLawCorrection } from "./review-law-corrections.mjs";
 
 const digest = raw => createHash("sha256").update(raw).digest("hex");
 const edition = text => {
   const heading = "제1조";
   const path = ["법령", "조문", "조문단위", 0];
   const raw = JSON.stringify({ 법령: {
-    법령키: "version-1", 기본정보: { 법령ID: "000001", 시행일자: "20260102" },
+    법령키: "version-1", 기본정보: {
+      법령ID: "000001", 법령명_한글: "검증용 법령", 시행일자: "20260102", 공포일자: "20251001",
+    },
     조문: { 조문단위: [{ 조문여부: "조문", 조문번호: "1", 조문내용: heading,
       항: { 항번호: "①", 항내용: text } }] },
   } });
@@ -27,7 +34,13 @@ const edition = text => {
   };
 };
 
-test("restores only reviewed links to the current revision and retains the previous link", async () => {
+test("runs the correction lifecycle from official preview through restored or closed precedent links", async (t) => {
+  const parent = resolve(tmpdir());
+  const directory = await mkdtemp(join(parent, "aurore-correction-test-"));
+  t.after(async () => {
+    assert.equal(dirname(directory), parent);
+    await rm(directory, { recursive: true });
+  });
   const db = new PGlite();
   try {
     const migrations = new URL("../prisma/migrations/", import.meta.url);
@@ -49,7 +62,39 @@ test("restores only reviewed links to the current revision and retains the previ
       (1,'제1조 제1항',1,'VERIFIED','기존 검토'),(1,'제1조 제2항',1,'VERIFIED','검증용 잘못된 참조');
     `);
     assert.deepEqual(await listPrecedentReviews(db), { pending: [], nextOffset: null });
-    await db.transaction(tx => importEdition(tx, after));
+    const candidate = { lawId: "000001", mst: "123", effectiveDate: "20260102" };
+    let officialBody = before.raw;
+    t.mock.method(globalThis, "fetch", async (url) => {
+      assert.equal(url.hostname, "www.law.go.kr");
+      assert.equal(url.searchParams.get("MST"), candidate.mst);
+      assert.equal(url.searchParams.get("efYd"), candidate.effectiveDate);
+      return new Response(officialBody, { headers: { "content-type": "application/json" } });
+    });
+    const oc = "aurore-correction-fixture";
+    assert.equal((await previewLawRefresh(db, candidate, oc)).status, "unchanged");
+    officialBody = after.raw;
+    const preview = await previewLawRefresh(db, candidate, oc);
+    assert.equal(preview.status, "correction-candidate");
+    const report = await reviewLawCorrection(db, preview, oc, directory);
+    assert.equal(report.status, "provision-changes");
+    assert.equal(report.changedUnits, 1);
+    const reviewed = await readCorrection(report.reportPath);
+    const alteredReport = join(dirname(report.reportPath), "altered-review.json");
+    const originalReport = JSON.parse(await readFile(report.reportPath, "utf8"));
+    await writeFile(alteredReport, JSON.stringify({ ...originalReport, changes: [] }));
+    await assert.rejects(readCorrection(alteredReport), /does not match/);
+
+    const impact = await checkCorrection(db, reviewed);
+    assert.equal(impact.affected.length, 2);
+    assert(impact.affected.every(link => link.provisionChanged));
+    officialBody = before.raw;
+    await assert.rejects(getReviewedSample(reviewed, oc), /official source changed/);
+    officialBody = after.raw;
+    const sample = await getReviewedSample(reviewed, oc);
+    const publish = review => db.transaction(tx => publishCorrection(tx, review, sample));
+    await assert.rejects(publish({ ...reviewed, beforeHash: "0".repeat(64) }), /current source changed/);
+    assert.equal((await publish(reviewed)).status, "corrected");
+    assert.equal((await publish(reviewed)).status, "already-current");
     assert.deepEqual(await verifiedEvidenceForPrecedent(db, "100"), []);
     const byLaw = await listPrecedentReviews(db, "100");
     assert.equal(byLaw.pending.length, 2);
