@@ -11,6 +11,46 @@ function isDate(value) {
   return !Number.isNaN(date.valueOf()) && date.toISOString().startsWith(iso);
 }
 
+const maxRangeDays = 7;
+const dayMillis = 24 * 60 * 60 * 1000;
+
+export function parseChangeDates(value) {
+  const match = /^(\d{8})(?:\.\.(\d{8}))?$/.exec(value ?? "");
+  if (!match) throw new Error("Use YYYYMMDD or YYYYMMDD..YYYYMMDD.");
+  const [, first, last = first] = match;
+  if (!isDate(first) || !isDate(last)) throw new Error("Invalid change date.");
+  const toMillis = date => Date.parse(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}T00:00:00Z`);
+  const start = toMillis(first);
+  const count = (toMillis(last) - start) / dayMillis + 1;
+  if (count < 1 || count > maxRangeDays) throw new Error("The date range must contain 1 to 7 days.");
+  return Array.from({ length: count }, (_, index) =>
+    new Date(start + index * dayMillis).toISOString().slice(0, 10).replaceAll("-", ""),
+  );
+}
+
+export async function planChangeDates(dates, watched, stored, fetchDay) {
+  const days = [];
+  const candidates = new Map();
+  for (const date of dates) {
+    let result;
+    try {
+      result = await fetchDay(date);
+    } catch (error) {
+      throw new Error(`Could not finish change date ${date}: ${error.constructor === Error ? error.message : "source request failed."}`);
+    }
+    const daily = planCandidates(result.rows, watched, stored);
+    days.push({ date, changes: result.rows.length, pages: result.pages, candidates: daily.length });
+    for (const candidate of daily) candidates.set(key(candidate), candidate);
+  }
+  return {
+    ...(dates.length === 1 ? { date: dates[0] } : { fromDate: dates[0], toDate: dates.at(-1), days }),
+    changes: days.reduce((sum, day) => sum + day.changes, 0),
+    pages: days.reduce((sum, day) => sum + day.pages, 0),
+    watchedLaws: watched.size,
+    candidates: [...candidates.values()],
+  };
+}
+
 function digits(value) {
   const text = String(value ?? "");
   if (!/^[0-9]+$/.test(text)) throw new Error("Invalid identifier in the change list.");
@@ -122,20 +162,18 @@ async function getLocalWatchlist(url) {
 }
 
 async function main() {
-  const [date, ...extra] = process.argv.slice(2);
+  const [range, ...extra] = process.argv.slice(2);
   const oc = process.env.MOLEG_OC?.trim();
   const db = URL.parse(process.env.DATABASE_URL ?? "");
-  if (extra.length || !isDate(date ?? "") || !oc || !db || db.protocol !== "postgresql:" ||
+  if (extra.length || !range || !oc || !db || db.protocol !== "postgresql:" ||
       db.hostname !== "127.0.0.1" || db.port !== "5433" || db.pathname !== "/aurore_dev_check") {
-    throw new Error("Set MOLEG_OC, then run: node --env-file=local-dev/.env backend/tools/plan-law-refresh.mjs YYYYMMDD");
+    throw new Error("Set MOLEG_OC, then run: node --env-file=local-dev/.env backend/tools/plan-law-refresh.mjs YYYYMMDD[..YYYYMMDD]");
   }
+  const dates = parseChangeDates(range);
   const { watched, stored } = await getLocalWatchlist(db);
   if (!watched.size) throw new Error("No active MOLEG laws are tracked in the development DB.");
-  const { rows, pages } = await fetchChangeList(date, oc);
-  console.log(JSON.stringify({
-    date, changes: rows.length, pages, watchedLaws: watched.size,
-    candidates: planCandidates(rows, watched, stored),
-  }, null, 2));
+  const plan = await planChangeDates(dates, watched, stored, date => fetchChangeList(date, oc));
+  console.log(JSON.stringify(plan, null, 2));
 }
 
 if (import.meta.main) {

@@ -16,16 +16,17 @@ function run(script, args, input) {
 }
 
 async function main() {
-  const [date, outputParent, ...extra] = process.argv.slice(2);
-  if (!/^\d{8}$/.test(date ?? "") || !outputParent || extra.length) {
-    throw new Error("Usage: node --env-file=local-dev/.env backend/tools/stage-law-refresh.mjs YYYYMMDD <staging-parent>");
+  const [range, outputParent, ...extra] = process.argv.slice(2);
+  if (!range || !outputParent || extra.length) {
+    throw new Error("Usage: node --env-file=local-dev/.env backend/tools/stage-law-refresh.mjs YYYYMMDD[..YYYYMMDD] <staging-parent>");
   }
-  const plan = run("./plan-law-refresh.mjs", [date]);
-  const preview = run("./preview-law-refresh.mjs", [], JSON.stringify(plan));
+  const { candidates, ...plan } = run("./plan-law-refresh.mjs", [range]);
+  if (candidates.length > 20) throw new Error("More than 20 distinct candidates. Split the date range before preparing sources.");
+  const preview = run("./preview-law-refresh.mjs", [], JSON.stringify({ candidates }));
   const prepared = run("./prepare-law-refresh.mjs", [outputParent], JSON.stringify(preview));
   const { corrections } = run("./review-law-corrections.mjs", [outputParent], JSON.stringify(preview));
   console.log(JSON.stringify({
-    date: plan.date, changes: plan.changes, watchedLaws: plan.watchedLaws,
+    ...plan,
     candidates: preview.results, prepared, corrections,
   }, null, 2));
 }
