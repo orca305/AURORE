@@ -10,7 +10,7 @@ async function ask(question: string, phase: string): Promise<Reply> {
 
   if (process.env.NODE_ENV !== "development") notFound();
   try {
-    const reply = await answerDemoConversation(question, phase === "lease-end" ? phase : "start", async () => {
+    const reply = await answerDemoConversation(question, phase, async () => {
       const directory = process.env.AURORE_LAW_SNAPSHOT_DIR;
       if (!directory || !isAbsolute(directory)) throw new Error("Snapshot directory is unavailable");
       return loadEvidence(directory);

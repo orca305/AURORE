@@ -40,7 +40,7 @@ async function linkedCitation(source: Citation): Promise<Reply["source"] | undef
 
 export async function askConversation(question: string, phase: string): Promise<Reply> {
   try {
-    const result = await answerDemoConversation(question, phase === "lease-end" ? phase : "start", async () => {
+    const result = await answerDemoConversation(question, phase, async () => {
       const directory = process.env.AURORE_LAW_SNAPSHOT_DIR;
       if (!directory || !isAbsolute(directory)) throw new Error("Snapshot directory is unavailable");
       return loadEvidence(directory);

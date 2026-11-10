@@ -112,6 +112,10 @@
 .citation a { text-decoration: underline; text-underline-offset: 3px; }
 .pending { margin: 10px 23px 2px; color: #4b6657; font-size: 13px; }
 
+.followups { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 23px 0; }
+.followups button { padding: 6px 11px; border: 1px solid #dce8dd; border-radius: 100px; color: #31594a; font-size: 12px; cursor: pointer; }
+.followups button:hover { background: #edf5eb; }
+
 .composer { padding: 18px 23px 21px; }
 .composerRow {
   display: flex;
@@ -157,7 +161,7 @@
   .lead { max-width: 29ch; margin-inline: auto; }
   .desktopBreak { display: none; }
   .chat { border-radius: 17px; }
-  .chatHeader, .examples, .composer, .messages:not(:empty) { padding-inline: 14px; }
+  .chatHeader, .examples, .followups, .composer, .messages:not(:empty) { padding-inline: 14px; }
   .exampleGrid { grid-template-columns: 1fr; gap: 7px; }
   .example { min-height: 0; padding-block: 9px; }
   .exampleArrow { top: 10px; }

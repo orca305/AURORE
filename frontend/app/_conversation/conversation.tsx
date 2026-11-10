@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AuroreMark } from "./aurore-mark";
 import styles from "./conversation.module.css";
 
-type Phase = "start" | "lease-end";
+type Phase = "start" | "lease-end" | "renewal-delivery";
 export type Reply = {
   phase: Phase;
   text: string;
@@ -17,6 +17,12 @@ const examples = [
   { topic: "임대차 보증금", question: "보증금을 돌려받지 못했어요" },
   { topic: "계약 갱신", question: "계약을 갱신해 달라는 통지가 도달하면 언제 갱신되나요?" },
 ];
+
+const followups = {
+  start: [],
+  "lease-end": ["네, 계약이 끝났어요", "아직 안 끝났어요"],
+  "renewal-delivery": ["네, 도달했어요", "도달했는지 모르겠어요"],
+};
 
 export function Conversation({ ask }: { ask: (question: string, phase: Phase) => Promise<Reply> }) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -97,6 +103,10 @@ export function Conversation({ ask }: { ask: (question: string, phase: Phase) =>
       </ol>
       {pending && <p role="status" className={styles.pending}>오로르가 확인 중입니다.</p>}
     </section>
+    {!pending && followups[phase].length > 0 && <div className={styles.followups} aria-label="빠른 답변">
+      {followups[phase].map(text => <button key={text} type="button"
+        onClick={() => { setInput(text); inputField.current?.focus(); }}>{text}</button>)}
+    </div>}
     <form onSubmit={send} className={styles.composer}>
       <label htmlFor="conversation-input" className="sr-only">메시지</label>
       <div className={styles.composerRow}>
