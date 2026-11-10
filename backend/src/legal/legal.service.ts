@@ -19,6 +19,19 @@ const publicSelect = {
   uptDttm: true,
 } satisfies Prisma.LegalSelect;
 
+const versionSelect = {
+  id: true, verKey: true, prmlDt: true, enfcDt: true,
+  revisions: {
+    where: { currentYn: true },
+    select: { snapshot: { select: { srcUrl: true } } },
+    take: 1,
+  },
+} satisfies Prisma.LegalVerSelect;
+
+function publicVersion({ revisions, ...row }: Prisma.LegalVerGetPayload<{ select: typeof versionSelect }>) {
+  return { ...row, id: row.id.toString(), sourceUrl: revisions[0]?.snapshot?.srcUrl ?? null };
+}
+
 @Injectable()
 export class LegalService {
   constructor(private readonly prisma: PrismaService) {}
@@ -200,14 +213,7 @@ export class LegalService {
           revisions: { some: { currentYn: true, srcSnapshotId: { not: null } } },
         }),
       },
-      select: {
-        id: true, verKey: true, prmlDt: true, enfcDt: true,
-        revisions: {
-          where: { currentYn: true },
-          select: { snapshot: { select: { srcUrl: true } } },
-          take: 1,
-        },
-      },
+      select: versionSelect,
       orderBy: [
         { enfcDt: { sort: 'desc', nulls: 'last' } },
         { id: 'desc' },
@@ -215,9 +221,17 @@ export class LegalService {
       take: query.limit,
       skip: query.offset,
     });
-    return rows.map(({ revisions, ...row }) => ({
-      ...row, id: row.id.toString(), sourceUrl: revisions[0]?.snapshot?.srcUrl ?? null,
-    }));
+    return rows.map(publicVersion);
+  }
+
+  async version(id: bigint, versionId: bigint) {
+    const row = await this.prisma.legalVer.findFirst({
+      where: { id: versionId, legalId: id, delYn: false, legal: { delYn: false } },
+      select: { ...versionSelect, legal: { select: { legalNm: true } } },
+    });
+    if (!row) throw new NotFoundException('법규 버전을 찾을 수 없습니다.');
+    const { legal, ...version } = row;
+    return { ...publicVersion(version), legalName: legal.legalNm };
   }
 
   private async requireVersion(id: bigint, versionId: bigint) {
@@ -263,6 +277,12 @@ export class LegalService {
       }))
     )
       throw new NotFoundException('법규 판본을 찾을 수 없습니다.');
+    const term = query.q?.trim() || null;
+    const article = term?.normalize('NFKC').replace(/\s+/gu, '').match(/^(?:제)?(\d+)조(?:의(\d+))?$/u);
+    const number = article ? article[1].replace(/^0+(?=\d)/u, '') : null;
+    const branch = article?.[2] ? article[2].replace(/^0+(?=\d)/u, '') : null;
+    const normNo = number ? (branch ? `${number}의${branch}` : number) : null;
+    const dispNo = number ? `제${number}조${branch ? `의${branch}` : ''}` : null;
     // 삭제된 조상 아래의 조문도 직접 조회로 노출하지 않는다.
     const rows = await this.prisma.$queryRaw<
       Array<{
@@ -279,7 +299,7 @@ export class LegalService {
       }>
     >`
       WITH RECURSIVE visible AS (
-        SELECT p.* FROM legal_provi p
+        SELECT p.*, p.id AS root_id FROM legal_provi p
         JOIN legal_ver_rev r ON r.id = p.legal_ver_rev_id
         JOIN legal_ver v ON v.id = r.legal_ver_id AND NOT v.del_yn
         JOIN legal l ON l.id = v.legal_id AND NOT l.del_yn
@@ -288,13 +308,26 @@ export class LegalService {
                    ELSE r.id = ${revisionId ?? null}::bigint END
           AND p.prnt_provi_id IS NULL AND NOT p.del_yn
         UNION ALL
-        SELECT p.* FROM legal_provi p JOIN visible parent ON p.prnt_provi_id = parent.id
+        SELECT p.*, parent.root_id FROM legal_provi p JOIN visible parent ON p.prnt_provi_id = parent.id
           AND p.legal_ver_rev_id = parent.legal_ver_rev_id WHERE NOT p.del_yn
+      ), search AS (
+        SELECT ${term}::text AS term, ${normNo}::text AS norm_no, ${dispNo}::text AS disp_no
       )
-      SELECT id, prnt_provi_id AS "prntProviId", disp_no AS "dispNo", norm_no AS "normNo",
+      SELECT p.id, p.prnt_provi_id AS "prntProviId", p.disp_no AS "dispNo", p.norm_no AS "normNo",
         sort_seq AS "sortSeq", provi_type_cd AS "proviTypeCd", provi_nm AS "proviNm",
         provi_cont AS "proviCont", src_parts AS "srcParts", enfc_dt AS "enfcDt"
-      FROM visible ORDER BY sort_seq, id LIMIT ${query.limit} OFFSET ${query.offset}
+      FROM visible p CROSS JOIN search s
+      WHERE s.term IS NULL OR p.root_id IN (
+        SELECT hit.root_id FROM visible hit
+        WHERE CASE WHEN s.norm_no IS NOT NULL THEN
+          hit.id = hit.root_id AND hit.provi_type_cd = 'ARTICLE' AND (
+            hit.norm_no = s.norm_no OR (hit.norm_no IS NULL AND
+              regexp_replace(hit.disp_no, '[[:space:]]', '', 'g') = s.disp_no)
+          )
+        ELSE strpos(lower(concat_ws(' ', hit.disp_no, hit.provi_nm, hit.provi_cont)), lower(s.term)) > 0
+        END
+      )
+      ORDER BY sort_seq, p.id LIMIT ${query.limit} OFFSET ${query.offset}
     `;
     return rows.map((row) => ({
       ...row,

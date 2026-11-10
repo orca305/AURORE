@@ -199,6 +199,12 @@ it('이전 데이터·시퀀스를 보존하고 코드·조문 제약과 삭제 
     const service = new LegalService(prisma);
     const before = await service.provisions(1n, 1n, new ListLegalsDto());
     expect(before.map((row) => row.dispNo)).toEqual(['제10조의2', '①']);
+    for (const q of ['제 10 조의 2', '항 원문']) {
+      expect(await service.provisions(1n, 1n, { ...new ListLegalsDto(), q })).toEqual(before);
+    }
+    for (const q of ['제10조', '%', '_']) {
+      expect(await service.provisions(1n, 1n, { ...new ListLegalsDto(), q })).toEqual([]);
+    }
     const {
       rows: [correction],
     } = await db.query<{ id: number }>(

@@ -1,0 +1,105 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Suspense } from "react";
+import { officialUrl } from "../official-source";
+
+const pageSize = 20;
+const maxOffset = 100000;
+type SearchParams = Promise<{ q?: string | string[]; offset?: string | string[]; asOf?: string | string[] }>;
+type Edition = { legalName: string; enfcDt: string | null; sourceUrl: string | null };
+type Provision = { id: string; dispNo: string; proviNm: string | null; proviCont: string };
+
+async function readProvisions(path: string, q: string, offset: number) {
+  try {
+    const backend = process.env.BACKEND_URL || "http://127.0.0.1:3001";
+    const editionUrl = new URL(path, backend);
+    const provisionsUrl = new URL(editionUrl.href + "/provisions");
+    provisionsUrl.search = new URLSearchParams({ q, limit: String(pageSize + 1), offset: String(offset) }).toString();
+    const options = { cache: "no-store" as const, signal: AbortSignal.timeout(5000) };
+    const [edition, provisions] = await Promise.all([fetch(editionUrl, options), fetch(provisionsUrl, options)]);
+    if (edition.status === 404 || provisions.status === 404) return { status: "missing" as const };
+    if (!edition.ok || !provisions.ok) return { status: "unavailable" as const };
+    const meta: Edition = await edition.json();
+    const rows: unknown = await provisions.json();
+    if (typeof meta?.legalName !== "string" || !Array.isArray(rows)) return { status: "unavailable" as const };
+    return { status: "ok" as const, meta, rows: rows as Provision[] };
+  } catch {
+    return { status: "unavailable" as const };
+  }
+}
+
+async function ProvisionResults({ id, versionId, searchParams }: {
+  id: string; versionId: string; searchParams: SearchParams;
+}) {
+  if ([id, versionId].some(value => !/^[1-9]\d{0,18}$/.test(value) ||
+    BigInt(value) > BigInt("9223372036854775807"))) notFound();
+  const query = await searchParams;
+  const q = typeof query.q === "string" ? query.q.trim().slice(0, 200) : "";
+  const asOf = typeof query.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(query.asOf) ? query.asOf : "";
+  const rawOffset = typeof query.offset === "string" ? query.offset : "";
+  const offset = /^\d{1,6}$/.test(rawOffset) ? Math.min(Number(rawOffset), maxOffset) : 0;
+  const versionsPath = `/legals/${id}/versions`;
+  const path = `${versionsPath}/${versionId}`;
+  const pageUrl = (next: number) => `${path}?${new URLSearchParams({ q, asOf, offset: String(next) })}`;
+  const result = await readProvisions(path, q, offset);
+  if (result.status === "missing") notFound();
+  const source = result.status === "ok" ? officialUrl(result.meta.sourceUrl) : null;
+
+  return <>
+    <section className="intro">
+      <Link className="underline" href={asOf ? `${versionsPath}?${new URLSearchParams({ asOf })}` : versionsPath}>
+        ← 시행본 목록
+      </Link>
+      <h1>{result.status === "ok" ? result.meta.legalName : "조문 검색"}</h1>
+      <p>
+        {result.status === "ok" && result.meta.enfcDt && `${result.meta.enfcDt.slice(0, 10)} 시행본 · `}
+        조문 번호나 본문 키워드로 검색할 수 있습니다.
+        {source && <> <a className="underline" href={source}>해당 시행본 원문</a></>}
+      </p>
+    </section>
+    <form className="search" action={path} role="search">
+      <label htmlFor="provision-query">조문 번호 또는 키워드</label>
+      <div className="search-row">
+        <input id="provision-query" name="q" defaultValue={q} maxLength={200} placeholder="예시 제6조의2 또는 보증금" />
+        {asOf && <input type="hidden" name="asOf" value={asOf} />}
+        <button type="submit">검색</button>
+      </div>
+    </form>
+    <section aria-labelledby="provision-results" className="results">
+      <div className="section-heading">
+        <h2 id="provision-results">{q ? `“${q}” 검색 결과` : "저장된 조문과 부칙"}</h2>
+      </div>
+      {result.status === "unavailable" ? <p role="status" className="empty">조문을 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.</p>
+        : result.rows.length === 0 ? <p className="empty">{q ? "일치하는 조문이 없습니다." : "이 페이지에 표시할 조문이 없습니다."}</p>
+        : <ul className="legal-list">
+          {result.rows.slice(0, pageSize).map(row => <li key={row.id}>
+            <h3>{row.dispNo}{row.proviNm && ` · ${row.proviNm}`}</h3>
+            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{row.proviCont}</pre>
+          </li>)}
+        </ul>}
+      {result.status === "ok" && (offset > 0 || result.rows.length > pageSize) &&
+        <nav aria-label="조문 검색 결과 페이지" className="pagination">
+          {offset > 0 && <Link href={pageUrl(Math.max(0, offset - pageSize))}>← 이전</Link>}
+          {result.rows.length > pageSize && offset < maxOffset &&
+            <Link href={pageUrl(Math.min(maxOffset, offset + pageSize))}>다음 →</Link>}
+        </nav>}
+    </section>
+  </>;
+}
+
+export default async function ProvisionsPage({ params, searchParams }: {
+  params: Promise<{ id: string; versionId: string }>; searchParams: SearchParams;
+}) {
+  const { id, versionId } = await params;
+  return <div className="shell">
+    <header className="site-header">
+      <Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link>
+      <Link href="/" className="header-note">법규 검색</Link>
+    </header>
+    <main>
+      <Suspense fallback={<p role="status" className="empty">조문을 불러오는 중입니다.</p>}>
+        <ProvisionResults id={id} versionId={versionId} searchParams={searchParams} />
+      </Suspense>
+    </main>
+  </div>;
+}

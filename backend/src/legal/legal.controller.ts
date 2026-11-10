@@ -51,6 +51,11 @@ export class LegalController {
     return this.legal.versions(parseId(id), query);
   }
 
+  @Get(':id/versions/:versionId')
+  version(@Param('id') id: string, @Param('versionId') versionId: string) {
+    return this.legal.version(parseId(id), parseId(versionId));
+  }
+
   @Get(':id/versions/:versionId/revisions')
   revisions(
     @Param('id') id: string,

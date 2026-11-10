@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { officialUrl } from "./official-source";
 
 const pageSize = 20;
 const maxOffset = 100000;
@@ -12,12 +13,6 @@ type Version = {
   prmlDt: string | null;
   sourceUrl: string | null;
 };
-
-function officialUrl(value: string | null) {
-  const url = value && URL.parse(value);
-  return url && url.protocol === "https:" && url.hostname === "www.law.go.kr" &&
-    !url.port && !url.username && !url.password ? url.href : null;
-}
 
 async function readVersions(id: string, asOf: string, offset: number) {
   try {
@@ -81,7 +76,9 @@ async function VersionResults({ id, searchParams }: { id: string; searchParams: 
             return <li key={version.id}>
               <h3>{version.enfcDt ? `${version.enfcDt.slice(0, 10)} 시행` : "시행일 미상"}</h3>
               <p>{version.prmlDt && `${version.prmlDt.slice(0, 10)} 공포 · `}법령키 {version.verKey}</p>
-              {source && <a className="mt-2 inline-block underline" href={source}>해당 시행본 원문</a>}
+              <Link href={asOf ? `${path}/${version.id}?${new URLSearchParams({ asOf })}` : `${path}/${version.id}`}
+                className="mt-2 inline-block underline">조문 보기</Link>
+              {source && <a className="ml-4 mt-2 inline-block underline" href={source}>해당 시행본 원문</a>}
             </li>;
           })}
         </ul>}
