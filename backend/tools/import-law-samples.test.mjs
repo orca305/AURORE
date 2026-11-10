@@ -10,6 +10,7 @@ const migrations = [
   "20261105000000_aurore_foundation",
   "20261109000000_legal_version_revisions",
   "20261109001000_group_legal_provisions",
+  "20261110000000_legal_edition_effective_date",
 ];
 
 function sample(text, raw = JSON.stringify({ article: text, version: "v1" })) {
@@ -54,6 +55,21 @@ test("corrections preserve old citations, skip formatting changes, and roll back
       { id: 2, rev_no: 2, current_yn: true, provi_cont: "정정 문구" },
     ]);
     assert.equal((await db.query("SELECT count(*)::int AS count FROM src_snapshot")).rows[0].count, 3);
+
+    const earlier = { ...sample("Earlier effective edition"), date: "2025-10-01" };
+    assert.equal((await run(earlier)).status, "saved");
+    assert.equal((await run(earlier)).status, "duplicate");
+    assert.equal((await run(corrected)).status, "duplicate");
+    const editions = await db.query(
+      "SELECT v.enfc_dt::text, r.rev_no FROM legal_ver v JOIN legal_ver_rev r ON r.legal_ver_id=v.id " +
+      "WHERE r.current_yn ORDER BY v.enfc_dt",
+    );
+    assert.deepEqual(editions.rows, [
+      { enfc_dt: "2025-10-01", rev_no: 1 },
+      { enfc_dt: "2026-01-02", rev_no: 2 },
+    ]);
+    await db.exec("INSERT INTO legal_ver (legal_id, ver_key) VALUES (1,'legacy');");
+    await assert.rejects(db.exec("INSERT INTO legal_ver (legal_id, ver_key) VALUES (1,'legacy');"), { code: "23505" });
   } finally {
     await db.close();
   }

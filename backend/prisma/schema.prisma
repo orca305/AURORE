@@ -109,7 +109,7 @@ model LegalVer {
   legal         Legal        @relation(fields: [legalId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   revisions     LegalVerRev[]
 
-  @@unique([legalId, verKey], map: "uq_legal_ver_key")
+  @@unique([legalId, verKey, enfcDt], map: "uq_legal_ver_edition")
   @@map("legal_ver")
 }
 

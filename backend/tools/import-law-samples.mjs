@@ -119,7 +119,8 @@ export async function importEdition(db, sample) {
     "s.cont_hash, s.src_cont FROM legal_ver v " +
     "LEFT JOIN legal_ver_rev r ON r.legal_ver_id = v.id AND r.current_yn " +
     "LEFT JOIN src_snapshot s ON s.id = r.src_snapshot_id " +
-    "WHERE v.legal_id = $1 AND v.ver_key = $2 FOR UPDATE OF v", [lawId, sample.versionKey],
+    "WHERE v.legal_id = $1 AND v.ver_key = $2 AND v.enfc_dt IS NOT DISTINCT FROM $3::date FOR UPDATE OF v",
+    [lawId, sample.versionKey, sample.date],
   );
   if (existing && (existing.del_yn || existing.enfc_dt !== sample.date ||
       existing.prml_dt !== sample.promulgated || !existing.revision_id || !existing.src_cont)) {
