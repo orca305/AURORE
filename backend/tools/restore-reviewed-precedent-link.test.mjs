@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { importEdition } from "./import-law-samples.mjs";
+import { listPrecedentReviews } from "./list-precedent-reviews.mjs";
 import { verifiedEvidenceForPrecedent } from "./precedent-citation-evidence.mjs";
 import { restoreReviewedLink } from "./restore-reviewed-precedent-link.mjs";
 
@@ -47,8 +48,24 @@ test("restores only reviewed links to the current revision and retains the previ
       INSERT INTO legal_prec_provi (legal_prec_rev_id,ref_key,legal_provi_id,stat_cd,evidence_desc) VALUES
       (1,'제1조 제1항',1,'VERIFIED','기존 검토'),(1,'제1조 제2항',1,'VERIFIED','검증용 잘못된 참조');
     `);
+    assert.deepEqual(await listPrecedentReviews(db), { pending: [], nextOffset: null });
     await db.transaction(tx => importEdition(tx, after));
     assert.deepEqual(await verifiedEvidenceForPrecedent(db, "100"), []);
+    const byLaw = await listPrecedentReviews(db, "100");
+    assert.equal(byLaw.pending.length, 2);
+    const [lawReview] = byLaw.pending;
+    assert.equal(lawReview.status, "READY_TO_REVIEW");
+    assert.equal(lawReview.lawChanged, true);
+    assert.equal(lawReview.caseChanged, false);
+    assert.equal(lawReview.beforeHash, before.hash);
+    assert.equal(lawReview.afterHash, after.hash);
+    assert.match(lawReview.beforeText, /이전 원문/);
+    assert.match(lawReview.currentText, /정정 원문/);
+    assert((await listPrecedentReviews(db)).pending.every(row => row.beforeText === null && row.currentText === null));
+    assert.deepEqual(await listPrecedentReviews(db, "200"), { pending: [], nextOffset: null });
+    await db.exec("UPDATE legal_provi SET del_yn=true,del_dttm=now() WHERE id=2");
+    assert((await listPrecedentReviews(db, "100")).pending.every(row => row.status === "TARGET_MISSING"));
+    await db.exec("UPDATE legal_provi SET del_yn=false,del_dttm=null WHERE id=2");
 
     const review = {
       caseSourceKey: "100", caseHash, reference: "제1조 제1항", beforeHash: before.hash,
@@ -82,13 +99,17 @@ test("restores only reviewed links to the current revision and retains the previ
       FROM src_snapshot WHERE src_key='100' AND src_cont='{"revision":2}';
     `);
     assert.deepEqual(await verifiedEvidenceForPrecedent(db, "100"), []);
-    const caseReview = {
-      ...review, caseHash: updatedCaseHash, beforeCaseHash: caseHash,
-      beforeHash: after.hash, reason: "정정 판결문에서 조문을 다시 확인함",
-    };
+    const byCase = await listPrecedentReviews(db, "100");
+    const draft = byCase.pending.find(row => row.reference === review.reference);
+    assert.equal(draft.caseChanged, true);
+    assert.equal(draft.lawChanged, false);
+    assert.equal(draft.beforeCaseHash, caseHash);
+    assert.equal(draft.caseHash, updatedCaseHash);
+    const caseReview = { ...draft, reason: "정정 판결문에서 조문을 다시 확인함" };
     await assert.rejects(restore({ ...caseReview, beforeCaseHash: "0".repeat(64) }), /stale/);
     assert.equal((await restore(caseReview)).status, "restored");
     assert.equal((await restore(caseReview)).status, "already-restored");
+    assert((await listPrecedentReviews(db, "100")).pending.every(row => row.reference !== review.reference));
     assert.deepEqual((await verifiedEvidenceForPrecedent(db, "100")).map(item => item.quote), ["① 정정 원문"]);
     const latest = await db.query(
       "SELECT legal_prec_rev_id::int, del_yn FROM legal_prec_provi WHERE ref_key='제1조 제1항' ORDER BY id",
