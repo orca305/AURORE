@@ -51,7 +51,13 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
 
 export default function Home({ searchParams }: { searchParams: Search }) {
   return <div className="shell">
-    <header className="site-header"><Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link><span className="header-note">법규 검색</span></header>
+    <header className="site-header">
+      <Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link>
+      <nav aria-label="검색 메뉴" className="header-note flex gap-4">
+        <span aria-current="page">법규 검색</span>
+        <Link href="/precedents" className="underline">판례 검색</Link>
+      </nav>
+    </header>
     <main>
       <section className="intro"><p className="eyebrow">A CLEARER UNDERSTANDING</p><h1>법을 이해하는<br />새로운 시작.</h1><p>궁금한 법규를 찾아보세요.<br />복잡한 법률을 이해하는 여정을 AURORE와 함께합니다.</p></section>
       <Suspense fallback={<p role="status" className="empty">법규 목록을 불러오는 중입니다.</p>}><LegalResults searchParams={searchParams} /></Suspense>
