@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AuroreMark } from "./aurore-mark";
+import styles from "./conversation.module.css";
 
 type Phase = "start" | "lease-end";
 export type Reply = {
@@ -11,7 +13,10 @@ export type Reply = {
 };
 type Message = Pick<Reply, "text" | "source"> & { role: "user" | "assistant" };
 
-const examples = ["보증금을 돌려받지 못했어요", "계약을 갱신해 달라는 통지가 도달하면 언제 갱신되나요?"];
+const examples = [
+  { topic: "임대차 보증금", question: "보증금을 돌려받지 못했어요" },
+  { topic: "계약 갱신", question: "계약을 갱신해 달라는 통지가 도달하면 언제 갱신되나요?" },
+];
 
 export function Conversation({ ask }: { ask: (question: string, phase: Phase) => Promise<Reply> }) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -19,6 +24,12 @@ export function Conversation({ ask }: { ask: (question: string, phase: Phase) =>
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
+  const history = useRef<HTMLElement>(null);
+  const inputField = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (history.current) history.current.scrollTop = history.current.scrollHeight;
+  }, [messages, pending]);
 
   async function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,38 +51,64 @@ export function Conversation({ ask }: { ask: (question: string, phase: Phase) =>
     }
   }
 
-  return <>
-    <section aria-label="대화 내용" aria-live="polite" className="mb-6">
-      {messages.length === 0 && <div className="flex flex-wrap gap-2">
-        {examples.map(example => <button key={example} type="button" className="rounded-full border px-4 py-2 text-sm"
-          onClick={() => setInput(example)}>{example}</button>)}
-      </div>}
-      <ol className="grid gap-4">
+  function reset() {
+    setMessages([]);
+    setPhase("start");
+    setInput("");
+    inputField.current?.focus();
+  }
+
+  return <section aria-label="오로르 대화" className={styles.chat}>
+    <div className={styles.chatHeader}>
+      <span className={styles.assistantMark}><AuroreMark /></span>
+      <div className={styles.assistantIdentity}><strong>오로르</strong><span>법률 대화 도우미</span></div>
+      {messages.length > 0
+        ? <button type="button" disabled={pending} className={styles.reset} onClick={reset}>
+          <span aria-hidden="true">＋</span> 새 대화
+        </button>
+        : <span className={styles.preview}>예제 체험</span>}
+    </div>
+    {messages.length === 0 && <div className={styles.examples}>
+      <p className={styles.exampleHeading}>예시 질문으로 시작하기</p>
+      <div className={styles.exampleGrid}>
+        {examples.map(({ topic, question }) => <button key={topic} type="button" className={styles.example}
+          onClick={() => { setInput(question); inputField.current?.focus(); }}>
+          <span className={styles.exampleTopic}>{topic}</span>
+          <span>{question}</span>
+          <span aria-hidden="true" className={styles.exampleArrow}>↗</span>
+        </button>)}
+      </div>
+    </div>}
+    <section ref={history} aria-label="대화 내용" aria-live="polite" className={styles.history}>
+      <ol className={styles.messages}>
         {messages.map((message, index) => <li key={index}
-          className={message.role === "user" ? "ml-auto max-w-[88%] rounded-xl bg-[#204c3f] px-5 py-4 text-white" :
-            "mr-auto max-w-[92%] rounded-xl border border-[#d9e0d9] bg-white px-5 py-4"}>
-          <p className="text-xs font-semibold">{message.role === "user" ? "나" : "오로르"}</p>
-          <p className="mt-1 whitespace-pre-wrap wrap-anywhere">{message.text}</p>
-          {message.source && <figure className="mt-3 border-l-2 border-[#bac9bd] pl-3">
-            <blockquote className="whitespace-pre-wrap wrap-anywhere text-sm">{message.source.quote}</blockquote>
-            <figcaption className="mt-2 flex flex-wrap gap-3 text-sm">
-            {message.source.href && <Link className="underline" href={message.source.href}>{message.source.label}</Link>}
-            <a className="underline" href={message.source.url}>{message.source.href ? "법제처 원문" : message.source.label}</a>
-          </figcaption>
+          className={message.role === "user" ? styles.userMessage : styles.assistantMessage}>
+          <p className={styles.speaker}>{message.role === "user" ? "나" : "오로르"}</p>
+          <p className={styles.messageText}>{message.text}</p>
+          {message.source && <figure className={styles.citation}>
+            <p className={styles.citationLabel}>확인한 원문</p>
+            <blockquote>{message.source.quote}</blockquote>
+            <figcaption>
+              {message.source.href && <Link href={message.source.href}>{message.source.label} <span aria-hidden="true">↗</span></Link>}
+              <a href={message.source.url}>{message.source.href ? "법제처 원문" : message.source.label}</a>
+            </figcaption>
           </figure>}
         </li>)}
       </ol>
-      {pending && <p role="status" className="mt-3 text-sm">오로르가 확인 중입니다.</p>}
+      {pending && <p role="status" className={styles.pending}>오로르가 확인 중입니다.</p>}
     </section>
-    <form onSubmit={send} className="search">
-      <label htmlFor="conversation-input">메시지</label>
-      <div className="search-row">
-        <input id="conversation-input" name="question" value={input} onChange={event => setInput(event.target.value)}
-          required maxLength={1000} placeholder="지금 상황을 입력해 주세요" />
-        <button type="submit" disabled={pending}>{pending ? "확인 중…" : "보내기"}</button>
+    <form onSubmit={send} className={styles.composer}>
+      <label htmlFor="conversation-input" className="sr-only">메시지</label>
+      <div className={styles.composerRow}>
+        <input ref={inputField} id="conversation-input" name="question" value={input}
+          onChange={event => setInput(event.target.value)} required maxLength={1000} placeholder="지금 상황을 입력해 주세요" />
+        <button type="submit" disabled={pending || !input.trim()} className={styles.send}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
+            <path d="M12 19V5m-5 5 5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>{pending ? "확인 중…" : "보내기"}</span>
+        </button>
       </div>
-      {messages.length > 0 && <button type="button" disabled={pending} className="mt-3 underline"
-        onClick={() => { setMessages([]); setPhase("start"); setInput(""); }}>새 대화</button>}
     </form>
-  </>;
+  </section>;
 }
