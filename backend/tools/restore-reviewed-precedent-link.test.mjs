@@ -44,7 +44,7 @@ test("restores only reviewed links to the current revision and retains the previ
     await db.exec(`
       INSERT INTO legal_prec (src_cd,src_key) VALUES ('MOLEG','100');
       INSERT INTO legal_prec_rev (legal_prec_id,src_snapshot_id,rev_no,current_yn,case_no,case_nm,court_nm,decision_dt,decision_cont)
-      SELECT 1,id,1,true,'2026다100','검증 판례','법원','2026-11-10','원문' FROM src_snapshot WHERE src_key='100';
+      SELECT 1,id,1,true,'2026다100','검증 판례','법원','2026-11-10','공통<br/>원래 판단<br/>같은 결론' FROM src_snapshot WHERE src_key='100';
       INSERT INTO legal_prec_provi (legal_prec_rev_id,ref_key,legal_provi_id,stat_cd,evidence_desc) VALUES
       (1,'제1조 제1항',1,'VERIFIED','기존 검토'),(1,'제1조 제2항',1,'VERIFIED','검증용 잘못된 참조');
     `);
@@ -95,11 +95,17 @@ test("restores only reviewed links to the current revision and retains the previ
     await db.exec(`
       UPDATE legal_prec_rev SET current_yn=false WHERE legal_prec_id=1;
       INSERT INTO legal_prec_rev (legal_prec_id,src_snapshot_id,rev_no,current_yn,case_no,case_nm,court_nm,decision_dt,decision_cont)
-      SELECT 1,id,2,true,'2026다100','검증 판례','법원','2026-11-10','정정 판결문'
+      SELECT 1,id,2,true,'2026다100','검증 판례','법원','2026-11-10','공통<br/>정정된 판단<br/>같은 결론'
       FROM src_snapshot WHERE src_key='100' AND src_cont='{"revision":2}';
     `);
     assert.deepEqual(await verifiedEvidenceForPrecedent(db, "100"), []);
     const byCase = await listPrecedentReviews(db, "100");
+    assert.equal(byCase.caseChanges.length, 1);
+    assert.equal(byCase.caseChanges[0].changes[0].field, "decision");
+    assert.deepEqual(byCase.caseChanges[0].changes[0].hunks.map(hunk => [hunk.before, hunk.after]), [
+      [["원래 판단"], ["정정된 판단"]],
+    ]);
+    assert.equal((await listPrecedentReviews(db)).caseChanges, undefined);
     const draft = byCase.pending.find(row => row.reference === review.reference);
     assert.equal(draft.caseChanged, true);
     assert.equal(draft.lawChanged, false);

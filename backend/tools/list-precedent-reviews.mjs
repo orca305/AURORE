@@ -1,4 +1,5 @@
 import pg from "pg";
+import { decisionChangesForReviews } from "./compare-precedent-decisions.mjs";
 
 const pageSize = 100;
 
@@ -67,7 +68,13 @@ export async function listPrecedentReviews(db, caseSourceKey = null, offset = 0)
     ORDER BY q.case_no, q.ref_key, q.id LIMIT $2 OFFSET $3`,
     [caseSourceKey, pageSize + 1, offset],
   );
-  return { pending: rows.slice(0, pageSize), nextOffset: rows.length > pageSize ? offset + pageSize : null };
+  const pending = rows.slice(0, pageSize);
+  const caseChanges = caseSourceKey === null ? [] : await decisionChangesForReviews(db, caseSourceKey, pending);
+  return {
+    pending,
+    nextOffset: rows.length > pageSize ? offset + pageSize : null,
+    ...(caseChanges.length ? { caseChanges } : {}),
+  };
 }
 
 async function main() {
@@ -82,7 +89,7 @@ async function main() {
   const db = new pg.Client({ connectionString: url.href, connectionTimeoutMillis: 5000 });
   await db.connect();
   try {
-    await db.query("BEGIN READ ONLY");
+    await db.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     console.log(JSON.stringify(await listPrecedentReviews(db, caseSourceKey, Number(rawOffset)), null, 2));
   } finally {
     await db.end();
