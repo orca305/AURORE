@@ -99,7 +99,7 @@ export default async function LegalVersionsPage({ params, searchParams }: {
   return <div className="shell">
     <header className="site-header">
       <Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link>
-      <Link href="/" className="header-note">법규 검색</Link>
+      <Link href="/legals" className="header-note">법규 검색</Link>
     </header>
     <main>
       <Suspense fallback={<p role="status" className="empty">시행본을 불러오는 중입니다.</p>}>

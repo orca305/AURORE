@@ -133,7 +133,7 @@ describe('법규 API 계약', () => {
     const { db, service } = setup();
     db.legalVer.findMany.mockResolvedValue([{
       id: 2n,
-      revisions: [{ snapshot: { srcUrl: 'https://www.law.go.kr/' } }],
+      revisions: [{ snapshot: { srcUrl: 'https://www.law.go.kr/', contHash: 'fixture-hash' } }],
     }]);
     const rows = await service.versions(1n, { ...new ListLegalsDto(), asOf: '2023-07-11' });
     expect(db.legalVer.findMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -142,7 +142,7 @@ describe('법규 API 계약', () => {
         revisions: { some: { currentYn: true, srcSnapshotId: { not: null } } },
       }),
     }));
-    expect(rows).toEqual([{ id: '2', sourceUrl: 'https://www.law.go.kr/' }]);
+    expect(rows).toEqual([{ id: '2', sourceUrl: 'https://www.law.go.kr/', sourceHash: 'fixture-hash' }]);
     await expect(service.versions(1n, { ...new ListLegalsDto(), asOf: '2023-02-30' }))
       .rejects.toBeInstanceOf(BadRequestException);
   });

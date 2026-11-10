@@ -23,13 +23,14 @@ const versionSelect = {
   id: true, verKey: true, prmlDt: true, enfcDt: true,
   revisions: {
     where: { currentYn: true },
-    select: { snapshot: { select: { srcUrl: true } } },
+    select: { snapshot: { select: { srcUrl: true, contHash: true } } },
     take: 1,
   },
 } satisfies Prisma.LegalVerSelect;
 
 function publicVersion({ revisions, ...row }: Prisma.LegalVerGetPayload<{ select: typeof versionSelect }>) {
-  return { ...row, id: row.id.toString(), sourceUrl: revisions[0]?.snapshot?.srcUrl ?? null };
+  const snapshot = revisions[0]?.snapshot;
+  return { ...row, id: row.id.toString(), sourceUrl: snapshot?.srcUrl ?? null, sourceHash: snapshot?.contHash ?? null };
 }
 
 @Injectable()
@@ -76,9 +77,10 @@ export class LegalService {
         caseNm: true,
         courtNm: true,
         decisionDt: true,
-        snapshot: { select: { srcUrl: true } },
+        snapshot: { select: { srcUrl: true, contHash: true } },
         precedent: {
           select: {
+            srcKey: true,
             revisions: {
               where: { currentYn: false },
               select: {
@@ -157,6 +159,8 @@ export class LegalService {
         ...row,
         decisionDate: decisionDt.toISOString().slice(0, 10),
         sourceUrl: snapshot.srcUrl,
+        sourceHash: snapshot.contHash,
+        sourceKey: precedent.srcKey,
         references,
       };
     });

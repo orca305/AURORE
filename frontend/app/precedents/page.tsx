@@ -12,6 +12,7 @@ type Reference = {
   target: { effectiveDate: string | null; sourceUrl: string | null } | null;
 };
 type Precedent = {
+  sourceKey: string;
   caseNo: string;
   caseNm: string;
   courtNm: string;
@@ -45,7 +46,7 @@ async function fetchPrecedents(q: string, offset: number): Promise<Precedent[] |
 function PrecedentCard({ row }: { row: Precedent }) {
   const source = officialUrl(row.sourceUrl);
 
-  return <li>
+  return <li id={`case-${row.sourceKey}`}>
     <h3>{row.caseNo} · {row.caseNm}</h3>
     <p>{row.courtNm} · {row.decisionDate} 선고</p>
     {source && <a className="mt-2 inline-block underline" href={source}>판결문 원문</a>}
@@ -116,7 +117,7 @@ export default function PrecedentsPage({ searchParams }: { searchParams: SearchP
   return <div className="shell">
     <header className="site-header">
       <Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link>
-      <Link href="/" className="header-note">법규 검색</Link>
+      <Link href="/legals" className="header-note">법규 검색</Link>
     </header>
     <main>
       <section className="intro">
