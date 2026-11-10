@@ -68,6 +68,36 @@ test("restores only reviewed links to the current revision and retains the previ
     assert.deepEqual(rows.map(({ legal_provi_id, del_yn }) => [legal_provi_id, del_yn]), [
       [1, true], [1, false], [2, false],
     ]);
+
+    const updatedCase = '{"revision":2}';
+    const updatedCaseHash = digest(updatedCase);
+    await db.query(
+      "INSERT INTO src_snapshot (src_cd,src_key,src_url,cont_type,src_cont,cont_hash) VALUES ('MOLEG','100','https://www.law.go.kr/','application/json',$1,$2)",
+      [updatedCase, updatedCaseHash],
+    );
+    await db.exec(`
+      UPDATE legal_prec_rev SET current_yn=false WHERE legal_prec_id=1;
+      INSERT INTO legal_prec_rev (legal_prec_id,src_snapshot_id,rev_no,current_yn,case_no,case_nm,court_nm,decision_dt,decision_cont)
+      SELECT 1,id,2,true,'2026다100','검증 판례','법원','2026-11-10','정정 판결문'
+      FROM src_snapshot WHERE src_key='100' AND src_cont='{"revision":2}';
+    `);
+    assert.deepEqual(await verifiedEvidenceForPrecedent(db, "100"), []);
+    const caseReview = {
+      ...review, caseHash: updatedCaseHash, beforeCaseHash: caseHash,
+      beforeHash: after.hash, reason: "정정 판결문에서 조문을 다시 확인함",
+    };
+    await assert.rejects(restore({ ...caseReview, beforeCaseHash: "0".repeat(64) }), /stale/);
+    assert.equal((await restore(caseReview)).status, "restored");
+    assert.equal((await restore(caseReview)).status, "already-restored");
+    assert.deepEqual((await verifiedEvidenceForPrecedent(db, "100")).map(item => item.quote), ["① 정정 원문"]);
+    const latest = await db.query(
+      "SELECT legal_prec_rev_id::int, del_yn FROM legal_prec_provi WHERE ref_key='제1조 제1항' ORDER BY id",
+    );
+    assert.deepEqual(latest.rows, [
+      { legal_prec_rev_id: 1, del_yn: true },
+      { legal_prec_rev_id: 1, del_yn: true },
+      { legal_prec_rev_id: 2, del_yn: false },
+    ]);
   } finally {
     await db.close();
   }

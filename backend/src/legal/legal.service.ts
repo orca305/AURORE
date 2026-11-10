@@ -38,6 +38,15 @@ export class LegalService {
   }
 
   async precedents(query: ListLegalsDto) {
+    const visibleArticle = {
+      delYn: false,
+      proviTypeCd: 'ARTICLE',
+      prntProviId: null,
+      revision: {
+        srcSnapshotId: { not: null },
+        version: { delYn: false, legal: { delYn: false } },
+      },
+    } satisfies Prisma.LegalProviWhereInput;
     const rows = await this.prisma.legalPrecRev.findMany({
       where: {
         currentYn: true,
@@ -53,23 +62,25 @@ export class LegalService {
         courtNm: true,
         decisionDt: true,
         snapshot: { select: { srcUrl: true } },
+        precedent: {
+          select: {
+            revisions: {
+              where: { currentYn: false },
+              select: {
+                provisionRefs: {
+                  where: { delYn: false, statCd: 'VERIFIED', provision: visibleArticle },
+                  select: { refKey: true },
+                },
+              },
+            },
+          },
+        },
         provisionRefs: {
           where: {
             delYn: false,
             OR: [
               { statCd: 'UNVERIFIED' },
-              {
-                statCd: 'VERIFIED',
-                provision: {
-                  delYn: false,
-                  proviTypeCd: 'ARTICLE',
-                  prntProviId: null,
-                  revision: {
-                    srcSnapshotId: { not: null },
-                    version: { delYn: false, legal: { delYn: false } },
-                  },
-                },
-              },
+              { statCd: 'VERIFIED', provision: visibleArticle },
             ],
           },
           orderBy: { refKey: 'asc' },
@@ -93,11 +104,8 @@ export class LegalService {
         },
       },
     });
-    return rows.map(({ snapshot, decisionDt, provisionRefs, ...row }) => ({
-      ...row,
-      decisionDate: decisionDt.toISOString().slice(0, 10),
-      sourceUrl: snapshot.srcUrl,
-      references: provisionRefs.map(({ provision, ...ref }) => {
+    return rows.map(({ snapshot, decisionDt, provisionRefs, precedent, ...row }) => {
+      const references = provisionRefs.map(({ provision, ...ref }) => {
         if (provision && !provision.revision.currentYn) {
           return {
             refKey: ref.refKey,
@@ -116,8 +124,27 @@ export class LegalService {
             sourceUrl: provision.revision.snapshot?.srcUrl ?? null,
           },
         };
-      }),
-    }));
+      });
+      const currentKeys = new Set(references.map(ref => ref.refKey));
+      for (const revision of precedent.revisions) {
+        for (const { refKey } of revision.provisionRefs) {
+          if (currentKeys.has(refKey)) continue;
+          currentKeys.add(refKey);
+          references.push({
+            refKey,
+            statCd: 'REVIEW_REQUIRED',
+            evidenceDesc: '판결문이 정정되어 이 조문의 적용 근거를 다시 확인하고 있습니다.',
+            target: null,
+          });
+        }
+      }
+      return {
+        ...row,
+        decisionDate: decisionDt.toISOString().slice(0, 10),
+        sourceUrl: snapshot.srcUrl,
+        references,
+      };
+    });
   }
 
   async create(input: CreateLegalDto) {

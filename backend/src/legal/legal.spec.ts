@@ -87,6 +87,10 @@ describe('법규 API 계약', () => {
       decisionDt: new Date('2026-01-03'),
       snapshot: { srcUrl: 'https://www.law.go.kr/' },
       provisionRefs: [makeRef(true), makeRef(false)],
+      precedent: { revisions: [
+        { provisionRefs: [{ refKey: '제1조' }, { refKey: '제3조' }] },
+        { provisionRefs: [{ refKey: '제3조' }] },
+      ] },
     }]);
 
     const [result] = await service.precedents(new ListLegalsDto());
@@ -95,6 +99,11 @@ describe('법규 API 계약', () => {
     });
     expect(result.references[1]).toMatchObject({ statCd: 'REVIEW_REQUIRED', target: null });
     expect(result.references[1].evidenceDesc).not.toBe('검토 기록');
+    expect(result.references).toHaveLength(3);
+    expect(result.references[2]).toMatchObject({
+      refKey: '제3조', statCd: 'REVIEW_REQUIRED', target: null,
+      evidenceDesc: expect.stringContaining('판결문이 정정'),
+    });
   });
 
   it('출처별 중복 등록은 409로 응답한다', async () => {
