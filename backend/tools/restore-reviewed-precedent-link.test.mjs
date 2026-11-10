@@ -125,6 +125,24 @@ test("restores only reviewed links to the current revision and retains the previ
       { legal_prec_rev_id: 1, del_yn: true },
       { legal_prec_rev_id: 2, del_yn: false },
     ]);
+
+    await db.exec("UPDATE legal_provi SET del_yn=true,del_dttm=now() WHERE id=2");
+    const { pending } = await listPrecedentReviews(db, "100");
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].status, "TARGET_MISSING");
+    const close = { ...pending[0], decision: "unverified", reason: "새 판결문에서 적용 근거를 확인할 수 없음" };
+    await assert.rejects(restore({ ...close, reason: " " }), /review reason/);
+    await assert.rejects(restore({ ...close, afterHash: "0".repeat(64) }), /stale/);
+    assert.equal((await restore(close)).status, "closed-unverified");
+    assert.equal((await restore(close)).status, "already-closed");
+    await assert.rejects(restore({ ...close, reason: "다른 검토 사유" }), /replaced or withdrawn/);
+    assert.deepEqual(await listPrecedentReviews(db, "100"), { pending: [], nextOffset: null });
+    const closed = await db.query(
+      "SELECT stat_cd, legal_provi_id, evidence_desc FROM legal_prec_provi WHERE legal_prec_rev_id=2 AND ref_key='제1조 제2항' AND NOT del_yn",
+    );
+    assert.deepEqual(closed.rows, [{ stat_cd: "UNVERIFIED", legal_provi_id: null, evidence_desc: close.reason }]);
+    await db.exec("UPDATE legal_provi SET del_yn=false,del_dttm=null WHERE id=2");
+    assert.deepEqual((await verifiedEvidenceForPrecedent(db, "100")).map(item => item.reference), ["제1조 제1항"]);
   } finally {
     await db.close();
   }
