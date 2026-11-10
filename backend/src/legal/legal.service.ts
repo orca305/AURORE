@@ -142,7 +142,10 @@ export class LegalService {
     const rows = await this.prisma.legalVer.findMany({
       where: { legalId: id, delYn: false, legal: { delYn: false } },
       select: { id: true, verKey: true, prmlDt: true, enfcDt: true },
-      orderBy: { id: 'desc' },
+      orderBy: [
+        { enfcDt: { sort: 'desc', nulls: 'last' } },
+        { id: 'desc' },
+      ],
       take: query.limit,
       skip: query.offset,
     });

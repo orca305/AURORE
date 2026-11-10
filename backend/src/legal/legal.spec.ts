@@ -79,6 +79,16 @@ describe('법규 API 계약', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('시행일 최신순으로 정렬하고 시행일 미상은 뒤에 둔다', async () => {
+    const { db, service } = setup();
+    await service.versions(1n, new ListLegalsDto());
+    expect(db.legalVer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ enfcDt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+      }),
+    );
+  });
+
   it('삭제되거나 없는 법규·버전은 하위 목록도 숨긴다', async () => {
     const { db, service } = setup();
     db.legal.findFirst.mockResolvedValue(null);
