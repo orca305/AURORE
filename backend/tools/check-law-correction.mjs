@@ -62,12 +62,14 @@ export async function checkCorrection(db, correction, lock = false) {
   if (current.already_seen) throw new Error("The proposed source was already seen and will not replace the current revision.");
 
   const { rows } = await db.query(
-    `SELECT c.src_key AS "caseSourceKey", cr.case_no AS "caseNumber", rel.ref_key AS reference,
+    `SELECT c.src_key AS "caseSourceKey", cr.case_no AS "caseNumber", cs.cont_hash AS "caseHash",
+       rel.ref_key AS reference,
        p.provi_type_cd || ':' || p.norm_no AS "unitKey"
      FROM legal_provi p
      JOIN legal_prec_provi rel ON rel.legal_provi_id=p.id AND NOT rel.del_yn AND rel.stat_cd='VERIFIED'
      JOIN legal_prec_rev cr ON cr.id=rel.legal_prec_rev_id AND cr.current_yn
      JOIN legal_prec c ON c.id=cr.legal_prec_id AND NOT c.del_yn
+     JOIN src_snapshot cs ON cs.id=cr.src_snapshot_id
      WHERE p.legal_ver_rev_id=$1 AND NOT p.del_yn AND p.prnt_provi_id IS NULL
        AND p.provi_type_cd='ARTICLE'
      ORDER BY cr.case_no, rel.ref_key, rel.id`, [current.id],
@@ -127,7 +129,8 @@ async function main() {
     await db.query(apply ? "BEGIN" : "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const result = apply ? await publishCorrection(db, correction, sample) : await checkCorrection(db, correction);
     await db.query("COMMIT");
-    console.log(JSON.stringify({ versionKey: correction.versionKey, effectiveDate: correction.effectiveDate, ...result }, null, 2));
+    const { versionKey, effectiveDate, beforeHash, afterHash } = correction;
+    console.log(JSON.stringify({ versionKey, effectiveDate, beforeHash, afterHash, ...result }, null, 2));
   } catch (error) {
     await db.query("ROLLBACK");
     throw error;

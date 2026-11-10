@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "판례 검색 | AURORE" };
 type SearchParams = Promise<{ q?: string | string[]; offset?: string | string[] }>;
 type Reference = {
   refKey: string;
-  statCd: "VERIFIED" | "UNVERIFIED";
+  statCd: "VERIFIED" | "UNVERIFIED" | "REVIEW_REQUIRED";
   evidenceDesc: string;
   target: { effectiveDate: string | null; sourceUrl: string | null } | null;
 };
@@ -57,9 +57,11 @@ function PrecedentCard({ row }: { row: Precedent }) {
             const verified = ref.statCd === "VERIFIED" && ref.target !== null;
             const source = verified ? officialUrl(ref.target?.sourceUrl ?? null) : null;
             const effectiveDate = verified ? ref.target?.effectiveDate : null;
+            const label = ref.statCd === "REVIEW_REQUIRED" ? "재검토 필요" :
+              verified ? "시행본 확인" : "시행본 미확인";
             return <div key={ref.refKey}>
               <dt className="text-sm font-semibold">
-                {ref.refKey} · {verified ? "시행본 확인" : "시행본 미확인"}
+                {ref.refKey} · {label}
               </dt>
               <dd className="mt-1 text-sm">
                 {effectiveDate && <span>{effectiveDate} 시행 · </span>}

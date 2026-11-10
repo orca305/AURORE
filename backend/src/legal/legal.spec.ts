@@ -33,6 +33,7 @@ function setup() {
       create: vi.fn().mockResolvedValue(record),
       findFirst: vi.fn().mockResolvedValue({ id: 1n }),
     },
+    legalPrecRev: { findMany: vi.fn().mockResolvedValue([]) },
     legalVer: {
       findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn().mockResolvedValue({ id: 2n }),
@@ -64,6 +65,36 @@ describe('법규 API 계약', () => {
       }),
     );
     expect(JSON.parse(JSON.stringify(result))[0].id).toBe('9007199254740993');
+  });
+
+  it('정정으로 보류된 조문은 별도 상태로 표시하고 이전 원문 링크를 숨긴다', async () => {
+    const { db, service } = setup();
+    const makeRef = (currentYn: boolean) => ({
+      refKey: currentYn ? '제1조' : '제2조',
+      statCd: 'VERIFIED',
+      evidenceDesc: '검토 기록',
+      provision: {
+        id: 1n,
+        revision: {
+          currentYn,
+          snapshot: { srcUrl: 'https://www.law.go.kr/' },
+          version: { verKey: 'v1', enfcDt: new Date('2026-01-02') },
+        },
+      },
+    });
+    db.legalPrecRev.findMany.mockResolvedValue([{
+      caseNo: '2026다100',
+      decisionDt: new Date('2026-01-03'),
+      snapshot: { srcUrl: 'https://www.law.go.kr/' },
+      provisionRefs: [makeRef(true), makeRef(false)],
+    }]);
+
+    const [result] = await service.precedents(new ListLegalsDto());
+    expect(result.references[0]).toMatchObject({
+      statCd: 'VERIFIED', target: { provisionId: '1', effectiveDate: '2026-01-02' },
+    });
+    expect(result.references[1]).toMatchObject({ statCd: 'REVIEW_REQUIRED', target: null });
+    expect(result.references[1].evidenceDesc).not.toBe('검토 기록');
   });
 
   it('출처별 중복 등록은 409로 응답한다', async () => {

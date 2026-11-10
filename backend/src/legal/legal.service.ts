@@ -65,7 +65,6 @@ export class LegalService {
                   proviTypeCd: 'ARTICLE',
                   prntProviId: null,
                   revision: {
-                    currentYn: true,
                     srcSnapshotId: { not: null },
                     version: { delYn: false, legal: { delYn: false } },
                   },
@@ -83,6 +82,7 @@ export class LegalService {
                 id: true,
                 revision: {
                   select: {
+                    currentYn: true,
                     snapshot: { select: { srcUrl: true } },
                     version: { select: { verKey: true, enfcDt: true } },
                   },
@@ -97,16 +97,26 @@ export class LegalService {
       ...row,
       decisionDate: decisionDt.toISOString().slice(0, 10),
       sourceUrl: snapshot.srcUrl,
-      references: provisionRefs.map(({ provision, ...ref }) => ({
-        ...ref,
-        target: provision && {
-          provisionId: provision.id.toString(),
-          versionKey: provision.revision.version.verKey,
-          effectiveDate:
-            provision.revision.version.enfcDt?.toISOString().slice(0, 10) ?? null,
-          sourceUrl: provision.revision.snapshot?.srcUrl ?? null,
-        },
-      })),
+      references: provisionRefs.map(({ provision, ...ref }) => {
+        if (provision && !provision.revision.currentYn) {
+          return {
+            refKey: ref.refKey,
+            statCd: 'REVIEW_REQUIRED',
+            evidenceDesc: '법령 원문이 정정되어 이 조문의 적용 근거를 다시 확인하고 있습니다.',
+            target: null,
+          };
+        }
+        return {
+          ...ref,
+          target: provision && {
+            provisionId: provision.id.toString(),
+            versionKey: provision.revision.version.verKey,
+            effectiveDate:
+              provision.revision.version.enfcDt?.toISOString().slice(0, 10) ?? null,
+            sourceUrl: provision.revision.snapshot?.srcUrl ?? null,
+          },
+        };
+      }),
     }));
   }
 
