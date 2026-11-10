@@ -40,6 +40,9 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
         : rows.length === 0 ? <p className="empty">{q ? "검색 결과가 없습니다. 다른 이름으로 검색해 보세요." : "아직 등록된 법규가 없습니다."}</p>
         : <ul className="legal-list">{rows.map(row => <li key={row.id}>
           <h3>{row.legalNm}</h3><p>출처 {row.srcCd} · {row.srcKey}</p>
+          <Link href={`/legals/${row.id}/versions`} className="mt-2 inline-block underline">
+            시행본 조회<span className="sr-only"> · {row.legalNm}</span>
+          </Link>
         </li>)}</ul>}
       {!unavailable && <nav aria-label="검색 결과 페이지" className="pagination">
         {offset > 0 && <a href={pageUrl(Math.max(0, offset - 20))}>← 이전</a>}

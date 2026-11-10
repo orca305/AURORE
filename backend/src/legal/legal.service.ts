@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -7,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../generated/prisma/client.js';
 import type { CreateLegalDto } from './dto/create-legal.dto.js';
 import type { ListLegalsDto } from './dto/list-legals.dto.js';
+import type { ListLegalVersionsDto } from './dto/list-legal-versions.dto.js';
 
 const publicSelect = {
   id: true,
@@ -167,7 +169,21 @@ export class LegalService {
     }
   }
 
-  async versions(id: bigint, query: ListLegalsDto) {
+  async findOne(id: bigint) {
+    const row = await this.prisma.legal.findFirst({
+      where: { id, delYn: false },
+      select: publicSelect,
+    });
+    if (!row) throw new NotFoundException('법규를 찾을 수 없습니다.');
+    return { ...row, id: row.id.toString() };
+  }
+
+  async versions(id: bigint, query: ListLegalVersionsDto) {
+    const asOf = query.asOf === undefined ? null : new Date(query.asOf);
+    if (asOf && (Number.isNaN(asOf.valueOf()) || asOf.toISOString().slice(0, 10) !== query.asOf ||
+      query.asOf?.startsWith('0000-'))) {
+      throw new BadRequestException('유효한 기준일을 YYYY-MM-DD 형식으로 입력해 주세요.');
+    }
     if (
       !(await this.prisma.legal.findFirst({
         where: { id, delYn: false },
@@ -177,8 +193,21 @@ export class LegalService {
       throw new NotFoundException('법규를 찾을 수 없습니다.');
     }
     const rows = await this.prisma.legalVer.findMany({
-      where: { legalId: id, delYn: false, legal: { delYn: false } },
-      select: { id: true, verKey: true, prmlDt: true, enfcDt: true },
+      where: {
+        legalId: id, delYn: false, legal: { delYn: false },
+        ...(asOf && {
+          enfcDt: { lte: asOf },
+          revisions: { some: { currentYn: true, srcSnapshotId: { not: null } } },
+        }),
+      },
+      select: {
+        id: true, verKey: true, prmlDt: true, enfcDt: true,
+        revisions: {
+          where: { currentYn: true },
+          select: { snapshot: { select: { srcUrl: true } } },
+          take: 1,
+        },
+      },
       orderBy: [
         { enfcDt: { sort: 'desc', nulls: 'last' } },
         { id: 'desc' },
@@ -186,7 +215,9 @@ export class LegalService {
       take: query.limit,
       skip: query.offset,
     });
-    return rows.map((row) => ({ ...row, id: row.id.toString() }));
+    return rows.map(({ revisions, ...row }) => ({
+      ...row, id: row.id.toString(), sourceUrl: revisions[0]?.snapshot?.srcUrl ?? null,
+    }));
   }
 
   private async requireVersion(id: bigint, versionId: bigint) {

@@ -129,6 +129,24 @@ describe('법규 API 계약', () => {
     );
   });
 
+  it('기준일과 같거나 먼저 시행된 원문 있는 판본을 조회한다', async () => {
+    const { db, service } = setup();
+    db.legalVer.findMany.mockResolvedValue([{
+      id: 2n,
+      revisions: [{ snapshot: { srcUrl: 'https://www.law.go.kr/' } }],
+    }]);
+    const rows = await service.versions(1n, { ...new ListLegalsDto(), asOf: '2023-07-11' });
+    expect(db.legalVer.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        enfcDt: { lte: new Date('2023-07-11') },
+        revisions: { some: { currentYn: true, srcSnapshotId: { not: null } } },
+      }),
+    }));
+    expect(rows).toEqual([{ id: '2', sourceUrl: 'https://www.law.go.kr/' }]);
+    await expect(service.versions(1n, { ...new ListLegalsDto(), asOf: '2023-02-30' }))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('삭제되거나 없는 법규·버전은 하위 목록도 숨긴다', async () => {
     const { db, service } = setup();
     db.legal.findFirst.mockResolvedValue(null);

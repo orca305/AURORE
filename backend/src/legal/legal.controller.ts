@@ -11,6 +11,7 @@ import {
 import { LegalService } from './legal.service.js';
 import { CreateLegalDto } from './dto/create-legal.dto.js';
 import { ListLegalsDto } from './dto/list-legals.dto.js';
+import { ListLegalVersionsDto } from './dto/list-legal-versions.dto.js';
 import { IngestGuard } from './ingest.guard.js';
 
 function parseId(value: string): bigint {
@@ -40,8 +41,13 @@ export class LegalController {
     return this.legal.precedents(query);
   }
 
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.legal.findOne(parseId(id));
+  }
+
   @Get(':id/versions')
-  versions(@Param('id') id: string, @Query() query: ListLegalsDto) {
+  versions(@Param('id') id: string, @Query() query: ListLegalVersionsDto) {
     return this.legal.versions(parseId(id), query);
   }
 
