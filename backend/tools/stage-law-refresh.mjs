@@ -23,9 +23,10 @@ async function main() {
   const plan = run("./plan-law-refresh.mjs", [date]);
   const preview = run("./preview-law-refresh.mjs", [], JSON.stringify(plan));
   const prepared = run("./prepare-law-refresh.mjs", [outputParent], JSON.stringify(preview));
+  const { corrections } = run("./review-law-corrections.mjs", [outputParent], JSON.stringify(preview));
   console.log(JSON.stringify({
     date: plan.date, changes: plan.changes, watchedLaws: plan.watchedLaws,
-    candidates: preview.results, prepared,
+    candidates: preview.results, prepared, corrections,
   }, null, 2));
 }
 
