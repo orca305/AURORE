@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SiteHeader } from "../../../_components/site-header";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { officialUrl } from "./official-source";
@@ -96,12 +97,9 @@ export default async function LegalVersionsPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: SearchParams;
 }) {
   const { id } = await params;
-  return <div className="shell">
-    <header className="site-header">
-      <Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link>
-      <Link href="/legals" className="header-note">법규 검색</Link>
-    </header>
-    <main>
+  return <div>
+    <SiteHeader active="legals" />
+    <main className="shell">
       <Suspense fallback={<p role="status" className="empty">시행본을 불러오는 중입니다.</p>}>
         <VersionResults id={id} searchParams={searchParams} />
       </Suspense>

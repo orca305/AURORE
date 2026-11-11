@@ -54,6 +54,8 @@ export class LegalService {
   }
 
   async precedents(query: ListLegalsDto) {
+    const keyword = query.q?.trim() ?? '';
+    const contains = keyword.replace(/[\\%_]/g, '\\$&');
     const visibleArticle = {
       delYn: false,
       proviTypeCd: 'ARTICLE',
@@ -67,7 +69,15 @@ export class LegalService {
       where: {
         currentYn: true,
         precedent: { delYn: false },
-        ...(query.q?.trim() ? { caseNo: query.q.trim() } : {}),
+        ...(keyword ? {
+          OR: [
+            { caseNo: keyword },
+            { caseNm: { contains, mode: 'insensitive' as const } },
+            { issueCont: { contains, mode: 'insensitive' as const } },
+            { summaryCont: { contains, mode: 'insensitive' as const } },
+            { decisionCont: { contains, mode: 'insensitive' as const } },
+          ],
+        } : {}),
       },
       orderBy: [{ decisionDt: 'desc' }, { id: 'desc' }],
       take: query.limit,
@@ -75,6 +85,9 @@ export class LegalService {
       select: {
         caseNo: true,
         caseNm: true,
+        issueCont: true,
+        summaryCont: true,
+        decisionCont: true,
         courtNm: true,
         decisionDt: true,
         snapshot: { select: { srcUrl: true, contHash: true } },
@@ -121,7 +134,21 @@ export class LegalService {
         },
       },
     });
-    return rows.map(({ snapshot, decisionDt, provisionRefs, precedent, ...row }) => {
+    return rows.map(({
+      snapshot, decisionDt, provisionRefs, precedent,
+      issueCont, summaryCont, decisionCont, ...row
+    }) => {
+      const content = [issueCont, summaryCont, decisionCont];
+      const matched = keyword && content.find(text =>
+        text?.toLowerCase().includes(keyword.toLowerCase()));
+      const text = (matched || summaryCont || issueCont || decisionCont || '')
+        .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      const matchIndex = keyword ? text.toLowerCase().indexOf(keyword.toLowerCase()) : 0;
+      const excerptStart = Math.max(0, matchIndex - 40);
+      const excerptEnd = excerptStart + 200;
+      const excerpt = (excerptStart ? '…' : '') +
+        text.slice(excerptStart, excerptEnd) + (text.length > excerptEnd ? '…' : '');
+
       const references = provisionRefs.map(({ provision, ...ref }) => {
         if (provision && !provision.revision.currentYn) {
           return {
@@ -161,6 +188,7 @@ export class LegalService {
         sourceUrl: snapshot.srcUrl,
         sourceHash: snapshot.contHash,
         sourceKey: precedent.srcKey,
+        excerpt,
         references,
       };
     });

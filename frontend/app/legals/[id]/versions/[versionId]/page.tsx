@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SiteHeader } from "../../../../_components/site-header";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { officialUrl } from "../official-source";
@@ -74,7 +75,7 @@ async function ProvisionResults({ id, versionId, searchParams }: {
         : <ul className="legal-list">
           {result.rows.slice(0, pageSize).map(row => <li key={row.id}>
             <h3>{row.dispNo}{row.proviNm && ` · ${row.proviNm}`}</h3>
-            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{row.proviCont}</pre>
+            <pre className="provision-text">{row.proviCont}</pre>
           </li>)}
         </ul>}
       {result.status === "ok" && (offset > 0 || result.rows.length > pageSize) &&
@@ -91,12 +92,9 @@ export default async function ProvisionsPage({ params, searchParams }: {
   params: Promise<{ id: string; versionId: string }>; searchParams: SearchParams;
 }) {
   const { id, versionId } = await params;
-  return <div className="shell">
-    <header className="site-header">
-      <Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link>
-      <Link href="/legals" className="header-note">법규 검색</Link>
-    </header>
-    <main>
+  return <div>
+    <SiteHeader active="legals" />
+    <main className="shell">
       <Suspense fallback={<p role="status" className="empty">조문을 불러오는 중입니다.</p>}>
         <ProvisionResults id={id} versionId={versionId} searchParams={searchParams} />
       </Suspense>

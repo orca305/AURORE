@@ -1,0 +1,31 @@
+.page { min-height: 100svh; background: var(--background); color: #233836; }
+.main { padding: 24px 24px 32px; }
+.panel { width: min(100%, 380px); margin: auto; padding: 30px; border-top: 2px solid #285e53; border-bottom: 1px solid #d6ded7; background: #fff; }
+.panel h1 { margin: 0 0 28px; font: 500 29px/1.65 "Noto Serif KR", Georgia, serif; letter-spacing: -.05em; }
+.form { display: grid; gap: 18px; }
+.form label { display: grid; gap: 8px; font-size: 12px; font-weight: 500; }
+.form small { color: #6b7a77; font-size: 11px; font-weight: 400; }
+.form input { width: 100%; min-width: 0; min-height: 44px; padding: 9px 11px; border: 1px solid #d6ded7; background: #fff; color: #233836; font-size: 16px; }
+.form input:focus-visible { outline: 2px solid #285e53; outline-offset: 3px; }
+.form button { min-height: 44px; margin-top: 5px; border: 1px solid #285e53; color: #fff; background: #285e53; cursor: pointer; font-size: 13px; }
+.form button:hover:not(:disabled) { background: #1d4c42; }
+.form button:disabled { opacity: .6; cursor: wait; }
+.error { color: #982b2b; font-size: 13px; line-height: 1.8; }
+.notice { padding: 11px; margin: 0 0 20px; border-left: 2px solid #91aa99; background: #f0f4ee; font-size: 13px; }
+.footer { margin-top: 22px; color: #6b7a77; font-size: 12px; line-height: 1.9; }
+.footer a { color: #285e53; text-decoration: underline; text-underline-offset: 3px; }
+.profile { display: grid; gap: 10px; margin-bottom: 24px; }
+.profile div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #d6ded7; font-size: 13px; }
+.profile dt { color: #6b7a77; }
+.profile dd { overflow-wrap: anywhere; font-weight: 500; text-align: right; }
+@media (max-width: 650px) {
+  .main { padding: 64px 16px 24px; }
+  .panel { padding: 25px 20px; }
+  .panel h1 { font-size: 26px; }
+}
+
+.section { margin-top: 32px; padding-top: 24px; border-top: 1px solid #d6ded7; }
+.section h2 { margin: 0 0 20px; font: 500 19px/1.6 "Noto Serif KR", Georgia, serif; }
+.help { margin: 0; color: #6b7a77; font-size: 12px; line-height: 1.8; }
+.form .secondary { background: #fff; color: #285e53; }
+.form .secondary:hover:not(:disabled) { background: #f0f4ee; }

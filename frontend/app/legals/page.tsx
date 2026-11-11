@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { SiteHeader } from "../_components/site-header";
 
 type Legal = { id: string; srcCd: string; srcKey: string; legalNm: string };
 type Search = Promise<{ q?: string | string[]; offset?: string | string[] }>;
@@ -35,7 +36,7 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
       </div>
     </form>
     <section aria-labelledby="results-title" className="results">
-      <div className="section-heading"><h2 id="results-title">{q ? `“${q}” 검색 결과` : "등록된 법규"}</h2><span>원문을 향한 첫걸음</span></div>
+      <div className="section-heading"><h2 id="results-title">{q ? `“${q}” 검색 결과` : "등록된 법규"}</h2></div>
       {unavailable ? <p role="status" className="empty">법규 목록을 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.</p>
         : rows.length === 0 ? <p className="empty">{q ? "검색 결과가 없습니다. 다른 이름으로 검색해 보세요." : "아직 등록된 법규가 없습니다."}</p>
         : <ul className="legal-list">{rows.map(row => <li key={row.id}>
@@ -53,18 +54,12 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
 }
 
 export default function LegalSearchPage({ searchParams }: { searchParams: Search }) {
-  return <div className="shell">
-    <header className="site-header">
-      <Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link>
-      <nav aria-label="검색 메뉴" className="header-note flex gap-4">
-        <span aria-current="page">법규 검색</span>
-        <Link href="/precedents" className="underline">판례 검색</Link>
-      </nav>
-    </header>
-    <main>
+  return <div>
+    <SiteHeader active="legals" />
+    <main className="shell">
       <section className="intro"><h1>법규 검색</h1><p>법규 이름으로 저장된 시행본과 조문을 찾아볼 수 있습니다.</p></section>
       <Suspense fallback={<p role="status" className="empty">법규 목록을 불러오는 중입니다.</p>}><LegalResults searchParams={searchParams} /></Suspense>
     </main>
-    <footer>AURORE · 법규 원문을 바탕으로 한 이해</footer>
+    <footer className="shell">AURORE · 법규 원문을 바탕으로 한 이해</footer>
   </div>;
 }

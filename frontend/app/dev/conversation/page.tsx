@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SiteHeader } from "../../_components/site-header";
 import { notFound } from "next/navigation";
 import { isAbsolute } from "node:path";
 import { answerDemoConversation } from "../../../../backend/tools/demo-conversation.mjs";
@@ -24,17 +24,10 @@ async function ask(question: string, phase: string): Promise<Reply> {
 export default function ConversationPage() {
   if (process.env.NODE_ENV !== "development") notFound();
 
-  return <div className="shell">
-    <header className="site-header">
-      <Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link>
-      <span className="header-note">개발용 대화</span>
-    </header>
-    <main className="mx-auto max-w-3xl pb-16">
-      <section className="intro">
-        <h1>무슨 일이 있었나요?</h1>
-        <p>상황을 이야기하면 필요한 내용을 되묻고, 확인한 조문을 답변에 붙입니다.</p>
-        <p className="mt-2 text-sm">임대차 보증금 예제만 검증 중입니다. 실제 개인정보는 입력하지 마세요.</p>
-      </section>
+  return <div>
+    <SiteHeader active="conversation" />
+    <main className="shell pb-10">
+      <p className="dev-note">개발용 대화 · 임대차 보증금 예제만 검증 중입니다. 실제 개인정보는 입력하지 마세요.</p>
       <Conversation ask={ask} />
     </main>
   </div>;

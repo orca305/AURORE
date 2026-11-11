@@ -1,5 +1,6 @@
 "use server";
 
+import { currentMember } from "../_auth/session";
 import { isAbsolute } from "node:path";
 import { answerDemoConversation } from "../../../backend/tools/demo-conversation.mjs";
 import { loadEvidence } from "../../../backend/tools/law-evidence.mjs";
@@ -40,6 +41,7 @@ async function linkedCitation(source: Citation): Promise<Reply["source"] | undef
 
 export async function askConversation(question: string, phase: string): Promise<Reply> {
   try {
+    await currentMember(true);
     const result = await answerDemoConversation(question, phase, async () => {
       const directory = process.env.AURORE_LAW_SNAPSHOT_DIR;
       if (!directory || !isAbsolute(directory)) throw new Error("Snapshot directory is unavailable");

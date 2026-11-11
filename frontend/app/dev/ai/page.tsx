@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SiteHeader } from "../../_components/site-header";
 import { notFound } from "next/navigation";
 import { isAbsolute } from "node:path";
 import { buildDemoAnswer } from "../../../../backend/tools/law-answer-demo.mjs";
@@ -8,14 +8,16 @@ import { TestQuestionForm, type Result } from "./test-question-form";
 export default function LocalAiTestPage() {
   if (process.env.NODE_ENV !== "development") notFound();
 
-  return <main className="shell">
-    <header className="site-header"><Link href="/" className="brand">AURORE</Link><span className="header-note">개발용</span></header>
+  return <div>
+    <SiteHeader />
+    <main className="shell">
     <section className="intro">
       <h1>법령 답변 검증</h1>
       <p>저장된 원문으로 답변과 출처 표시를 시험합니다. 개인정보 없이 테스트 질문을 입력하세요.</p>
     </section>
     <TestQuestionForm ask={askTestQuestion} />
-  </main>;
+    </main>
+  </div>;
 }
 
 async function askTestQuestion(_previous: Result, form: FormData): Promise<Result> {

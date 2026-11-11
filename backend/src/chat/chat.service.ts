@@ -1,0 +1,721 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
+import { AuthService, type ChatOwner } from '../auth/auth.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { Prisma } from '../generated/prisma/client.js';
+import {
+  ChatAnswerService,
+  type PreparedAnswer,
+  type PreparedCitation,
+} from './answer.service.js';
+
+const unfinished = ['QUEUED', 'RUNNING', 'RETRY_WAIT'];
+const nowAtSecond = () => new Date(Math.floor(Date.now() / 1000) * 1000);
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function visibleRoom(owner: ChatOwner): Prisma.ChatSessWhereInput {
+  return {
+    userId: owner.userId,
+    guestSessId: owner.guestSessId,
+    delYn: false,
+    OR: [{ exprDttm: null }, { exprDttm: { gt: new Date() } }],
+  };
+}
+
+@Injectable()
+export class ChatService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(ChatService.name);
+  private timer?: ReturnType<typeof setInterval>;
+  private working = false;
+  private stopping = false;
+  private workTask?: Promise<void>;
+  private nextExpirySweep = 0;
+
+  constructor(
+    private readonly db: PrismaService,
+    private readonly auth: AuthService,
+    private readonly answers: ChatAnswerService,
+  ) {}
+
+  onModuleInit() {
+    // ponytail: one worker per local server; coordinate GPU capacity before adding server instances.
+    this.timer = setInterval(() => this.kick(), 1000);
+    this.timer.unref();
+  }
+
+  async onModuleDestroy() {
+    this.stopping = true;
+    if (this.timer) clearInterval(this.timer);
+    await this.workTask?.catch(() => {});
+  }
+
+  private kick() {
+    if (this.stopping || this.workTask) return;
+    const task = this.drain();
+    this.workTask = task;
+    void task
+      .catch(() => {})
+      .finally(() => {
+        if (this.workTask === task) this.workTask = undefined;
+      });
+  }
+
+  async list(owner: ChatOwner, cursor?: string) {
+    let boundary: Prisma.ChatSessWhereInput = {};
+    if (cursor) {
+      try {
+        const parsed: unknown = JSON.parse(
+          Buffer.from(cursor, 'base64url').toString('utf8'),
+        );
+        if (
+          !Array.isArray(parsed) ||
+          parsed.length !== 2 ||
+          typeof parsed[0] !== 'string' ||
+          typeof parsed[1] !== 'string' ||
+          !uuidPattern.test(parsed[1])
+        )
+          throw new Error();
+        const date = new Date(parsed[0]);
+        if (
+          !Number.isFinite(date.getTime()) ||
+          date.toISOString() !== parsed[0]
+        )
+          throw new Error();
+        boundary = {
+          OR: [
+            { uptDttm: { lt: date } },
+            { uptDttm: date, id: { lt: parsed[1] } },
+          ],
+        };
+      } catch {
+        throw new BadRequestException('목록 위치를 확인해 주세요.');
+      }
+    }
+    const rows = await this.db.chatSess.findMany({
+      where: { AND: [visibleRoom(owner), boundary] },
+      select: {
+        id: true,
+        sessNm: true,
+        uptDttm: true,
+        exprDttm: true,
+        revNo: true,
+      },
+      orderBy: [{ uptDttm: 'desc' }, { id: 'desc' }],
+      take: 21,
+    });
+    const page = rows.slice(0, 20);
+    const last = page.at(-1);
+    return {
+      items: page.map((row) => ({
+        id: row.id,
+        title: row.sessNm,
+        revision: row.revNo,
+        updatedAt: row.uptDttm.toISOString(),
+        expiresAt: row.exprDttm?.toISOString() ?? null,
+      })),
+      nextCursor:
+        rows.length > 20 && last
+          ? Buffer.from(
+              JSON.stringify([last.uptDttm.toISOString(), last.id]),
+            ).toString('base64url')
+          : null,
+    };
+  }
+
+  async read(id: string, owner: ChatOwner, beforeSeq?: number) {
+    const room = await this.db.chatSess.findFirst({
+      where: { id, ...visibleRoom(owner) },
+      select: {
+        id: true,
+        sessNm: true,
+        phaseCd: true,
+        revNo: true,
+        exprDttm: true,
+        messages: {
+          where: {
+            delYn: false,
+            ...(beforeSeq ? { msgSeq: { lt: beforeSeq } } : {}),
+          },
+          orderBy: { msgSeq: 'desc' },
+          take: 101,
+          select: {
+            id: true,
+            msgSeq: true,
+            roleCd: true,
+            msgCont: true,
+            citations: {
+              select: {
+                citeCont: true,
+                label: true,
+                srcUrl: true,
+                viewHref: true,
+                srcSnapshotId: true,
+                legalVerId: true,
+                legalPrecId: true,
+              },
+            },
+          },
+        },
+        jobs: {
+          orderBy: { rgstDttm: 'desc' },
+          take: 1,
+          select: { id: true, statCd: true },
+        },
+      },
+    });
+    if (!room) throw new NotFoundException('대화를 찾을 수 없습니다.');
+    const rows = room.messages.slice(0, 100).reverse();
+    const messages = await Promise.all(
+      rows.map(async (message) => {
+        const citation = message.citations[0];
+        const current = citation
+          ? await this.citationIsCurrent(citation)
+          : false;
+        return {
+          id: message.id,
+          sequence: message.msgSeq,
+          role:
+            message.roleCd === 'USER'
+              ? ('user' as const)
+              : ('assistant' as const),
+          text: message.msgCont,
+          ...(citation
+            ? {
+                source: {
+                  quote: citation.citeCont,
+                  label: citation.label,
+                  url: citation.srcUrl,
+                  ...(current
+                    ? { href: citation.viewHref }
+                    : {
+                        warning:
+                          '원문 상태가 변경되어 당시 저장한 인용을 표시합니다.',
+                      }),
+                },
+              }
+            : {}),
+        };
+      }),
+    );
+    return {
+      id: room.id,
+      title: room.sessNm,
+      phase: room.phaseCd,
+      revision: room.revNo,
+      expiresAt: room.exprDttm?.toISOString() ?? null,
+      messages,
+      nextBeforeSeq: room.messages.length > 100 ? rows[0].msgSeq : null,
+      job: room.jobs[0]
+        ? { id: room.jobs[0].id, status: room.jobs[0].statCd }
+        : null,
+    };
+  }
+
+  private async citationIsCurrent(
+    citation: {
+      srcSnapshotId: bigint;
+      legalVerId: bigint | null;
+      legalPrecId: bigint | null;
+    },
+    database: Prisma.TransactionClient = this.db,
+  ) {
+    if (citation.legalVerId !== null) {
+      return Boolean(
+        await database.legalVerRev.findFirst({
+          where: {
+            legalVerId: citation.legalVerId,
+            srcSnapshotId: citation.srcSnapshotId,
+            currentYn: true,
+            version: { delYn: false, legal: { delYn: false } },
+          },
+          select: { id: true },
+        }),
+      );
+    }
+    return Boolean(
+      await database.legalPrecRev.findFirst({
+        where: {
+          legalPrecId: citation.legalPrecId ?? -1n,
+          srcSnapshotId: citation.srcSnapshotId,
+          currentYn: true,
+          precedent: { delYn: false },
+        },
+        select: { id: true },
+      }),
+    );
+  }
+
+  private async lockedRoom(
+    tx: Prisma.TransactionClient,
+    id: string,
+    owner: ChatOwner,
+  ) {
+    await tx.$queryRaw`SELECT id FROM chat_sess WHERE id = ${id}::uuid FOR UPDATE`;
+    const room = await tx.chatSess.findFirst({
+      where: { id, ...visibleRoom(owner) },
+    });
+    if (!room) throw new NotFoundException('대화를 찾을 수 없습니다.');
+    return room;
+  }
+
+  async submit(
+    id: string,
+    owner: ChatOwner,
+    requestId: string,
+    question: string,
+    revision: number,
+  ) {
+    const text = question.trim();
+    if (
+      !text ||
+      Array.from(text).length > 1000 ||
+      /\p{Surrogate}/u.test(text)
+    ) {
+      throw new BadRequestException('질문을 1~1,000자로 입력해 주세요.');
+    }
+    const hash = createHash('sha256').update(text).digest('hex');
+    await this.db.$transaction(async (tx) => {
+      const ownerKey =
+        owner.userId !== null
+          ? 'chat-user:' + owner.userId
+          : 'chat-guest:' + owner.guestSessId;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ownerKey}, 0))`;
+      const title = Array.from(text.replace(/\s+/g, ' ')).slice(0, 80).join('');
+      await tx.$executeRaw`
+        INSERT INTO chat_sess (id, user_id, guest_sess_id, sess_nm, rgst_dttm, upt_dttm, expr_dttm)
+        VALUES (${id}::uuid, ${owner.userId}, ${owner.guestSessId}::uuid, ${title},
+          date_trunc('second', now()), date_trunc('second', now()),
+          CASE WHEN ${owner.guestSessId}::uuid IS NULL THEN NULL
+          ELSE ((date_trunc('second', now()) AT TIME ZONE 'Asia/Seoul') + interval '1 month') AT TIME ZONE 'Asia/Seoul' END)
+        ON CONFLICT (id) DO NOTHING
+      `;
+      const room = await this.lockedRoom(tx, id, owner);
+      if (
+        !(await this.auth.ownerIsActive(
+          owner.userId,
+          owner.guestSessId,
+          owner.authHash,
+          tx,
+        ))
+      ) {
+        throw new NotFoundException('대화를 찾을 수 없습니다.');
+      }
+      const existing = await tx.aiJob.findUnique({ where: { id: requestId } });
+      if (existing) {
+        if (
+          existing.chatSessId !== id &&
+          !(await tx.chatSess.findFirst({
+            where: { id: existing.chatSessId, ...visibleRoom(owner) },
+            select: { id: true },
+          }))
+        ) {
+          throw new NotFoundException('작업을 찾을 수 없습니다.');
+        }
+        if (existing.chatSessId !== id || existing.requestHash !== hash) {
+          throw new ConflictException(
+            '같은 요청 식별자로 다른 질문을 보낼 수 없습니다.',
+          );
+        }
+        return;
+      }
+      if (room.revNo !== revision)
+        throw new ConflictException(
+          '다른 화면에서 대화가 변경됐습니다. 최신 내용을 확인해 주세요.',
+        );
+      if (
+        (await tx.aiJob.count({
+          where: { statCd: { in: unfinished }, chat: visibleRoom(owner) },
+        })) >= 2
+      ) {
+        throw new ConflictException(
+          '진행 중인 답변을 기다린 뒤 다시 질문해 주세요.',
+        );
+      }
+      if (
+        await tx.aiJob.count({
+          where: { chatSessId: id, statCd: { in: unfinished } },
+        })
+      ) {
+        throw new ConflictException('이 대화의 답변을 기다려 주세요.');
+      }
+      const message = await tx.chatMsg.create({
+        data: {
+          chatSessId: id,
+          msgSeq: room.nextMsgSeq,
+          roleCd: 'USER',
+          msgCont: text,
+        },
+      });
+      await tx.aiJob.create({
+        data: {
+          id: requestId,
+          chatSessId: id,
+          inputMsgId: message.id,
+          requestHash: hash,
+          ownerAuthHash: owner.authHash,
+          phaseCd: room.phaseCd,
+          nextRunDttm: nowAtSecond(),
+          rgstDttm: nowAtSecond(),
+          deadlineDttm: new Date(nowAtSecond().getTime() + 300_000),
+        },
+      });
+      await tx.chatSess.update({
+        where: { id },
+        data: { revNo: { increment: 1 }, nextMsgSeq: { increment: 1 } },
+      });
+    });
+    this.kick();
+    return {
+      ...(await this.read(id, owner)),
+      jobId: requestId,
+      authExpiresAt: owner.expiresAt?.toISOString() ?? null,
+    };
+  }
+
+  async remove(id: string, owner: ChatOwner, revision: number) {
+    await this.db.$transaction(async (tx) => {
+      const room = await this.lockedRoom(tx, id, owner);
+      if (room.revNo !== revision)
+        throw new ConflictException(
+          '대화가 변경됐습니다. 최신 내용을 확인해 주세요.',
+        );
+      await this.archive(tx, [id], owner.userId);
+    });
+  }
+
+  private async archive(
+    tx: Prisma.TransactionClient,
+    ids: string[],
+    actor: bigint | null,
+  ) {
+    const deletion = { delYn: true, delDttm: nowAtSecond(), delId: actor };
+    await tx.chatSess.updateMany({
+      where: { id: { in: ids }, delYn: false },
+      data: { ...deletion, revNo: { increment: 1 } },
+    });
+    await tx.chatMsg.updateMany({
+      where: { chatSessId: { in: ids }, delYn: false },
+      data: deletion,
+    });
+    await tx.aiJob.updateMany({
+      where: { chatSessId: { in: ids }, statCd: { in: unfinished } },
+      data: { statCd: 'CANCELLED', leaseToken: null, leaseDttm: null },
+    });
+  }
+
+  async expire() {
+    await this.db.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM chat_sess WHERE guest_sess_id IS NOT NULL
+          AND NOT del_yn AND expr_dttm <= clock_timestamp()
+        ORDER BY expr_dttm, id FOR UPDATE SKIP LOCKED LIMIT 100
+      `;
+      if (rows.length)
+        await this.archive(
+          tx,
+          rows.map((row) => row.id),
+          null,
+        );
+    });
+  }
+
+  async job(id: string, owner: ChatOwner) {
+    const job = await this.db.aiJob.findFirst({
+      where: { id, chat: visibleRoom(owner) },
+      select: {
+        id: true,
+        statCd: true,
+        chatSessId: true,
+        input: { select: { msgSeq: true } },
+      },
+    });
+    if (!job) throw new NotFoundException('작업을 찾을 수 없습니다.');
+    return job;
+  }
+
+  async retry(id: string, owner: ChatOwner) {
+    const job = await this.job(id, owner);
+    await this.db.$transaction(async (tx) => {
+      const ownerKey =
+        owner.userId !== null
+          ? 'chat-user:' + owner.userId
+          : 'chat-guest:' + owner.guestSessId;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ownerKey}, 0))`;
+      const room = await this.lockedRoom(tx, job.chatSessId, owner);
+      if (
+        (await tx.aiJob.count({
+          where: { statCd: { in: unfinished }, chat: visibleRoom(owner) },
+        })) >= 2
+      ) {
+        throw new ConflictException('진행 중인 답변을 기다려 주세요.');
+      }
+      if (room.nextMsgSeq !== job.input.msgSeq + 1)
+        throw new ConflictException(
+          '이후에 나눈 대화가 있어 이전 질문을 다시 실행할 수 없습니다.',
+        );
+      const changed = await tx.aiJob.updateMany({
+        where: { id, statCd: { in: ['FAILED', 'CANCELLED'] } },
+        data: {
+          statCd: 'QUEUED',
+          attemptNo: 0,
+          deadlineDttm: new Date(nowAtSecond().getTime() + 300_000),
+          errorCd: null,
+          nextRunDttm: nowAtSecond(),
+          ownerAuthHash: owner.authHash,
+        },
+      });
+      if (!changed.count)
+        throw new ConflictException('다시 시도할 수 없는 작업입니다.');
+    });
+    this.kick();
+    return this.read(job.chatSessId, owner);
+  }
+
+  async cancel(id: string, owner: ChatOwner) {
+    const job = await this.job(id, owner);
+    await this.db.$transaction(async (tx) => {
+      await this.lockedRoom(tx, job.chatSessId, owner);
+      await tx.aiJob.updateMany({
+        where: { id, statCd: { in: unfinished } },
+        data: { statCd: 'CANCELLED', leaseToken: null, leaseDttm: null },
+      });
+    });
+    return this.read(job.chatSessId, owner);
+  }
+
+  private async claim() {
+    const now = nowAtSecond();
+    const job = await this.db.aiJob.findFirst({
+      where: {
+        OR: [
+          {
+            statCd: { in: ['QUEUED', 'RETRY_WAIT'] },
+            nextRunDttm: { lte: now },
+          },
+          { statCd: 'RUNNING', leaseDttm: { lte: now } },
+        ],
+      },
+      orderBy: [{ rgstDttm: 'asc' }, { id: 'asc' }],
+      include: { chat: true, input: { select: { msgCont: true } } },
+    });
+    if (!job) return null;
+    const ownership = {
+      id: job.id,
+      statCd: job.statCd,
+      leaseToken: job.leaseToken,
+      attemptNo: job.attemptNo,
+      deadlineDttm: job.deadlineDttm,
+      ownerAuthHash: job.ownerAuthHash,
+    };
+    if (job.attemptNo >= 3 || job.deadlineDttm <= now) {
+      await this.db.aiJob.updateMany({
+        where: ownership,
+        data: {
+          statCd: 'FAILED',
+          errorCd: 'ATTEMPTS_EXHAUSTED',
+          leaseToken: null,
+          leaseDttm: null,
+        },
+      });
+      return null;
+    }
+    const leaseToken = randomUUID();
+    const changed = await this.db.aiJob.updateMany({
+      where: ownership,
+      data: {
+        statCd: 'RUNNING',
+        leaseToken,
+        leaseDttm: new Date(
+          Math.min(now.getTime() + 90_000, job.deadlineDttm.getTime()),
+        ),
+        attemptNo: { increment: 1 },
+      },
+    });
+    return changed.count
+      ? { ...job, leaseToken, attemptNo: job.attemptNo + 1 }
+      : null;
+  }
+
+  private currentLease(id: string, leaseToken: string): Prisma.AiJobWhereInput {
+    return { id, statCd: 'RUNNING', leaseToken, leaseDttm: { gt: new Date() } };
+  }
+
+  async drain() {
+    if (this.working) return;
+    this.working = true;
+    try {
+      if (Date.now() >= this.nextExpirySweep) {
+        this.nextExpirySweep = Date.now() + 60_000;
+        await this.expire();
+      }
+      let job = await this.claim();
+      while (job) {
+        const { id, leaseToken } = job;
+        const deadlineAt = job.deadlineDttm.getTime();
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        const heartbeat = setInterval(() => {
+          void this.db.aiJob
+            .updateMany({
+              where: this.currentLease(id, leaseToken),
+              data: {
+                leaseDttm: new Date(
+                  Math.min(nowAtSecond().getTime() + 90_000, deadlineAt),
+                ),
+              },
+            })
+            .catch(() => {});
+        }, 20_000);
+        heartbeat.unref();
+        try {
+          const room = job.chat;
+          if (
+            room.delYn ||
+            (room.exprDttm && room.exprDttm <= new Date()) ||
+            !(await this.auth.ownerIsActive(
+              room.userId,
+              room.guestSessId,
+              job.ownerAuthHash,
+            ))
+          ) {
+            await this.db.aiJob.updateMany({
+              where: this.currentLease(id, leaseToken),
+              data: { statCd: 'CANCELLED', leaseToken: null, leaseDttm: null },
+            });
+          } else {
+            const answer = await Promise.race([
+              this.answers.generate(job.input.msgCont, job.phaseCd),
+              new Promise<never>((_, reject) => {
+                deadline = setTimeout(
+                  () => reject(new Error('GenerationTimeout')),
+                  Math.max(1, Math.min(180_000, deadlineAt - Date.now())),
+                );
+                deadline.unref();
+              }),
+            ]);
+            await this.complete(job.chatSessId, id, leaseToken, answer);
+          }
+        } catch (error) {
+          const errorCd =
+            error instanceof Prisma.PrismaClientKnownRequestError
+              ? error.code
+              : error instanceof Error
+                ? error.name
+                : 'UnknownError';
+          this.logger.warn({ jobId: id, errorCd });
+          await this.db.aiJob.updateMany({
+            where: this.currentLease(id, leaseToken),
+            data: {
+              statCd: job.attemptNo >= 3 ? 'FAILED' : 'RETRY_WAIT',
+              errorCd: 'GENERATION_FAILED',
+              leaseToken: null,
+              leaseDttm: null,
+              nextRunDttm: new Date(nowAtSecond().getTime() + 1000),
+            },
+          });
+        } finally {
+          clearInterval(heartbeat);
+          if (deadline) clearTimeout(deadline);
+        }
+        job = this.stopping ? null : await this.claim();
+      }
+    } finally {
+      this.working = false;
+    }
+  }
+
+  private async complete(
+    roomId: string,
+    jobId: string,
+    leaseToken: string,
+    answer: PreparedAnswer,
+  ) {
+    await this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM chat_sess WHERE id = ${roomId}::uuid FOR UPDATE`;
+      const job = await tx.aiJob.findFirst({
+        where: this.currentLease(jobId, leaseToken),
+        include: { chat: true },
+      });
+      if (!job) return;
+      const room = job.chat;
+      if (job.deadlineDttm <= new Date()) {
+        await tx.aiJob.updateMany({
+          where: this.currentLease(jobId, leaseToken),
+          data: {
+            statCd: 'FAILED',
+            errorCd: 'TOTAL_TIMEOUT',
+            leaseToken: null,
+            leaseDttm: null,
+          },
+        });
+        return;
+      }
+      if (
+        room.delYn ||
+        (room.exprDttm && room.exprDttm <= new Date()) ||
+        !(await this.auth.ownerIsActive(
+          room.userId,
+          room.guestSessId,
+          job.ownerAuthHash,
+          tx,
+        ))
+      ) {
+        await tx.aiJob.updateMany({
+          where: this.currentLease(jobId, leaseToken),
+          data: { statCd: 'CANCELLED', leaseToken: null, leaseDttm: null },
+        });
+        return;
+      }
+      if (answer.citation?.legalVerId) {
+        await tx.$queryRaw`SELECT id FROM legal_ver_rev WHERE legal_ver_id = ${answer.citation.legalVerId} AND src_snapshot_id = ${answer.citation.srcSnapshotId} FOR SHARE`;
+      } else if (answer.citation?.legalPrecId) {
+        await tx.$queryRaw`SELECT id FROM legal_prec_rev WHERE legal_prec_id = ${answer.citation.legalPrecId} AND src_snapshot_id = ${answer.citation.srcSnapshotId} FOR SHARE`;
+      }
+      let citation: PreparedCitation | undefined = answer.citation;
+      let text = answer.text;
+      if (citation && !(await this.citationIsCurrent(citation, tx))) {
+        citation = undefined;
+        text =
+          '원문 상태가 변경되어 답변을 보류했습니다. 최신 자료로 다시 질문해 주세요.';
+      }
+      const message = await tx.chatMsg.create({
+        data: {
+          chatSessId: roomId,
+          prntMsgId: job.inputMsgId,
+          msgSeq: room.nextMsgSeq,
+          roleCd: 'ASSISTANT',
+          msgCont: text,
+          ...(citation ? { citations: { create: citation } } : {}),
+        },
+      });
+      const finalized = await tx.aiJob.updateMany({
+        where: this.currentLease(jobId, leaseToken),
+        data: {
+          statCd: 'SUCCEEDED',
+          answerMsgId: message.id,
+          leaseToken: null,
+          leaseDttm: null,
+          errorCd: null,
+        },
+      });
+      if (!finalized.count)
+        throw new ConflictException('작업 점유가 변경됐습니다.');
+      await tx.chatSess.update({
+        where: { id: roomId },
+        data: {
+          nextMsgSeq: { increment: 1 },
+          revNo: { increment: 1 },
+          phaseCd: answer.phase,
+        },
+      });
+    });
+  }
+}

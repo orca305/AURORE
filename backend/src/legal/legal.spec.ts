@@ -106,6 +106,41 @@ describe('법규 API 계약', () => {
     });
   });
 
+  it('본문에만 있는 검색어의 주변 내용을 보여주고 판결문 전체를 응답에 싣지 않는다', async () => {
+    const { db, service } = setup();
+    db.legalPrecRev.findMany.mockResolvedValue([
+      {
+        caseNo: '2026다100',
+        caseNm: '구상금',
+        courtNm: '대법원',
+        decisionDt: new Date('2026-01-03'),
+        issueCont: null,
+        summaryCont: '판결 요약',
+        decisionCont:
+          '앞부분'.repeat(300) +
+          '동시이행관계<br/>관련 내용' +
+          '뒷부분'.repeat(300),
+        snapshot: {
+          srcUrl: 'https://www.law.go.kr/',
+          contHash: 'fixture-hash',
+        },
+        provisionRefs: [],
+        precedent: { srcKey: 'fixture-key', revisions: [] },
+      },
+    ]);
+    const [result] = await service.precedents({
+      q: '동시이행관계',
+      limit: 20,
+      offset: 0,
+    });
+    expect(result.excerpt).toContain('동시이행관계');
+    expect(result.excerpt).not.toContain('<br/>');
+    expect(result.excerpt.length).toBeLessThanOrEqual(202);
+    expect(result).not.toHaveProperty('decisionCont');
+    expect(result.sourceKey).toBe('fixture-key');
+    expect(result.sourceHash).toBe('fixture-hash');
+  });
+
   it('출처별 중복 등록은 409로 응답한다', async () => {
     const { db, service } = setup();
     db.legal.create.mockRejectedValue(

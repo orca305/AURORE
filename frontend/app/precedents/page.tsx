@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { SiteHeader } from "../_components/site-header";
 import { Suspense } from "react";
 
 export const metadata: Metadata = { title: "판례 검색 | AURORE" };
@@ -19,6 +19,7 @@ type Precedent = {
   decisionDate: string;
   sourceUrl: string;
   references: Reference[];
+  excerpt?: string;
 };
 
 const pageSize = 20;
@@ -47,8 +48,9 @@ function PrecedentCard({ row }: { row: Precedent }) {
   const source = officialUrl(row.sourceUrl);
 
   return <li id={`case-${row.sourceKey}`}>
-    <h3>{row.caseNo} · {row.caseNm}</h3>
-    <p>{row.courtNm} · {row.decisionDate} 선고</p>
+    <h3>{row.caseNm}</h3>
+    <p>{row.courtNm} · {row.decisionDate} 선고 · {row.caseNo}</p>
+    {row.excerpt && <p className="case-excerpt">{row.excerpt}</p>}
     {source && <a className="mt-2 inline-block underline" href={source}>판결문 원문</a>}
     <details className="mt-4">
       <summary className="cursor-pointer font-semibold">조문 대조 결과</summary>
@@ -86,9 +88,9 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
 
   return <>
     <form className="search" action="/precedents" role="search">
-      <label htmlFor="case-query">사건번호로 검색</label>
+      <label htmlFor="case-query">판례 제목이나 내용으로 검색</label>
       <div className="search-row">
-        <input id="case-query" name="q" defaultValue={q} maxLength={200} placeholder="예시 2023다258672" />
+        <input id="case-query" name="q" defaultValue={q} maxLength={200} placeholder="예시 보증금 반환, 계약갱신요구권" />
         <button type="submit">검색</button>
       </div>
     </form>
@@ -98,7 +100,7 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
       </div>
       {rows === null ? <p role="status" className="empty">판례를 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.</p>
         : rows.length === 0 ? <p className="empty">
-          {q ? "검색 결과가 없습니다. 사건번호를 확인해 주세요." : "이 페이지에 표시할 판례가 없습니다."}
+          {q ? "검색 결과가 없습니다. 제목이나 내용의 다른 키워드로 검색해 주세요." : "이 페이지에 표시할 판례가 없습니다."}
         </p>
         : <ul className="legal-list">
           {rows.slice(0, pageSize).map(row => <PrecedentCard key={row.sourceUrl} row={row} />)}
@@ -114,15 +116,12 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
 }
 
 export default function PrecedentsPage({ searchParams }: { searchParams: SearchParams }) {
-  return <div className="shell">
-    <header className="site-header">
-      <Link href="/" className="brand" aria-label="AURORE 홈">AURORE<span>법을 이해하는 시작</span></Link>
-      <Link href="/legals" className="header-note">법규 검색</Link>
-    </header>
-    <main>
+  return <div>
+    <SiteHeader active="precedents" />
+    <main className="shell">
       <section className="intro">
         <h1>판례 검색</h1>
-        <p>사건번호로 판결문과 대조한 조문을 찾아보세요.</p>
+        <p>제목이나 내용의 키워드로 판결문을 찾고, 관련 조문과 원문을 확인하세요.</p>
       </section>
       <Suspense fallback={<p role="status" className="empty">판례를 불러오는 중입니다.</p>}>
         <PrecedentResults searchParams={searchParams} />

@@ -18,7 +18,7 @@ export function TestQuestionForm({ ask }: { ask: (previous: Result, form: FormDa
   return <>
     <form action={action} className="search">
       <label htmlFor="test-mode">테스트 유형</label>
-      <select id="test-mode" name="testMode" defaultValue="law" className="mb-4 rounded border border-current bg-white px-2 py-1">
+      <select id="test-mode" name="testMode" defaultValue="law">
         <option value="law">법령 모의 답변</option>
         <option value="bad-citation">인용 오류 재현</option>
         <option value="local-ai">로컬 AI 연결</option>
