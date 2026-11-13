@@ -1,16 +1,17 @@
+import { parsePageSize } from "../../../../_components/page-size";
+import { PageSizeSelect } from "../../../../_components/page-size-select";
 import Link from "next/link";
 import { SiteHeader } from "../../../../_components/site-header";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { officialUrl } from "../official-source";
 
-const pageSize = 20;
 const maxOffset = 100000;
-type SearchParams = Promise<{ q?: string | string[]; offset?: string | string[]; asOf?: string | string[] }>;
+type SearchParams = Promise<{ limit?: string | string[]; q?: string | string[]; offset?: string | string[]; asOf?: string | string[] }>;
 type Edition = { legalName: string; enfcDt: string | null; sourceUrl: string | null };
 type Provision = { id: string; dispNo: string; proviNm: string | null; proviCont: string };
 
-async function readProvisions(path: string, q: string, offset: number) {
+async function readProvisions(path: string, q: string, offset: number, pageSize: number) {
   try {
     const backend = process.env.BACKEND_URL || "http://127.0.0.1:3001";
     const editionUrl = new URL(path, backend);
@@ -35,14 +36,15 @@ async function ProvisionResults({ id, versionId, searchParams }: {
   if ([id, versionId].some(value => !/^[1-9]\d{0,18}$/.test(value) ||
     BigInt(value) > BigInt("9223372036854775807"))) notFound();
   const query = await searchParams;
+  const pageSize = parsePageSize(query.limit);
   const q = typeof query.q === "string" ? query.q.trim().slice(0, 200) : "";
   const asOf = typeof query.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(query.asOf) ? query.asOf : "";
   const rawOffset = typeof query.offset === "string" ? query.offset : "";
   const offset = /^\d{1,6}$/.test(rawOffset) ? Math.min(Number(rawOffset), maxOffset) : 0;
   const versionsPath = `/legals/${id}/versions`;
   const path = `${versionsPath}/${versionId}`;
-  const pageUrl = (next: number) => `${path}?${new URLSearchParams({ q, asOf, offset: String(next) })}`;
-  const result = await readProvisions(path, q, offset);
+  const pageUrl = (next: number) => `${path}?${new URLSearchParams({ q, asOf, offset: String(next), limit: String(pageSize) })}`;
+  const result = await readProvisions(path, q, offset, pageSize);
   if (result.status === "missing") notFound();
   const source = result.status === "ok" ? officialUrl(result.meta.sourceUrl) : null;
 
@@ -54,12 +56,13 @@ async function ProvisionResults({ id, versionId, searchParams }: {
       <h1>{result.status === "ok" ? result.meta.legalName : "조문 검색"}</h1>
       <p>
         {result.status === "ok" && result.meta.enfcDt && `${result.meta.enfcDt.slice(0, 10)} 시행본 · `}
-        조문 번호나 본문 키워드로 검색할 수 있습니다.
-        {source && <> <a className="underline" href={source}>해당 시행본 원문</a></>}
+        조문 번호나 본문 키워드로 검색할 수 있습니다. <Link href={"/legals/"+id+"/compare?beforeVersionId="+versionId}>다른 시행본과 비교 ↗</Link>
+        {source && <> <a className="underline" href={source} target="_blank" rel="noopener noreferrer">해당 시행본 원문</a></>}
       </p>
     </section>
     <form className="search" action={path} role="search">
       <label htmlFor="provision-query">조문 번호 또는 키워드</label>
+      <input type="hidden" name="limit" value={pageSize} />
       <div className="search-row">
         <input id="provision-query" name="q" defaultValue={q} maxLength={200} placeholder="예시 제6조의2 또는 보증금" />
         {asOf && <input type="hidden" name="asOf" value={asOf} />}
@@ -68,7 +71,7 @@ async function ProvisionResults({ id, versionId, searchParams }: {
     </form>
     <section aria-labelledby="provision-results" className="results">
       <div className="section-heading">
-        <h2 id="provision-results">{q ? `“${q}” 검색 결과` : "저장된 조문과 부칙"}</h2>
+        <h2 id="provision-results">{q ? `“${q}” 검색 결과` : "저장된 조문과 부칙"}</h2><PageSizeSelect value={pageSize} />
       </div>
       {result.status === "unavailable" ? <p role="status" className="empty">조문을 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.</p>
         : result.rows.length === 0 ? <p className="empty">{q ? "일치하는 조문이 없습니다." : "이 페이지에 표시할 조문이 없습니다."}</p>
@@ -78,8 +81,9 @@ async function ProvisionResults({ id, versionId, searchParams }: {
             <pre className="provision-text">{row.proviCont}</pre>
           </li>)}
         </ul>}
-      {result.status === "ok" && (offset > 0 || result.rows.length > pageSize) &&
+      {result.status === "ok" && (result.rows.length > 0 || offset > 0) &&
         <nav aria-label="조문 검색 결과 페이지" className="pagination">
+          <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지 · 페이지당 {pageSize}개</span>
           {offset > 0 && <Link href={pageUrl(Math.max(0, offset - pageSize))}>← 이전</Link>}
           {result.rows.length > pageSize && offset < maxOffset &&
             <Link href={pageUrl(Math.min(maxOffset, offset + pageSize))}>다음 →</Link>}

@@ -12,7 +12,12 @@ import {
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
+  Equals,
+  ValidateIf,
   IsInt,
+  IsIn,
+  Length,
+  Matches,
   IsOptional,
   IsString,
   IsUUID,
@@ -28,6 +33,23 @@ class RevisionDto {
   @Min(0)
   revision!: number;
 }
+class CaseLinkDto extends RevisionDto {
+  @ValidateIf((_object, value) => value !== null) @IsUUID('4') caseId!:
+    string | null;
+  @Equals(true) confirmed!: true;
+}
+class CorrectionReadDto {
+  @Length(64, 64) @Matches(/^[a-f0-9]{64}$/) key!: string;
+}
+class PageSizeDto {
+  @IsOptional() @Type(() => Number) @IsIn([10, 20, 50]) limit = 20;
+}
+class CorrectionHistoryDto extends PageSizeDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100000) offset = 0;
+}
+class RenameDto extends RevisionDto {
+  @IsString() @MaxLength(320) title!: string;
+}
 class SubmitDto extends RevisionDto {
   @IsUUID('4')
   requestId!: string;
@@ -36,7 +58,7 @@ class SubmitDto extends RevisionDto {
   @MaxLength(1000)
   question!: string;
 }
-class ListDto {
+class ListDto extends PageSizeDto {
   @IsOptional()
   @IsString()
   @MaxLength(200)
@@ -67,6 +89,7 @@ export class ChatController {
     return this.chat.list(
       await this.auth.resolveOwner(authorization),
       query.cursor,
+      query.limit,
     );
   }
 
@@ -114,6 +137,67 @@ export class ChatController {
       body.question,
       body.revision,
     );
+  }
+
+  @Get(':id/corrections/history')
+  @Header('Cache-Control', 'no-store')
+  async correctionHistory(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Query() query: CorrectionHistoryDto,
+  ) {
+    return this.chat.correctionHistory(
+      id,
+      await this.auth.resolveOwner(authorization),
+      query.offset,
+      query.limit,
+    );
+  }
+  @Post(':id/corrections/:messageId/read')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async confirmCorrection(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('messageId', new ParseUUIDPipe({ version: '4' })) messageId: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: CorrectionReadDto,
+  ) {
+    return this.chat.confirmCorrection(
+      id,
+      messageId,
+      body.key,
+      await this.auth.resolveOwner(authorization, true),
+    );
+  }
+
+  @Post(':id/case')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async linkCase(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: CaseLinkDto,
+  ) {
+    return this.chat.linkCase(
+      id,
+      await this.auth.resolveOwner(authorization, true),
+      body.revision,
+      body.caseId,
+      body.confirmed,
+    );
+  }
+
+  @Post(':id/title')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  rename(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: RenameDto,
+  ) {
+    return this.auth
+      .resolveOwner(authorization, true)
+      .then((owner) => this.chat.rename(id, owner, body.revision, body.title));
   }
 
   @Post(':id/delete')

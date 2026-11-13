@@ -1,3 +1,13 @@
+import {
+  DocumentsController,
+  DocumentMemberGuard,
+} from './documents/documents.controller.js';
+import { DocumentsService } from './documents/documents.service.js';
+import { CasesController } from './cases/cases.controller.js';
+import { CasesService } from './cases/cases.service.js';
+import { AdminPrecedentService } from './admin/admin-precedent.service.js';
+import { AdminCorrectionService } from './admin/admin-correction.service.js';
+import { AdminRefreshService } from './admin/admin-refresh.service.js';
 import { AdminController } from './admin/admin.controller.js';
 import { AdminGuard } from './admin/admin.guard.js';
 import { AdminService } from './admin/admin.service.js';
@@ -26,6 +36,8 @@ import { CommonCodeController } from './common-code/common-code.controller.js';
     LegalModule,
   ],
   controllers: [
+    DocumentsController,
+    CasesController,
     AdminController,
     AppController,
     CommonCodeController,
@@ -34,12 +46,18 @@ import { CommonCodeController } from './common-code/common-code.controller.js';
     JobsController,
   ],
   providers: [
+    DocumentsService,
+    DocumentMemberGuard,
+    CasesService,
     AppService,
     AuthService,
     ChatService,
     ChatAnswerService,
     AdminGuard,
     AdminService,
+    AdminRefreshService,
+    AdminCorrectionService,
+    AdminPrecedentService,
   ],
 })
 export class AppModule {}

@@ -220,6 +220,8 @@ test('chat storage preserves ownership, retries, leases, deletion, expiry and pa
     const next = await chat.list(member, page.nextCursor);
     assert.ok(next.items.length > 0);
     assert.equal(next.items.some(row => page.items.some(previous => previous.id === row.id)), false);
+    await db.chatSess.createMany({ data: Array.from({length:55},(_,i)=>({id:randomUUID(),userId:member.userId,sessNm:'크기 검증 '+i,uptDttm:new Date('2020-01-01')})) });
+    for (const size of [10,20,50]) { const a=await chat.list(member,undefined,size);const b=await chat.list(member,a.nextCursor,size);assert.equal(a.items.length,size);assert.ok(a.nextCursor);assert.equal(a.items.some(x=>b.items.some(y=>x.id===y.id)),false);assert.ok(a.items.every(x=>Number.isInteger(x.unreadCorrectionCount))); }
     await assert.rejects(chat.list(member, 'invalid'), { status: 400 });
     const memberRooms = await chat.list(member);
     assert.equal(memberRooms.items.some(row => row.id === guestRoom), false);

@@ -41,7 +41,7 @@ export async function submitAccount(
   if (typeof token !== "string" || !tokenPattern.test(token)) return "로그인에 실패했습니다. 다시 시도해 주세요.";
   (await cookies()).set(sessionCookie, token, {
     httpOnly: true, sameSite: "lax", secure: origin.protocol === "https:",
-    path: "/", maxAge: 7 * 24 * 60 * 60,
+    path: "/",
   });
   redirect("/account");
 }

@@ -11,9 +11,15 @@ export class PrismaService
   constructor(configService: ConfigService) {
     const connectionString = configService.getOrThrow<string>('DATABASE_URL');
 
-    const adapter = new PrismaPg({
-      connectionString,
-    });
+    // The installed Prisma PostgreSQL adapter normalizes timestamps assuming UTC.
+    // Pin every application connection, while preserving other startup options.
+    const databaseUrl = new URL(connectionString);
+    const options = databaseUrl.searchParams.get('options');
+    databaseUrl.searchParams.set(
+      'options',
+      [options, '-c timezone=UTC'].filter(Boolean).join(' '),
+    );
+    const adapter = new PrismaPg({ connectionString: databaseUrl.href });
 
     super({
       adapter,

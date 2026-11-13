@@ -1,3 +1,5 @@
+import { compareStoredVersions } from "./legal-comparison.js";
+import type { CompareVersionsDto } from "./dto/compare-versions.dto.js";
 import {
   BadRequestException,
   ConflictException,
@@ -36,6 +38,8 @@ function publicVersion({ revisions, ...row }: Prisma.LegalVerGetPayload<{ select
 @Injectable()
 export class LegalService {
   constructor(private readonly prisma: PrismaService) {}
+
+  comparison(id:bigint,query:CompareVersionsDto){return compareStoredVersions(this.prisma,id,query);}
 
   async findAll(query: ListLegalsDto) {
     const rows = await this.prisma.legal.findMany({

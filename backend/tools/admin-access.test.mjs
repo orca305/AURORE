@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -22,6 +24,9 @@ test('admin APIs require a live session and a current ADMIN role under AURORE/US
   const { PrismaService } = await import('../dist/prisma/prisma.service.js');
   const { AuthService } = await import('../dist/auth/auth.service.js');
   const { AuthController } = await import('../dist/auth/auth.controller.js');
+  const { AdminPrecedentService } = await import('../dist/admin/admin-precedent.service.js');
+  const { AdminCorrectionService } = await import('../dist/admin/admin-correction.service.js');
+  const { AdminRefreshService } = await import('../dist/admin/admin-refresh.service.js');
   const { AdminGuard } = await import('../dist/admin/admin.guard.js');
   const { AdminService } = await import('../dist/admin/admin.service.js');
   const { AdminController } = await import('../dist/admin/admin.controller.js');
@@ -36,7 +41,7 @@ test('admin APIs require a live session and a current ADMIN role under AURORE/US
     run('docker', ['exec', 'aurore-dev-check-postgres', 'createdb', '-U', 'aurore_dev_check', name]); created = true;
     run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy', '--config', 'prisma7.config.ts'], { cwd: root, env: { ...process.env, DATABASE_URL: url.href } });
     db = new PrismaService(new ConfigService({ DATABASE_URL: url.href })); await db.$connect();
-    const module = await Test.createTestingModule({ controllers: [AuthController, AdminController], providers: [AuthService, AdminGuard, AdminService, { provide: PrismaService, useValue: db }] }).compile();
+    const module = await Test.createTestingModule({ controllers: [AuthController, AdminController], providers: [AdminPrecedentService, AuthService, AdminGuard, AdminService, AdminRefreshService, AdminCorrectionService, { provide: ConfigService, useValue: new ConfigService({ AURORE_LAW_REFRESH_JOURNAL: join(tmpdir(), name) }) }, { provide: PrismaService, useValue: db }] }).compile();
     app = module.createNestApplication({ logger: false });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.listen(0, '127.0.0.1');
@@ -49,9 +54,11 @@ test('admin APIs require a live session and a current ADMIN role under AURORE/US
     const normal = (await auth.login('normal_user', password)).token;
     const member = await auth.session(token, false); const userId = BigInt(member.id);
     assert.equal((await get('overview')).status, 401);
+    assert.equal((await get('legal-refresh')).status, 401);
     assert.equal((await get('session', randomBytes(32).toString('base64url'))).status, 401);
     assert.equal((await get('overview', (await auth.createGuest()).token, 'Guest')).status, 401);
     assert.equal((await get('overview', normal)).status, 403);
+    assert.equal((await get('legal-refresh', normal)).status, 403);
     assert.equal((await get('overview', token)).status, 403);
     const signup = await fetch(base + '/auth/signup', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({loginId:'self_admin',nickname:'위조검증',password,role:'ADMIN'}) });
     assert.equal(signup.status, 400);
@@ -63,6 +70,8 @@ test('admin APIs require a live session and a current ADMIN role under AURORE/US
     const grant = await db.userRole.create({ data:{userId,roleCdId:role.id} });
     await assert.rejects(db.userRole.create({data:{userId,roleCdId:role.id}}),error=>error.code==='P2002');
     assert.equal((await get('session',token)).status,200);
+    const refresh=await get('legal-refresh',token); assert.equal(refresh.status,200); assert.equal((await refresh.json()).initialized,false);
+    assert.equal((await get('legal-refresh/reviews/invalid',token)).status,404);
     const canary='SYNTHETIC_PRIVATE_CONTENT_DO_NOT_EXPOSE';
     const roomId=randomUUID(), inputId=randomUUID();
     await db.chatSess.create({data:{id:roomId,userId,sessNm:canary,messages:{create:{id:inputId,msgSeq:1,roleCd:'USER',msgCont:canary}}}});

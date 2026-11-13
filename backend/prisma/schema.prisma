@@ -8,6 +8,8 @@ datasource db {
 }
 
 model AppUser {
+  documents AttachDoc[]
+  citationReads CiteNoticeRead[]
   id         BigInt   @id @default(autoincrement())
   loginId    String   @unique(map: "uq_app_user_login_id") @map("login_id") @db.VarChar(12)
   nickNm     String   @map("nick_nm") @db.VarChar(12)
@@ -20,12 +22,38 @@ model AppUser {
   status     CmmnCd   @relation(fields: [statCdId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   auth       UserAuth?
   sessions   UserSess[]
-  statuses   UserStatHist[]
+  statuses   UserStatHist[] @relation("StatusTarget")
+  handledStatuses UserStatHist[] @relation("StatusActor")
   agreements UserAgrYnHist[]
+  cases UserCase[]
+  caseChanges CaseHist[]
   chats      ChatSess[]
   roles      UserRole[]
+  precedentReviews LegalPrecReviewHist[]
+  correctionActions LegalCorrHist[]
 
   @@map("app_user")
+}
+
+model LegalCorrHist {
+  id           String   @id @db.Uuid
+  reviewKey    String   @map("review_key") @db.VarChar(64)
+  userId       BigInt   @map("user_id")
+  legalVerId   BigInt?  @map("legal_ver_id")
+  beforeHash   String   @map("before_hash") @db.VarChar(64)
+  afterHash    String   @map("after_hash") @db.VarChar(64)
+  statCd       String   @map("stat_cd") @db.VarChar(16)
+  resultCd     String   @map("result_cd") @db.VarChar(32)
+  revNo        Int?     @map("rev_no")
+  affectedCnt  Int      @default(0) @map("affected_cnt")
+  rgstDttm     DateTime @map("rgst_dttm") @db.Timestamptz(0)
+  endDttm      DateTime @map("end_dttm") @db.Timestamptz(0)
+  user         AppUser  @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  version      LegalVer? @relation(fields: [legalVerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([rgstDttm(sort: Desc), id(sort: Desc)], map: "idx_legal_corr_hist_date")
+  @@index([legalVerId, afterHash], map: "idx_legal_corr_hist_version_hash")
+  @@map("legal_corr_hist")
 }
 
 model UserRole {
@@ -33,7 +61,7 @@ model UserRole {
   userId    BigInt   @map("user_id")
   roleCdId  BigInt   @map("role_cd_id")
   rgstId    BigInt?  @map("rgst_id")
-  rgstDttm  DateTime @default(dbgenerated("date_trunc('second', CURRENT_TIMESTAMP)")) @map("rgst_dttm") @db.Timestamptz(0)
+  rgstDttm  DateTime @default(dbgenerated("date_trunc('second'::text, CURRENT_TIMESTAMP)")) @map("rgst_dttm") @db.Timestamptz(0)
   delYn     Boolean  @default(false) @map("del_yn")
   delDttm   DateTime? @map("del_dttm") @db.Timestamptz(0)
   delId     BigInt?  @map("del_id")
@@ -70,11 +98,19 @@ model UserStatHist {
   id       BigInt   @id @default(autoincrement())
   userId   BigInt   @map("user_id")
   statCdId BigInt   @map("stat_cd_id")
+  prevStatCdId BigInt? @map("prev_stat_cd_id")
+  actorUserId BigInt? @map("actor_user_id")
+  reason String? @db.VarChar(1000)
+  requestId String? @unique(map: "uq_user_stat_hist_request") @map("request_id") @db.Uuid
+  requestHash String? @map("request_hash") @db.VarChar(64)
   rgstDttm DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
-  user     AppUser  @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  status   CmmnCd   @relation(fields: [statCdId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  user     AppUser @relation("StatusTarget", fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actor AppUser? @relation("StatusActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_user_stat_hist_actor")
+  status CmmnCd @relation("StatusNext", fields: [statCdId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  previousStatus CmmnCd? @relation("StatusPrevious", fields: [prevStatCdId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_user_stat_hist_previous")
 
   @@index([userId, id], map: "idx_user_stat_hist_user")
+  @@index([userId, rgstDttm(sort: Desc), id(sort: Desc)], map: "idx_user_stat_hist_date")
   @@map("user_stat_hist")
 }
 
@@ -94,6 +130,7 @@ model UserAgrYnHist {
 
 
 model GuestSess {
+  citationReads CiteNoticeRead[]
   id          String   @id @default(uuid()) @db.Uuid
   tokenHash   Bytes    @unique(map: "uq_guest_sess_token") @map("token_hash")
   rgstDttm    DateTime @map("rgst_dttm") @db.Timestamptz(0)
@@ -105,6 +142,9 @@ model GuestSess {
 }
 
 model ChatSess {
+  documents AttachDoc[]
+  userCaseId String? @map("user_case_id") @db.Uuid
+  linkedCase UserCase? @relation(fields:[userCaseId,userId],references:[id,userId],onDelete:Restrict,onUpdate:Restrict,map:"fk_chat_case_owner")
   id          String   @id @db.Uuid
   userId      BigInt?  @map("user_id")
   guestSessId String?  @map("guest_sess_id") @db.Uuid
@@ -123,12 +163,15 @@ model ChatSess {
   messages    ChatMsg[]
   jobs        AiJob[]
 
+  @@index([userCaseId,userId,delYn,uptDttm(sort:Desc),id(sort:Desc)],map:"idx_chat_case_list")
+  @@unique([id,userId],map:"uq_chat_sess_owner")
   @@index([userId, uptDttm, id], map: "idx_chat_sess_user_date")
   @@index([guestSessId, uptDttm, id], map: "idx_chat_sess_guest_date")
   @@map("chat_sess")
 }
 
 model ChatMsg {
+  sourcedFacts CaseFact[]
   id         String   @id @default(uuid()) @db.Uuid
   chatSessId String   @map("chat_sess_id") @db.Uuid
   prntMsgId  String?  @map("prnt_msg_id") @db.Uuid
@@ -180,6 +223,7 @@ model AiJob {
 }
 
 model AnsCite {
+  noticeReads CiteNoticeRead[]
   id            BigInt @id @default(autoincrement())
   msgId         String @map("msg_id") @db.Uuid
   srcSnapshotId BigInt @map("src_snapshot_id")
@@ -221,6 +265,7 @@ model Legal {
 }
 
 model SrcSnapshot {
+  noticeReads CiteNoticeRead[]
   id       BigInt     @id @default(autoincrement())
   srcCd    String     @map("src_cd") @db.VarChar(60)
   srcKey   String     @map("src_key")
@@ -280,6 +325,8 @@ model LegalPrecRev {
 }
 
 model LegalPrecProvi {
+  priorReviews LegalPrecReviewHist[] @relation("PriorReference")
+  nextReviews LegalPrecReviewHist[] @relation("NextReference")
   id             BigInt       @id @default(autoincrement())
   legalPrecRevId BigInt       @map("legal_prec_rev_id")
   refKey         String       @map("ref_key")
@@ -312,6 +359,8 @@ model LegalVer {
 
   @@unique([legalId, verKey, enfcDt], map: "uq_legal_ver_edition")
   citations AnsCite[]
+
+  correctionActions LegalCorrHist[]
 
   @@map("legal_ver")
 }
@@ -383,9 +432,12 @@ model CmmnCd {
   children   CmmnCd[]     @relation("CmmnCdTree")
   histories  CmmnCdHist[]
   users      AppUser[]
-  userStates UserStatHist[]
+  userStates UserStatHist[] @relation("StatusNext")
+  priorUserStates UserStatHist[] @relation("StatusPrevious")
   userAgreements UserAgrYnHist[]
   userRoles UserRole[]
+  caseTypes UserCase[]
+  factTypes CaseFact[]
 
   @@unique([prntCdId, cd], map: "uq_cmmn_cd_sibling")
   @@index([prntCdId, sortSeq, id], map: "idx_cmmn_cd_parent_sort")
@@ -406,4 +458,121 @@ model CmmnCdHist {
   @@index([cmmnCdId, rgstDttm(sort: Desc), id(sort: Desc)], map: "idx_cmmn_cd_hist_code_date")
   @@index([requestId], map: "idx_cmmn_cd_hist_request")
   @@map("cmmn_cd_hist")
+}
+
+model LegalPrecReviewHist {
+  id String @id @db.Uuid
+  requestHash String @map("request_hash") @db.VarChar(64)
+  userId BigInt @map("user_id")
+  priorRefId BigInt @unique(map: "uq_legal_prec_review_prior") @map("prior_ref_id")
+  nextRefId BigInt @map("next_ref_id")
+  decision String @db.VarChar(16)
+  reason String @db.VarChar(2000)
+  rgstDttm DateTime @map("rgst_dttm") @db.Timestamptz(0)
+  user AppUser @relation(fields:[userId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  priorRef LegalPrecProvi @relation("PriorReference",fields:[priorRefId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  nextRef LegalPrecProvi @relation("NextReference",fields:[nextRefId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  @@index([rgstDttm(sort:Desc),id(sort:Desc)],map:"idx_legal_prec_review_date")
+  @@map("legal_prec_review_hist")
+}
+
+model CiteNoticeRead {
+ id BigInt @id @default(autoincrement())
+ ansCiteId BigInt @map("ans_cite_id")
+ targetSnapshotId BigInt @map("target_snapshot_id")
+ userId BigInt? @map("user_id")
+ guestSessId String? @map("guest_sess_id") @db.Uuid
+ kindCd String @map("kind_cd") @db.VarChar(24)
+ compareHref String? @map("compare_href")
+ currentHref String @map("current_href")
+ readDttm DateTime @map("read_dttm") @db.Timestamptz(0)
+ citation AnsCite @relation(fields:[ansCiteId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ targetSnapshot SrcSnapshot @relation(fields:[targetSnapshotId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ user AppUser? @relation(fields:[userId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ guest GuestSess? @relation(fields:[guestSessId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ @@unique([ansCiteId,targetSnapshotId],map:"uq_cite_notice_read_source")
+ @@index([readDttm(sort:Desc),id(sort:Desc)],map:"idx_cite_notice_read_date")
+ @@map("cite_notice_read")
+}
+
+model UserCase {
+  chats ChatSess[]
+  id String @id @default(uuid()) @db.Uuid
+  userId BigInt @map("user_id")
+  caseNm String @map("case_nm") @db.VarChar(80)
+  caseTypeCdId BigInt @map("case_type_cd_id")
+  revNo Int @default(1) @map("rev_no")
+  delYn Boolean @default(false) @map("del_yn")
+  delDttm DateTime? @map("del_dttm") @db.Timestamptz(0)
+  delId BigInt? @map("del_id")
+  rgstDttm DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  uptDttm DateTime @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
+  user AppUser @relation(fields:[userId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  type CmmnCd @relation(fields:[caseTypeCdId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  facts CaseFact[]
+  histories CaseHist[]
+  @@unique([id,userId],map:"uq_user_case_owner")
+  @@index([userId,delYn,uptDttm(sort:Desc),id(sort:Desc)],map:"idx_user_case_list")
+  @@map("user_case")
+}
+model CaseFact {
+  srcMsgId String? @map("src_msg_id") @db.Uuid
+  source ChatMsg? @relation(fields:[srcMsgId],references:[id],onDelete:Restrict,onUpdate:Restrict,map:"fk_case_fact_source")
+  id BigInt @id @default(autoincrement())
+  userCaseId String @map("user_case_id") @db.Uuid
+  factTypeCdId BigInt @map("fact_type_cd_id")
+  factVal Json @map("fact_val") @db.JsonB
+  verifyStatCd String @default("USER_CONFIRMED") @map("verify_stat_cd") @db.VarChar(24)
+  delYn Boolean @default(false) @map("del_yn")
+  delDttm DateTime? @map("del_dttm") @db.Timestamptz(0)
+  delId BigInt? @map("del_id")
+  rgstDttm DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  uptDttm DateTime @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
+  case UserCase @relation(fields:[userCaseId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  type CmmnCd @relation(fields:[factTypeCdId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  histories CaseHist[]
+  @@unique([userCaseId,id],map:"uq_case_fact_case")
+  @@index([userCaseId,delYn,id],map:"idx_case_fact_list")
+  @@map("case_fact")
+}
+model CaseHist {
+  id String @id @db.Uuid
+  userCaseId String @map("user_case_id") @db.Uuid
+  userId BigInt @map("user_id")
+  factId BigInt? @map("fact_id")
+  revNo Int @map("rev_no")
+  actTypeCd String @map("act_type_cd") @db.VarChar(24)
+  requestHash String @map("request_hash") @db.VarChar(64)
+  bfData Json? @map("bf_data") @db.JsonB
+  afData Json @map("af_data") @db.JsonB
+  rgstDttm DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  case UserCase @relation(fields:[userCaseId,userId],references:[id,userId],onDelete:Restrict,onUpdate:Restrict,map:"fk_case_hist_owner")
+  user AppUser @relation(fields:[userId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  fact CaseFact? @relation(fields:[userCaseId,factId],references:[userCaseId,id],onDelete:Restrict,onUpdate:Restrict,map:"fk_case_hist_fact")
+  @@unique([userCaseId,revNo],map:"uq_case_hist_revision")
+  @@index([userCaseId,rgstDttm(sort:Desc),revNo(sort:Desc)],map:"idx_case_hist_date")
+  @@map("case_hist")
+}
+
+model AttachDoc {
+ id String @id @db.Uuid
+ userId BigInt @map("user_id")
+ chatSessId String @map("chat_sess_id") @db.Uuid
+ docNm String @map("doc_nm") @db.VarChar(80)
+ formatCd String @map("format_cd") @db.VarChar(8)
+ byteSize Int @map("byte_size")
+ srcSha String @map("src_sha") @db.VarChar(64)
+ requestHash String @map("request_hash") @db.VarChar(64)
+ mdCont String @map("md_cont") @db.Text
+ partialYn Boolean @map("partial_yn")
+ ruleVer String @default("1") @map("rule_ver") @db.VarChar(16)
+ delYn Boolean @default(false) @map("del_yn")
+ delDttm DateTime? @map("del_dttm") @db.Timestamptz(0)
+ delId BigInt? @map("del_id")
+ rgstDttm DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+ uptDttm DateTime @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
+ user AppUser @relation(fields:[userId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ chat ChatSess @relation(fields:[chatSessId,userId],references:[id,userId],onDelete:Restrict,onUpdate:Restrict,map:"fk_attach_doc_owner")
+ @@index([chatSessId,delYn,rgstDttm(sort:Desc),id(sort:Desc)],map:"idx_attach_doc_chat")
+ @@map("attach_doc")
 }

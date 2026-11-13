@@ -1,12 +1,13 @@
+import { parsePageSize } from "../../../_components/page-size";
+import { PageSizeSelect } from "../../../_components/page-size-select";
 import Link from "next/link";
 import { SiteHeader } from "../../../_components/site-header";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { officialUrl } from "./official-source";
 
-const pageSize = 20;
 const maxOffset = 100000;
-type SearchParams = Promise<{ asOf?: string | string[]; offset?: string | string[] }>;
+type SearchParams = Promise<{ limit?: string | string[]; asOf?: string | string[]; offset?: string | string[] }>;
 type Version = {
   id: string;
   verKey: string;
@@ -15,7 +16,7 @@ type Version = {
   sourceUrl: string | null;
 };
 
-async function readVersions(id: string, asOf: string, offset: number) {
+async function readVersions(id: string, asOf: string, offset: number, pageSize: number) {
   try {
     const backend = process.env.BACKEND_URL || "http://127.0.0.1:3001";
     const detailUrl = new URL(`/legals/${id}`, backend);
@@ -42,12 +43,13 @@ async function readVersions(id: string, asOf: string, offset: number) {
 async function VersionResults({ id, searchParams }: { id: string; searchParams: SearchParams }) {
   if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > BigInt("9223372036854775807")) notFound();
   const query = await searchParams;
+  const pageSize = parsePageSize(query.limit);
   const asOf = typeof query.asOf === "string" ? query.asOf.slice(0, 20) : "";
   const rawOffset = typeof query.offset === "string" ? query.offset : "";
   const offset = /^\d{1,6}$/.test(rawOffset) ? Math.min(Number(rawOffset), maxOffset) : 0;
   const path = `/legals/${id}/versions`;
-  const pageUrl = (next: number) => `${path}?${new URLSearchParams({ asOf, offset: String(next) })}`;
-  const result = await readVersions(id, asOf, offset);
+  const pageUrl = (next: number) => `${path}?${new URLSearchParams({ asOf, offset: String(next), limit: String(pageSize) })}`;
+  const result = await readVersions(id, asOf, offset, pageSize);
   if (result.status === "missing") notFound();
 
   return <>
@@ -57,6 +59,7 @@ async function VersionResults({ id, searchParams }: { id: string; searchParams: 
     </section>
     <form className="search" action={path} role="search">
       <label htmlFor="edition-date">시행본 조회 기준일</label>
+      <input type="hidden" name="limit" value={pageSize} />
       <div className="search-row">
         <input type="date" id="edition-date" name="asOf" defaultValue={asOf} min="0001-01-01" max="9999-12-31" />
         <button type="submit">조회</button>
@@ -65,7 +68,7 @@ async function VersionResults({ id, searchParams }: { id: string; searchParams: 
     </form>
     <section aria-labelledby="version-results" className="results">
       <div className="section-heading">
-        <h2 id="version-results">{asOf ? `${asOf}까지 시행된 저장본` : "저장된 시행본"}</h2>
+        <h2 id="version-results">{asOf ? `${asOf}까지 시행된 저장본` : "저장된 시행본"}</h2><div className="list-tools"><PageSizeSelect value={pageSize} /><Link href={"/legals/"+id+"/compare"}>시행본 비교 ↗</Link></div>
       </div>
       {result.status === "unavailable" ? <p role="status" className="empty">시행본을 불러오지 못했습니다. 잠시 후 다시 조회해 주세요.</p>
         : result.status === "invalid" ? <p role="status" className="empty">유효한 기준일을 입력해 주세요.</p>
@@ -79,12 +82,13 @@ async function VersionResults({ id, searchParams }: { id: string; searchParams: 
               <p>{version.prmlDt && `${version.prmlDt.slice(0, 10)} 공포 · `}법령키 {version.verKey}</p>
               <Link href={asOf ? `${path}/${version.id}?${new URLSearchParams({ asOf })}` : `${path}/${version.id}`}
                 className="mt-2 inline-block underline">조문 보기</Link>
-              {source && <a className="ml-4 mt-2 inline-block underline" href={source}>해당 시행본 원문</a>}
+              {source && <a className="ml-4 mt-2 inline-block underline" href={source} target="_blank" rel="noopener noreferrer">해당 시행본 원문</a>}
             </li>;
           })}
         </ul>}
-      {result.status === "ok" && (offset > 0 || result.rows.length > pageSize) &&
+      {result.status === "ok" && (result.rows.length > 0 || offset > 0) &&
         <nav aria-label="시행본 결과 페이지" className="pagination">
+          <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지 · 페이지당 {pageSize}개</span>
           {offset > 0 && <Link href={pageUrl(Math.max(0, offset - pageSize))}>← 이전</Link>}
           {result.rows.length > pageSize && offset < maxOffset &&
             <Link href={pageUrl(Math.min(maxOffset, offset + pageSize))}>다음 →</Link>}

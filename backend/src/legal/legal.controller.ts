@@ -3,11 +3,13 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { CompareVersionsDto } from './dto/compare-versions.dto.js';
 import { LegalService } from './legal.service.js';
 import { CreateLegalDto } from './dto/create-legal.dto.js';
 import { ListLegalsDto } from './dto/list-legals.dto.js';
@@ -39,6 +41,12 @@ export class LegalController {
   @Get('precedents')
   precedents(@Query() query: ListLegalsDto) {
     return this.legal.precedents(query);
+  }
+
+  @Get(':id/comparison')
+  @Header('Cache-Control', 'no-store')
+  comparison(@Param('id') id: string, @Query() query: CompareVersionsDto) {
+    return this.legal.comparison(parseId(id), query);
   }
 
   @Get(':id')

@@ -4,7 +4,7 @@ import { verifiedEvidenceForPrecedent } from "./precedent-citation-evidence.mjs"
 
 export async function restoreReviewedLink(db, review) {
   const { caseSourceKey, caseHash, beforeCaseHash = caseHash, reference, beforeHash, afterHash,
-    reason, decision = "verified" } = review ?? {};
+    reason, linkId = null, decision = "verified" } = review ?? {};
   const unverified = decision === "unverified";
   const isHash = value => /^[a-f0-9]{64}$/.test(value ?? "");
   if (!/^\d{1,20}$/.test(caseSourceKey ?? "") || (decision !== "verified" && !unverified) ||
@@ -36,6 +36,7 @@ export async function restoreReviewedLink(db, review) {
      LEFT JOIN legal_provi next ON NOT $7::boolean AND next.legal_ver_rev_id=current.id AND next.norm_no=old.norm_no
        AND next.provi_type_cd='ARTICLE' AND next.prnt_provi_id IS NULL AND NOT next.del_yn
      WHERE c.src_cd='MOLEG' AND c.src_key=$1 AND NOT c.del_yn
+       AND ($8::bigint IS NULL OR link.id=$8::bigint)
        AND after.cont_hash IS NOT DISTINCT FROM $5::text
        AND ($7::boolean OR next.id IS NOT NULL)
        AND (link.del_yn OR NOT EXISTS (
@@ -45,7 +46,7 @@ export async function restoreReviewedLink(db, review) {
          WHERE newer.legal_prec_id=c.id AND newer.rev_no>prior_case.rev_no
        ))
      FOR UPDATE OF c,cr,link,v`,
-    [caseSourceKey, caseHash, reference, beforeHash, afterHash, beforeCaseHash, unverified],
+    [caseSourceKey, caseHash, reference, beforeHash, afterHash, beforeCaseHash, unverified, linkId],
   );
   if (rows.length !== 1) throw new Error("The reviewed case or law revision is stale, missing, or ambiguous.");
   const [link] = rows;

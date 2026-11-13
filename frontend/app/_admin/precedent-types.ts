@@ -1,0 +1,2 @@
+export type PrecedentReview = {id:string;caseSourceKey:string;caseName:string;caseNumber:string;lawName:string;reference:string;versionKey:string;effectiveDate:string;status:string;caseChanged:boolean;lawChanged:boolean;beforeText:string|null;currentText:string|null;beforeCaseUrl:string;caseUrl:string;beforeLawUrl:string;lawUrl:string|null;reviewHash:string;beforeDecision:string;currentDecision:string};
+export type ReviewHistory = {id:string;decision:string;reason:string;rgstDttm:string;operator:string;reference:string;caseName:string;caseNumber:string};

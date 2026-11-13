@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -69,7 +70,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       });
   }
 
-  async list(owner: ChatOwner, cursor?: string) {
+  async list(owner: ChatOwner, cursor?: string, limit = 20) {
     let boundary: Prisma.ChatSessWhereInput = {};
     if (cursor) {
       try {
@@ -110,20 +111,44 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         revNo: true,
       },
       orderBy: [{ uptDttm: 'desc' }, { id: 'desc' }],
-      take: 21,
+      take: limit + 1,
     });
-    const page = rows.slice(0, 20);
+    const page = rows.slice(0, limit);
+    const unread = page.length
+      ? await this.db.$queryRaw<{ id: string; count: bigint }[]>(Prisma.sql`
+      WITH corrected AS (
+        SELECT m.chat_sess_id AS id, c.id AS citation_id, r.src_snapshot_id AS target
+        FROM chat_msg m JOIN ans_cite c ON c.msg_id=m.id
+        JOIN legal_ver v ON v.id=c.legal_ver_id AND NOT v.del_yn
+        JOIN legal l ON l.id=v.legal_id AND NOT l.del_yn
+        JOIN legal_ver_rev r ON r.legal_ver_id=v.id AND r.current_yn
+        WHERE m.chat_sess_id IN (${Prisma.join(page.map((row) => Prisma.sql`${row.id}::uuid`))})
+          AND NOT m.del_yn AND m.role_cd='ASSISTANT' AND r.src_snapshot_id<>c.src_snapshot_id
+        UNION ALL
+        SELECT m.chat_sess_id, c.id, r.src_snapshot_id
+        FROM chat_msg m JOIN ans_cite c ON c.msg_id=m.id
+        JOIN legal_prec p ON p.id=c.legal_prec_id AND NOT p.del_yn
+        JOIN legal_prec_rev r ON r.legal_prec_id=p.id AND r.current_yn
+        WHERE m.chat_sess_id IN (${Prisma.join(page.map((row) => Prisma.sql`${row.id}::uuid`))})
+          AND NOT m.del_yn AND m.role_cd='ASSISTANT' AND c.legal_ver_id IS NULL AND r.src_snapshot_id<>c.src_snapshot_id
+      ) SELECT id, count(*) AS count FROM corrected c WHERE NOT EXISTS (
+        SELECT 1 FROM cite_notice_read n WHERE n.ans_cite_id=c.citation_id AND n.target_snapshot_id=c.target
+      ) GROUP BY id
+    `)
+      : [];
+    const counts = new Map(unread.map((row) => [row.id, Number(row.count)]));
     const last = page.at(-1);
     return {
       items: page.map((row) => ({
         id: row.id,
         title: row.sessNm,
+        unreadCorrectionCount: counts.get(row.id) ?? 0,
         revision: row.revNo,
         updatedAt: row.uptDttm.toISOString(),
         expiresAt: row.exprDttm?.toISOString() ?? null,
       })),
       nextCursor:
-        rows.length > 20 && last
+        rows.length > limit && last
           ? Buffer.from(
               JSON.stringify([last.uptDttm.toISOString(), last.id]),
             ).toString('base64url')
@@ -137,6 +162,10 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       select: {
         id: true,
         sessNm: true,
+        linkedCase: {
+          select: { id: true, caseNm: true, delYn: true, userId: true },
+        },
+        uptDttm: true,
         phaseCd: true,
         revNo: true,
         exprDttm: true,
@@ -154,6 +183,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
             msgCont: true,
             citations: {
               select: {
+                id: true,
                 citeCont: true,
                 label: true,
                 srcUrl: true,
@@ -174,12 +204,78 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     });
     if (!room) throw new NotFoundException('대화를 찾을 수 없습니다.');
     const rows = room.messages.slice(0, 100).reverse();
+    const sourceStates = new Map<
+      string,
+      ReturnType<ChatService['citationStatus']>
+    >();
+    const sourceKey = (citation: {
+      legalVerId: bigint | null;
+      legalPrecId: bigint | null;
+      srcSnapshotId: bigint;
+    }) =>
+      [citation.legalVerId, citation.legalPrecId, citation.srcSnapshotId].join(
+        ':',
+      );
+    for (const message of rows) {
+      const citation = message.citations[0];
+      if (citation && !sourceStates.has(sourceKey(citation)))
+        sourceStates.set(sourceKey(citation), this.citationStatus(citation));
+    }
+    await Promise.all(sourceStates.values());
+    const targets: { ansCiteId: bigint; targetSnapshotId: bigint }[] = [];
+    for (const message of rows) {
+      const citation = message.citations[0];
+      if (!citation) continue;
+      const state = await sourceStates.get(sourceKey(citation))!;
+      if (state.correction)
+        targets.push({
+          ansCiteId: citation.id,
+          targetSnapshotId: state.correction.targetSnapshotId,
+        });
+    }
+    const receipts = targets.length
+      ? await this.db.citeNoticeRead.findMany({
+          where: { OR: targets },
+          select: { ansCiteId: true, targetSnapshotId: true, readDttm: true },
+        })
+      : [];
+    const readDates = new Map(
+      receipts.map((row) => [
+        row.ansCiteId + ':' + row.targetSnapshotId,
+        row.readDttm.toISOString(),
+      ]),
+    );
     const messages = await Promise.all(
       rows.map(async (message) => {
         const citation = message.citations[0];
-        const current = citation
-          ? await this.citationIsCurrent(citation)
-          : false;
+        const key = citation
+          ? [
+              citation.legalVerId,
+              citation.legalPrecId,
+              citation.srcSnapshotId,
+            ].join(':')
+          : '';
+        if (citation && !sourceStates.has(key))
+          sourceStates.set(key, this.citationStatus(citation));
+        const status = citation ? await sourceStates.get(key)! : null;
+        const current = status?.current ?? false;
+        const correction =
+          status?.correction && citation
+            ? {
+                kind: status.correction.kind,
+                recordedAt: status.correction.recordedAt,
+                currentHref: status.correction.currentHref,
+                compareHref: status.correction.compareHref,
+                key: this.noticeKey(
+                  citation.id,
+                  status.correction.targetSnapshotId,
+                ),
+                readAt:
+                  readDates.get(
+                    citation.id + ':' + status.correction.targetSnapshotId,
+                  ) ?? null,
+              }
+            : null;
         return {
           id: message.id,
           sequence: message.msgSeq,
@@ -197,8 +293,10 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
                   ...(current
                     ? { href: citation.viewHref }
                     : {
-                        warning:
-                          '원문 상태가 변경되어 당시 저장한 인용을 표시합니다.',
+                        warning: status?.correction
+                          ? '이 답변에 사용한 원문이 정정되었습니다. 당시 답변과 인용문은 그대로 보관합니다.'
+                          : '원문 상태가 변경되어 당시 저장한 인용을 표시합니다.',
+                        ...(status?.correction ? { correction } : {}),
                       }),
                 },
               }
@@ -207,8 +305,16 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       }),
     );
     return {
+      canLinkCase: owner.userId !== null,
+      linkedCase:
+        room.linkedCase &&
+        !room.linkedCase.delYn &&
+        room.linkedCase.userId === owner.userId
+          ? { id: room.linkedCase.id, title: room.linkedCase.caseNm }
+          : null,
       id: room.id,
       title: room.sessNm,
+      updatedAt: room.uptDttm.toISOString(),
       phase: room.phaseCd,
       revision: room.revNo,
       expiresAt: room.exprDttm?.toISOString() ?? null,
@@ -218,6 +324,91 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         ? { id: room.jobs[0].id, status: room.jobs[0].statCd }
         : null,
     };
+  }
+
+  private async citationStatus(
+    citation: {
+      srcSnapshotId: bigint;
+      legalVerId: bigint | null;
+      legalPrecId: bigint | null;
+    },
+    database: Prisma.TransactionClient = this.db,
+  ) {
+    if (await this.citationIsCurrent(citation, database))
+      return { current: true, correction: null };
+    if (citation.legalVerId !== null) {
+      const previous = await database.legalVerRev.findFirst({
+        where: {
+          legalVerId: citation.legalVerId,
+          srcSnapshotId: citation.srcSnapshotId,
+        },
+        select: { id: true },
+      });
+      const current = await database.legalVerRev.findFirst({
+        where: {
+          legalVerId: citation.legalVerId,
+          currentYn: true,
+          srcSnapshotId: { not: null },
+          version: { delYn: false, legal: { delYn: false } },
+        },
+        select: {
+          id: true,
+          srcSnapshotId: true,
+          rgstDttm: true,
+          version: { select: { legalId: true, id: true } },
+        },
+      });
+      if (previous && current && previous.id !== current.id) {
+        const path = '/legals/' + current.version.legalId;
+        const query = new URLSearchParams({
+          beforeVersionId: current.version.id.toString(),
+          afterVersionId: current.version.id.toString(),
+          beforeRevisionId: previous.id.toString(),
+          afterRevisionId: current.id.toString(),
+        });
+        return {
+          current: false,
+          correction: {
+            kind: 'LAW_CORRECTED',
+            targetSnapshotId: current.srcSnapshotId!,
+            recordedAt: current.rgstDttm.toISOString(),
+            currentHref: path + '/versions/' + current.version.id,
+            compareHref: path + '/compare?' + query,
+          },
+        };
+      }
+    } else if (citation.legalPrecId !== null) {
+      const current = await database.legalPrecRev.findFirst({
+        where: {
+          legalPrecId: citation.legalPrecId,
+          currentYn: true,
+          srcSnapshotId: { not: citation.srcSnapshotId },
+          precedent: { delYn: false },
+        },
+        select: {
+          srcSnapshotId: true,
+          rgstDttm: true,
+          caseNo: true,
+          precedent: { select: { srcKey: true } },
+        },
+      });
+      if (current)
+        return {
+          current: false,
+          correction: {
+            kind: 'PRECEDENT_CORRECTED',
+            targetSnapshotId: current.srcSnapshotId,
+            recordedAt: current.rgstDttm.toISOString(),
+            currentHref:
+              '/precedents?' +
+              new URLSearchParams({ q: current.caseNo }) +
+              '#case-' +
+              encodeURIComponent(current.precedent.srcKey),
+            compareHref: null,
+          },
+        };
+    }
+    return { current: false, correction: null };
   }
 
   private async citationIsCurrent(
@@ -381,6 +572,213 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private noticeKey(citationId: bigint, targetSnapshotId: bigint) {
+    return createHash('sha256')
+      .update(citationId + ':' + targetSnapshotId)
+      .digest('hex');
+  }
+
+  async confirmCorrection(
+    id: string,
+    messageId: string,
+    key: string,
+    owner: ChatOwner,
+  ) {
+    return this.db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('aurore-dev-check-sample-import'))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('aurore-dev-check-precedent-import'))`;
+      await this.lockedRoom(tx, id, owner);
+      if (
+        !(await this.auth.ownerIsActive(
+          owner.userId,
+          owner.guestSessId,
+          owner.authHash,
+          tx,
+        ))
+      )
+        throw new NotFoundException('대화를 찾을 수 없습니다.');
+      const citation = await tx.ansCite.findFirst({
+        where: { msgId: messageId, message: { chatSessId: id, delYn: false } },
+      });
+      if (!citation)
+        throw new NotFoundException('정정 안내를 찾을 수 없습니다.');
+      const status = await this.citationStatus(citation, tx);
+      const correction = status.correction;
+      if (
+        !correction ||
+        this.noticeKey(citation.id, correction.targetSnapshotId) !== key
+      )
+        throw new ConflictException(
+          '원문 상태가 바뀌었습니다. 최신 정정 안내를 확인해 주세요.',
+        );
+      const where = {
+        ansCiteId_targetSnapshotId: {
+          ansCiteId: citation.id,
+          targetSnapshotId: correction.targetSnapshotId,
+        },
+      };
+      const receipt =
+        (await tx.citeNoticeRead.findUnique({ where })) ??
+        (await tx.citeNoticeRead.create({
+          data: {
+            ansCiteId: citation.id,
+            targetSnapshotId: correction.targetSnapshotId,
+            userId: owner.userId,
+            guestSessId: owner.guestSessId,
+            kindCd: correction.kind,
+            compareHref: correction.compareHref,
+            currentHref: correction.currentHref,
+            readDttm: nowAtSecond(),
+          },
+        }));
+      return {
+        key,
+        readAt: receipt.readDttm.toISOString(),
+        authExpiresAt: owner.expiresAt?.toISOString() ?? null,
+      };
+    });
+  }
+
+  async correctionHistory(
+    id: string,
+    owner: ChatOwner,
+    offset = 0,
+    limit = 20,
+  ) {
+    if (!Number.isInteger(offset) || offset < 0 || offset > 100000)
+      throw new BadRequestException('이력 페이지를 확인해 주세요.');
+    return this.db.$transaction(
+      async (tx) => {
+        const visible = await tx.chatSess.findFirst({
+          where: { id, ...visibleRoom(owner) },
+          select: { id: true },
+        });
+        if (!visible) throw new NotFoundException('대화를 찾을 수 없습니다.');
+        const rows = await tx.citeNoticeRead.findMany({
+          where: { citation: { message: { chatSessId: id, delYn: false } } },
+          orderBy: [{ readDttm: 'desc' }, { id: 'desc' }],
+          take: limit + 1,
+          skip: offset,
+          select: {
+            id: true,
+            kindCd: true,
+            readDttm: true,
+            compareHref: true,
+            currentHref: true,
+            citation: { select: { label: true, msgId: true } },
+          },
+        });
+        return {
+          items: rows.slice(0, limit).map(({ citation, ...row }) => ({
+            id: row.id.toString(),
+            kind: row.kindCd,
+            readAt: row.readDttm.toISOString(),
+            label: citation.label,
+            messageId: citation.msgId,
+            compareHref: row.compareHref,
+            currentHref: row.currentHref,
+          })),
+          offset,
+          nextOffset:
+            rows.length > limit && offset < 100000
+              ? Math.min(100000, offset + limit)
+              : null,
+        };
+      },
+      { isolationLevel: 'RepeatableRead' },
+    );
+  }
+
+  async linkCase(
+    id: string,
+    owner: ChatOwner,
+    revision: number,
+    caseId: string | null,
+    confirmed: boolean,
+  ) {
+    if (owner.userId === null)
+      throw new ForbiddenException('사건 연결은 회원 전용입니다.');
+    if (confirmed !== true)
+      throw new BadRequestException('연결할 사건을 확인해 주세요.');
+    const target = caseId?.toLowerCase() ?? null;
+    await this.db.$transaction(async (tx) => {
+      if (
+        !(await this.auth.ownerIsActive(owner.userId, null, owner.authHash, tx))
+      )
+        throw new NotFoundException('대화를 찾을 수 없습니다.');
+      // Case deletion takes the same case-before-chat lock order.
+      if (target) {
+        const rows = await tx.$queryRaw<
+          { id: string }[]
+        >`SELECT id FROM user_case WHERE id=${target}::uuid AND user_id=${owner.userId} AND NOT del_yn FOR UPDATE`;
+        if (!rows.length)
+          throw new NotFoundException('사건을 찾을 수 없습니다.');
+      }
+      const room = await this.lockedRoom(tx, id, owner);
+      if (room.userCaseId === target) return;
+      if (room.revNo !== revision)
+        throw new ConflictException(
+          '다른 화면에서 대화가 변경됐습니다. 최신 내용을 확인해 주세요.',
+        );
+      if (
+        await tx.aiJob.count({
+          where: { chatSessId: id, statCd: { in: unfinished } },
+        })
+      )
+        throw new ConflictException(
+          '답변이 끝난 후 사건 연결을 변경해 주세요.',
+        );
+      await tx.chatSess.update({
+        where: { id },
+        data: {
+          userCaseId: target,
+          revNo: { increment: 1 },
+          uptDttm: nowAtSecond(),
+        },
+      });
+    });
+    return this.read(id, owner);
+  }
+
+  async rename(id: string, owner: ChatOwner, revision: number, title: string) {
+    const name = title.normalize('NFC').replace(/\s+/gu, ' ').trim();
+    if (
+      !name ||
+      Array.from(name).length > 80 ||
+      /[\p{Cc}\p{Surrogate}]/u.test(name)
+    )
+      throw new BadRequestException('대화 제목은 1~80자로 입력해 주세요.');
+    await this.db.$transaction(async (tx) => {
+      const room = await this.lockedRoom(tx, id, owner);
+      if (
+        !(await this.auth.ownerIsActive(
+          owner.userId,
+          owner.guestSessId,
+          owner.authHash,
+          tx,
+        ))
+      )
+        throw new NotFoundException('대화를 찾을 수 없습니다.');
+      if (room.revNo !== revision)
+        throw new ConflictException(
+          '다른 화면에서 대화가 변경됐습니다. 최신 내용을 확인해 주세요.',
+        );
+      if (room.sessNm !== name)
+        await tx.chatSess.update({
+          where: { id },
+          data: {
+            sessNm: name,
+            revNo: { increment: 1 },
+            uptDttm: nowAtSecond(),
+          },
+        });
+    });
+    return {
+      ...(await this.read(id, owner)),
+      authExpiresAt: owner.expiresAt?.toISOString() ?? null,
+    };
+  }
+
   async remove(id: string, owner: ChatOwner, revision: number) {
     await this.db.$transaction(async (tx) => {
       const room = await this.lockedRoom(tx, id, owner);
@@ -402,6 +800,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       where: { id: { in: ids }, delYn: false },
       data: { ...deletion, revNo: { increment: 1 } },
     });
+    await tx.attachDoc.updateMany({where:{chatSessId:{in:ids},delYn:false},data:deletion});
     await tx.chatMsg.updateMany({
       where: { chatSessId: { in: ids }, delYn: false },
       data: deletion,

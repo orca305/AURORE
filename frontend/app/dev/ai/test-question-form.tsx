@@ -38,7 +38,7 @@ export function TestQuestionForm({ ask }: { ask: (previous: Result, form: FormDa
         {result.source && <figure className="mt-4 border-l-2 border-current pl-4">
           <blockquote className="whitespace-pre-wrap wrap-anywhere">{result.source.quote}</blockquote>
           <figcaption className="mt-2">
-            <a className="underline" href={result.source.url}>{result.source.label} · {result.source.dateLabel}</a>
+            <a className="underline" href={result.source.url} target="_blank" rel="noopener noreferrer">{result.source.label} · {result.source.dateLabel}</a>
           </figcaption>
         </figure>}
       </>}

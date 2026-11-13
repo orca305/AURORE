@@ -1,0 +1,6 @@
+import {currentToken} from "../../../../../_auth/session";
+import {chatIdPattern} from "../../../../../_conversation/requests";
+export async function GET(_request:Request,{params}:{params:Promise<{chatId:string;id:string}>}){
+ const {chatId,id}=await params;if(!chatIdPattern.test(chatId)||!chatIdPattern.test(id))return new Response(null,{status:404});const token=await currentToken();if(!token)return new Response(null,{status:401,headers:{'Cache-Control':'no-store'}});
+ try{const response=await fetch(new URL('/chat-sessions/'+chatId+'/documents/'+id,process.env.BACKEND_URL||'http://127.0.0.1:3001'),{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:AbortSignal.timeout(8000)});if(!response.ok)return new Response('첨부자료를 내려받지 못했습니다.',{status:response.status,headers:{'Cache-Control':'no-store'}});const data=await response.json() as {markdown:string};return new Response(data.markdown,{headers:{'Content-Type':'text/markdown; charset=utf-8','Content-Disposition':'attachment; filename="aurore-document-'+id+'.md"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'"}});}catch{return new Response(null,{status:503});}
+}

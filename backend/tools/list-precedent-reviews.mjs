@@ -3,10 +3,10 @@ import { decisionChangesForReviews } from "./compare-precedent-decisions.mjs";
 
 const pageSize = 100;
 
-export async function listPrecedentReviews(db, caseSourceKey = null, offset = 0) {
+export async function listPrecedentReviews(db, caseSourceKey = null, offset = 0, { limit = pageSize, linkId = null } = {}) {
   const { rows } = await db.query(
     `WITH current_cases AS (
-      SELECT c.id, c.src_key, cr.id AS case_rev_id, cr.case_no, cs.id AS snapshot_id,
+      SELECT c.id, c.src_key, cr.id AS case_rev_id, cr.case_no, cr.case_nm, cs.id AS snapshot_id,
         cs.cont_hash AS case_hash, cs.src_url AS case_url
       FROM legal_prec c JOIN legal_prec_rev cr ON cr.legal_prec_id=c.id AND cr.current_yn
       JOIN src_snapshot cs ON cs.id=cr.src_snapshot_id
@@ -16,7 +16,7 @@ export async function listPrecedentReviews(db, caseSourceKey = null, offset = 0)
         old_cs.id AS before_case_snapshot_id, old_cs.cont_hash AS before_case_hash,
         old_cs.src_url AS before_case_url, link.id AS link_id, link.ref_key,
         p.id AS before_provision_id, p.norm_no, p.provi_cont AS before_text,
-        v.id AS edition_id, v.ver_key, v.enfc_dt, r.current_yn AS law_current,
+        l.legal_nm, v.id AS edition_id, v.ver_key, v.enfc_dt, r.current_yn AS law_current,
         s.id AS before_law_snapshot_id, s.cont_hash AS before_hash, s.src_url AS before_law_url
       FROM current_cases cc JOIN legal_prec_rev old_case ON old_case.legal_prec_id=cc.id
       JOIN src_snapshot old_cs ON old_cs.id=old_case.src_snapshot_id
@@ -42,7 +42,7 @@ export async function listPrecedentReviews(db, caseSourceKey = null, offset = 0)
         ))
       ORDER BY link.id, link.ref_key, link.before_case_rev_no DESC, link.link_id DESC
     )
-    SELECT q.src_key AS "caseSourceKey", q.case_no AS "caseNumber", q.ref_key AS reference,
+    SELECT q.link_id::text AS id, q.case_nm AS "caseName", q.legal_nm AS "lawName", q.src_key AS "caseSourceKey", q.case_no AS "caseNumber", q.ref_key AS reference,
       q.before_case_rev_id<>q.case_rev_id AS "caseChanged", NOT q.law_current AS "lawChanged",
       q.before_case_hash AS "beforeCaseHash", q.case_hash AS "caseHash",
       q.before_hash AS "beforeHash", active_src.cont_hash AS "afterHash",
@@ -65,14 +65,15 @@ export async function listPrecedentReviews(db, caseSourceKey = null, offset = 0)
         AND p.provi_type_cd='ARTICLE' AND p.prnt_provi_id IS NULL
     ) target
     LEFT JOIN legal_provi next ON target.matches=1 AND next.id=target.id AND active_src.id IS NOT NULL
+    WHERE ($4::bigint IS NULL OR q.link_id=$4::bigint)
     ORDER BY q.case_no, q.ref_key, q.id LIMIT $2 OFFSET $3`,
-    [caseSourceKey, pageSize + 1, offset],
+    [caseSourceKey, limit + 1, offset, linkId],
   );
-  const pending = rows.slice(0, pageSize);
+  const pending = rows.slice(0, limit);
   const caseChanges = caseSourceKey === null ? [] : await decisionChangesForReviews(db, caseSourceKey, pending);
   return {
     pending,
-    nextOffset: rows.length > pageSize ? offset + pageSize : null,
+    nextOffset: rows.length > limit ? offset + limit : null,
     ...(caseChanges.length ? { caseChanges } : {}),
   };
 }

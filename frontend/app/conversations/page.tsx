@@ -1,3 +1,5 @@
+import { PageSizeSelect } from "../_components/page-size-select";
+import { parsePageSize } from "../_components/page-size";
 import Link from "next/link";
 import { SiteHeader } from "../_components/site-header";
 import { loadChatList } from "../_conversation/requests";
@@ -5,8 +7,9 @@ import { HistoryList } from "./history-list";
 
 export const metadata = { title: "대화 기록 | AURORE" };
 
-export default async function ConversationsPage() {
-  const result = await loadChatList();
+export default async function ConversationsPage({ searchParams }: { searchParams: Promise<{ limit?: string | string[] }> }) {
+  const pageSize = parsePageSize((await searchParams).limit);
+  const result = await loadChatList(undefined, pageSize);
   return <div>
     <SiteHeader active="history" />
     <main className="shell">
@@ -15,10 +18,10 @@ export default async function ConversationsPage() {
         <p>회원 기록은 계정으로, 비회원 기록은 현재 브라우저의 인증으로 확인합니다. 비회원 대화는 생성일부터 1개월 보관합니다.</p>
       </section>
       <div className="section-heading">
-        <h2>나의 대화</h2><Link href="/">새 대화 ↗</Link>
+        <h2>나의 대화</h2><div className="list-tools"><PageSizeSelect value={pageSize}/><Link href="/">새 대화 ↗</Link></div>
       </div>
-      <section className="results">
-        {result.data ? <HistoryList initial={result.data} />
+      <section className="results conversation-results">
+        {result.data ? <HistoryList key={pageSize} initial={result.data} pageSize={pageSize} />
           : <p role="alert" className="empty">{result.error}</p>}
       </section>
     </main>

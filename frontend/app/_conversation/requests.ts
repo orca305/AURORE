@@ -41,8 +41,8 @@ export async function loadChat(id: string, beforeSeq?: number) {
   return requestChat<ChatDetail>("/chat-sessions/" + id + (beforeSeq ? "?beforeSeq=" + beforeSeq : ""), credential);
 }
 
-export async function loadChatList(cursor?: string): Promise<ChatResult<ChatList>> {
+export async function loadChatList(cursor?: string, limit = 20): Promise<ChatResult<ChatList>> {
   const credential = await chatCredential();
   if (!credential) return { data: { items: [], nextCursor: null }, error: null, status: 200 };
-  return requestChat<ChatList>("/chat-sessions" + (cursor ? "?" + new URLSearchParams({ cursor }) : ""), credential);
+  return requestChat<ChatList>("/chat-sessions?" + new URLSearchParams({ limit: String(limit), ...(cursor ? { cursor } : {}) }), credential);
 }

@@ -1,0 +1,90 @@
+import assert from 'node:assert/strict';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { dirname, basename, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+const root=fileURLToPath(new URL('../',import.meta.url));
+const require=createRequire(new URL('../package.json',import.meta.url));
+let developmentUrl;
+try {developmentUrl=new URL(process.env.DATABASE_URL);if(developmentUrl.hostname!=='127.0.0.1'||developmentUrl.port!=='5433'||developmentUrl.pathname!=='/aurore_dev_check')developmentUrl=null;}catch{developmentUrl=null;}
+
+test('correction approval preserves original revisions, revalidates sources and roles, rolls back atomically, and returns durable idempotent receipts', {skip:!developmentUrl&&'Run with --env-file=../local-dev/.env',timeout:90000},async()=>{
+ require('reflect-metadata');
+ const {ConfigService}=require('@nestjs/config');const {ValidationPipe}=require('@nestjs/common');const {Test}=require('@nestjs/testing');
+ const {PrismaService}=await import('../dist/prisma/prisma.service.js');const {AuthService}=await import('../dist/auth/auth.service.js');const {AuthController}=await import('../dist/auth/auth.controller.js');
+ const {AdminPrecedentService}=await import('../dist/admin/admin-precedent.service.js');
+ const {AdminGuard}=await import('../dist/admin/admin.guard.js');const {AdminService}=await import('../dist/admin/admin.service.js');const {AdminRefreshService}=await import('../dist/admin/admin-refresh.service.js');const {AdminCorrectionService}=await import('../dist/admin/admin-correction.service.js');const {AdminController}=await import('../dist/admin/admin.controller.js');
+ const name='aurore_corr_test_'+randomBytes(6).toString('hex');const url=new URL(developmentUrl.href);url.pathname='/'+name;
+ const run=(command,args,options={})=>{const result=spawnSync(command,args,{encoding:'utf8',windowsHide:true,...options});assert.equal(result.status,0,result.stderr);};
+ const originalFetch=globalThis.fetch;let created=false,db,app,directory;
+ try {
+  run('docker',['exec','aurore-dev-check-postgres','createdb','-U','aurore_dev_check',name]);created=true;
+  run(process.execPath,['node_modules/prisma/build/index.js','migrate','deploy','--config','prisma7.config.ts'],{cwd:root,env:{...process.env,DATABASE_URL:url.href}});
+  directory=await mkdtemp(join(tmpdir(),'aurore-corr-approval-'));const artifacts=join(directory,'correction');await mkdir(artifacts);
+  db=new PrismaService(new ConfigService({DATABASE_URL:url.href}));await db.$connect();
+  const config=new ConfigService({MOLEG_OC:'SYNTHETIC_TEST_OC',AURORE_LAW_REFRESH_JOURNAL:directory});
+  const module=await Test.createTestingModule({controllers:[AuthController,AdminController],providers:[AdminPrecedentService,AuthService,AdminGuard,AdminService,AdminRefreshService,AdminCorrectionService,{provide:PrismaService,useValue:db},{provide:ConfigService,useValue:config}]}).compile();
+  app=module.createNestApplication({logger:false});app.useGlobalPipes(new ValidationPipe({whitelist:true,forbidNonWhitelisted:true,transform:true}));await app.listen(0,'127.0.0.1');const base=await app.getUrl();const auth=app.get(AuthService);
+  await auth.signup('corr_admin','승인검증','Synthetic8!');await auth.signup('corr_member','일반검증','Synthetic8!');
+  let token=(await auth.login('corr_admin','Synthetic8!')).token;const normal=(await auth.login('corr_member','Synthetic8!')).token;
+  const member=await auth.session(token,false);const userId=BigInt(member.id);const role=await db.cmmnCd.findFirst({where:{cd:'ADMIN',parent:{cd:'USER_ROLE'}}});
+  await db.userRole.create({data:{userId,roleCdId:role.id}});
+  const payload=text=>({법령:{법령키:'CORRECTION-TEST',기본정보:{법령ID:'001248',법령명_한글:'승인 검증 법령',시행일자:'20260102',공포일자:'20251201'},조문:{조문단위:[{조문번호:'1',조문여부:'조문',조문제목:'목적',조문내용:'제1조  '+text+'\n 원형 보존'}]}}});
+  const before=JSON.stringify(payload('이전 원문'));const after=JSON.stringify(payload('정정 원문'));const hash=text=>createHash('sha256').update(text).digest('hex');const beforeHash=hash(before),afterHash=hash(after);
+  await writeFile(join(artifacts,beforeHash+'.json'),before);await writeFile(join(artifacts,afterHash+'.json'),after);
+  const {loadEvidence}=await import('./law-evidence.mjs');const {compareProvisions}=await import('./review-law-corrections.mjs');
+  const {chunks}=await loadEvidence(artifacts);const report={lawId:'001248',mst:'123456',effectiveDate:'2026-01-02',versionKey:'CORRECTION-TEST',beforeHash,afterHash,status:'provision-changes',sourceSectionsChanged:['조문'],changes:compareProvisions(chunks.filter(row=>row.hash===beforeHash),chunks.filter(row=>row.hash===afterHash))};
+  const reportPath=join(artifacts,'review.json');await writeFile(reportPath,JSON.stringify(report));
+  await writeFile(join(directory,'start.json'),JSON.stringify({fromDate:'20261110'}));await writeFile(join(directory,'20261110.json'),JSON.stringify({status:'staged',report:{date:'20261110',candidates:[],prepared:{editions:[]},corrections:[{...report,reportPath}]}}));
+  const snapshot=await db.srcSnapshot.create({data:{srcCd:'MOLEG',srcKey:'001248',srcUrl:'https://www.law.go.kr',contType:'application/json',srcCont:before,contHash:beforeHash}});
+  const law=await db.legal.create({data:{srcCd:'MOLEG',srcKey:'001248',legalNm:'승인 검증 법령'}});
+  const version=await db.legalVer.create({data:{legalId:law.id,verKey:'CORRECTION-TEST',enfcDt:new Date('2026-01-02'),prmlDt:new Date('2025-12-01')}});
+  const revision=await db.legalVerRev.create({data:{legalVerId:version.id,revNo:1,currentYn:true,srcSnapshotId:snapshot.id}});
+  const originalProvision=await db.legalProvi.create({data:{legalVerRevId:revision.id,proviTypeCd:'ARTICLE',dispNo:'제1조',normNo:'1',sortSeq:1,proviNm:'목적',proviCont:'제1조  이전 원문\n 원형 보존',enfcDt:new Date('2026-01-02')}});
+  const caseSnapshot=await db.srcSnapshot.create({data:{srcCd:'MOLEG',srcKey:'999999',srcUrl:'https://www.law.go.kr',contType:'application/json',srcCont:'{}',contHash:hash('{}')}});
+  const precedent=await db.legalPrec.create({data:{srcCd:'MOLEG',srcKey:'999999'}});
+  const caseRev=await db.legalPrecRev.create({data:{legalPrecId:precedent.id,srcSnapshotId:caseSnapshot.id,revNo:1,currentYn:true,caseNo:'2026다1234',caseNm:'합성 검증 사건',courtNm:'합성 법원',decisionDt:new Date('2026-01-01'),decisionCont:'합성 판례 원문'}});
+  const link=await db.legalPrecProvi.create({data:{legalPrecRevId:caseRev.id,refKey:'검증 참조',legalProviId:originalProvision.id,statCd:'VERIFIED',evidenceDesc:'합성 검증 연결'}});
+  const inbox=await (await originalFetch(base+'/admin/legal-refresh',{headers:{Authorization:'Bearer '+token}})).json();const reviewId=inbox.pending[0].id;
+  let source=after,officialCalls=0,onOfficial=async()=>{};
+  globalThis.fetch=async(input,init)=>{
+   const target=new URL(typeof input==='string'||input instanceof URL ? input : input.url);
+   if(target.hostname==='www.law.go.kr'){officialCalls++;await onOfficial();return new Response(source,{headers:{'Content-Type':'application/json'}});}
+   return originalFetch(input,init);
+  };
+  const post=(body,credential=token)=>originalFetch(base+'/admin/legal-refresh/reviews/'+reviewId+'/approve',{method:'POST',headers:{'Content-Type':'application/json',...(credential ? {Authorization:'Bearer '+credential}:{})},body:JSON.stringify(body)});
+  const input=()=>({requestId:randomUUID(),beforeHash,afterHash,confirmed:true});
+  assert.equal((await post(input(),null)).status,401);assert.equal((await post(input(),normal)).status,403);assert.equal((await post({...input(),confirmed:false})).status,400);assert.equal((await post({...input(),beforeHash:beforeHash+'\n'})).status,400);assert.equal((await post({...input(),userId:'1'})).status,400);
+  const mismatch=await (await post({...input(),beforeHash:'f'.repeat(64)})).json();assert.equal(mismatch.resultCode,'REVIEW_CHANGED');assert.equal(officialCalls,0);
+  config.set('MOLEG_OC','');assert.equal((await (await post(input())).json()).resultCode,'SOURCE_NOT_CONFIGURED');config.set('MOLEG_OC','SYNTHETIC_TEST_OC');
+  source=JSON.stringify(payload('다른 검증 원문'));assert.equal((await (await post(input())).json()).resultCode,'SOURCE_VERIFY_FAILED');source=after;
+  onOfficial=async()=>{await db.userRole.updateMany({where:{userId,roleCdId:role.id,delYn:false},data:{delYn:true,delDttm:new Date()}});};
+  assert.equal((await (await post(input())).json()).resultCode,'PERMISSION_CHANGED');onOfficial=async()=>{};await db.userRole.create({data:{userId,roleCdId:role.id}});
+  onOfficial=async()=>{await auth.logout(token);};assert.equal((await (await post(input())).json()).resultCode,'PERMISSION_CHANGED');onOfficial=async()=>{};token=(await auth.login('corr_admin','Synthetic8!')).token;
+  const originalTransaction=db.$transaction.bind(db);
+  db.$transaction=(work,options)=>originalTransaction(tx=>work(new Proxy(tx,{get(target,key){if(key!=='legalCorrHist')return Reflect.get(target,key);return new Proxy(target.legalCorrHist,{get(model,operation){if(operation==='create')return async()=>{throw Error('Synthetic receipt storage failure');};return Reflect.get(model,operation);}});}})),options);
+  const rollbackResult=await (await post(input())).json();assert.equal(rollbackResult.status,'FAILED');assert.equal(rollbackResult.resultCode,'APPLY_FAILED');db.$transaction=originalTransaction;
+  assert.equal(await db.legalVerRev.count({where:{legalVerId:version.id}}),1);assert.equal(await db.srcSnapshot.count({where:{contHash:afterHash}}),0);
+  const approved=input();const responses=await Promise.all([post(approved),post(approved)]);for(const response of responses)assert.equal(response.status,200);
+  const receipts=await Promise.all(responses.map(response=>response.json()));
+  assert.equal(receipts[0].status,'SUCCEEDED',JSON.stringify(receipts[0]));assert.equal(receipts[1].status,'SUCCEEDED',JSON.stringify(receipts[1]));assert.equal(receipts[0].id,approved.requestId);assert.equal(receipts[0].revision,2);assert.equal(receipts[0].affectedCount,1);
+  const count=officialCalls;assert.equal((await (await post(approved)).json()).status,'SUCCEEDED');assert.equal(officialCalls,count);
+  assert.equal((await post({...approved,afterHash:'e'.repeat(64)})).status,409);
+  assert.equal(await db.legalVerRev.count({where:{legalVerId:version.id}}),2);assert.equal(await db.legalCorrHist.count({where:{statCd:'SUCCEEDED'}}),1);
+  assert.equal((await db.legalVerRev.findUnique({where:{id:revision.id}})).currentYn,false);
+  assert.equal((await db.srcSnapshot.findUnique({where:{id:snapshot.id}})).srcCont,before);
+  assert.equal((await db.legalProvi.findUnique({where:{id:originalProvision.id}})).proviCont,originalProvision.proviCont);
+  assert.equal((await db.legalPrecProvi.findUnique({where:{id:link.id}})).legalProviId,originalProvision.id);
+  const historyResponse=await originalFetch(base+'/admin/legal-refresh/processing-history',{headers:{Authorization:'Bearer '+token}});assert.equal(historyResponse.status,200);const history=await historyResponse.json();
+  assert.ok(history.some(row=>row.status==='SUCCEEDED'&&row.operator==='corr_admin'&&row.revision===2));assert.ok(history.some(row=>row.status==='FAILED'));assert.equal(JSON.stringify(history).includes('SYNTHETIC_TEST_OC'),false);assert.equal(JSON.stringify(history).includes(directory),false);
+  assert.equal((await originalFetch(base+'/admin/legal-refresh/processing-history',{headers:{Authorization:'Bearer '+normal}})).status,403);
+ }finally{
+  globalThis.fetch=originalFetch;await app?.close();await db?.$disconnect();
+  if(created&&/^aurore_corr_test_[0-9a-f]{12}$/.test(name))run('docker',['exec','aurore-dev-check-postgres','dropdb','--force','-U','aurore_dev_check',name]);
+  if(directory&&dirname(resolve(directory))===resolve(tmpdir())&&basename(directory).startsWith('aurore-corr-approval-'))await rm(directory,{recursive:true});
+ }
+});
