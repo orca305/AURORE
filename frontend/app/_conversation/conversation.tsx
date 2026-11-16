@@ -1,6 +1,7 @@
 "use client";
 
 import {DocumentsPanel} from "./documents-panel";
+import {CaseContextPanel} from "./case-context-panel";
 import { CaseConnection } from "./case-connection";
 import {CorrectionRead,CorrectionHistory} from "./correction-read";
 import Link from "next/link";
@@ -31,16 +32,20 @@ export function Conversation({ ask, initialChat, member = false }: {
   const [phase, setPhase] = useState<Phase>(initialChat?.phase ?? "start");
   const [olderCursor, setOlderCursor] = useState(initialChat?.nextBeforeSeq ?? null);
   const [input, setInput] = useState("");
+  const [clarifyTarget,setClarifyTarget]=useState<string|null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [documentBusy,setDocumentBusy]=useState(false);
+  const [selectedDocuments,setSelectedDocuments]=useState<{id:string;name:string}[]>([]);
   const [documentEpoch,setDocumentEpoch]=useState(0);
+  const [caseSelection,setCaseSelection]=useState<import("./types").CaseSelection|null>(null);
+  const [caseEpoch,setCaseEpoch]=useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const acceptedRevision = useRef(initialChat?.revision ?? 0);
   const viewEpoch = useRef(0);
   const inFlight = useRef(false);
-  const retryRequest = useRef<{ roomId: string; id: string; text: string; revision: number } | null>(null);
+  const retryRequest = useRef<{ roomId: string; id: string; text: string; revision: number; documentIds:string[];caseContext?:import("./types").CaseSelection;clarifyReplyTo?:string } | null>(null);
   const latest = useRef<HTMLDivElement>(null);
   const inputField = useRef<HTMLTextAreaElement>(null);
   const pending = submitting || isPendingJob(detail?.job ?? null);
@@ -133,15 +138,19 @@ export function Conversation({ ask, initialChat, member = false }: {
         setPhase(reply.phase);
         setMessages(previous => [...previous, { role: "assistant", text: reply.text, source: reply.source }]);
       } else {
+        const documentIds=selectedDocuments.map(doc=>doc.id).sort();
         const previous = retryRequest.current;
-        const request = previous?.text === question ? previous : {
+        const request = previous?.text === question && JSON.stringify(previous.documentIds)===JSON.stringify(documentIds) && JSON.stringify(previous.caseContext??null)===JSON.stringify(caseSelection) && (previous.clarifyReplyTo??null)===clarifyTarget ? previous : {
           roomId: detail?.id ?? crypto.randomUUID(),
-          id: crypto.randomUUID(), text: question, revision: detail?.revision ?? 0,
+          id: crypto.randomUUID(), text: question, revision: detail?.revision ?? 0, documentIds,...(caseSelection?{caseContext:caseSelection}:{}),...(clarifyTarget?{clarifyReplyTo:clarifyTarget}:{}),
         };
         retryRequest.current = request;
-        const result = await sendChatMessage(request.roomId, request.id, question, request.revision);
+        const result = await sendChatMessage(request.roomId, request.id, question, request.revision, request.documentIds,request.caseContext,request.clarifyReplyTo);
         if (result.data) {
           retryRequest.current = null;
+          setClarifyTarget(null);
+          setSelectedDocuments([]);
+          setCaseSelection(null);setCaseEpoch(value=>value+1);
           setInput("");
           applyChat(result.data);
           window.history.replaceState(null, "", "/?chat=" + result.data.id);
@@ -151,7 +160,7 @@ export function Conversation({ ask, initialChat, member = false }: {
           if (result.status === 409 && detail) {
             const current = await refreshChat(detail.id);
             if (current.data) applyChat(current.data);
-            retryRequest.current = null;
+            retryRequest.current = null;setClarifyTarget(null);
           }
         }
       }
@@ -166,6 +175,9 @@ export function Conversation({ ask, initialChat, member = false }: {
   function reset() {
     if(documentBusy)return;
     setDocumentEpoch(value=>value+1);
+    setClarifyTarget(null);
+    setCaseSelection(null);setCaseEpoch(value=>value+1);
+    setSelectedDocuments([]);
     viewEpoch.current += 1;
     acceptedRevision.current = 0;
     setDetail(null);
@@ -226,7 +238,7 @@ export function Conversation({ ask, initialChat, member = false }: {
         <p>나의 상황을 이야기하고, 필요한 사실을 함께 확인합니다.</p>
       </div>
     </div>
-    {saved && member && (detail ? <CaseConnection key={detail.id} chat={detail} pending={pending||documentBusy} onSave={connectCase}/> : <p className={styles.caseHint}>대화를 시작하면 내 사건을 연결할 수 있습니다.</p>)}
+    {saved && member && (detail ? <CaseConnection key={detail.id} chat={detail} pending={pending||documentBusy} onSave={async id=>{const error=await connectCase(id);if(!error){setCaseSelection(null);setCaseEpoch(value=>value+1);}return error;}}/> : <p className={styles.caseHint}>대화를 시작하면 내 사건을 연결할 수 있습니다.</p>)}
     {messages.some(message=>message.source?.correction)&&<div className={styles.correctionNotice} role="status"><strong>{messages.some(message=>message.source?.correction&&!message.source.correction.readAt)?'미확인 정정 안내':'정정 안내 확인 완료'}</strong><p>{messages.some(message=>message.source?.correction&&!message.source.correction.readAt)?'이 대화에 표시된 답변에 미확인 정정 안내가 있습니다. 전후 원문을 살펴본 뒤 안내를 확인해 주세요.':'표시된 정정 안내를 모두 확인했습니다. 이전 답변과 인용문은 그대로 유지됩니다.'}</p></div>}
     {saved&&roomId&&<CorrectionHistory chatId={roomId}/>}
     {olderCursor && <button className={styles.reset} type="button" disabled={loadingEarlier} onClick={() => void earlier()}>
@@ -239,16 +251,21 @@ export function Conversation({ ask, initialChat, member = false }: {
             className={message.role === "user" ? styles.userMessage : styles.assistantMessage}>
             <p className={styles.speaker}>{message.role === "user" ? "내 이야기" : "오로르"}</p>
             <div className={styles.speech}>
+              {message.caseContext&&<p className={styles.sourceNote}>사건 사실관계 {message.caseContext.factCount}개 · 사건 버전 {message.caseContext.revision} · 법령 조회 기준일 {message.caseContext.asOf}{message.caseContext.current===false&&<span> · 이후 사건 정보나 연결이 변경되었습니다. 현재 사실관계로 다시 질문해 주세요.</span>}</p>}
+              {message.clarifyReplyTo&&<p className={styles.sourceNote}>이전 질문에 보완한 내용</p>}
               <p className={styles.messageText}>{message.text}</p>
+              {saved&&message.clarification&&message.id===messages.at(-1)?.id&&!pending&&<div className={styles.followups} aria-label="근거 보완 안내"><button type="button" disabled={documentBusy} onClick={()=>{setClarifyTarget(message.id!);inputField.current?.focus();}}>내용 보완하기 ↗</button></div>}
               {saved && member && detail?.linkedCase && message.role === "user" && message.id && <Link className={styles.factImport} href={'/cases/'+detail.linkedCase.id+'/from-message/'+message.id}>사실관계로 가져오기 ↗</Link>}
 
+              {message.documentAnswer&&<div className={styles.documentEvidence}><p className={styles.citationLabel}>회원이 검토한 첨부자료</p>{message.documentQuotes?.map(quote=><figure className={styles.citation} key={quote.id}><blockquote>{quote.quote}</blockquote><figcaption><a href={'/api/chat-documents/'+roomId+'/'+quote.documentId+'/download'} download>{quote.name} ↓</a><span>원문 일치 · 질문 관련성 AI 검토</span></figcaption></figure>)}{!message.documentQuotes?.length&&<p className={styles.sourceNote}>관련 원문을 확인하지 못했거나 첨부자료가 삭제되어 인용을 표시할 수 없습니다.</p>}</div>}
               {message.source && <figure className={styles.citation}>
-                <p className={styles.citationLabel}>확인한 원문</p>
+                <p className={styles.citationLabel}>{message.source.verification==='UNREVIEWED'?'검색 후보 · 질문 관련성 미검증':'확인한 원문'}</p>
                 <blockquote>{message.source.quote}</blockquote>
                 <figcaption>
                   {message.source.href && <Link href={message.source.href}>{message.source.label} <span aria-hidden="true">↗</span></Link>}
                   <a href={message.source.url} target="_blank" rel="noopener noreferrer">{message.source.href ? "법제처 원문" : message.source.label}</a>
                 </figcaption>
+                {message.source.verification==='MODEL_REVIEWED'&&<p className={styles.sourceNote}>원문 일치 · 질문 관련성 AI 검토</p>}
                 {message.source.warning && <p className={styles.sourceWarning}>{message.source.warning}</p>}
                 {message.source.correction&&<div className={styles.correctionLinks}><span>{new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeZone:'Asia/Seoul'}).format(new Date(message.source.correction.recordedAt))} 정정 원문 등록</span>{message.source.correction.compareHref&&<Link href={message.source.correction.compareHref}>정정 전후 비교 ↗</Link>}<Link href={message.source.correction.currentHref}>현재 원문 확인 ↗</Link></div>}
                 {saved&&roomId&&message.id&&message.source.correction&&<CorrectionRead chatId={roomId} messageId={message.id} noticeKey={message.source.correction.key} readAt={message.source.correction.readAt} onConfirmed={(key,date)=>setMessages(previous=>previous.map(row=>row.id===message.id&&row.source?.correction?.key===key?{...row,source:{...row.source,correction:{...row.source.correction,readAt:date}}}:row))} onStale={()=>{void refreshChat(roomId).then(result=>{if(result.data)applyChat(result.data);});}}/>}
@@ -270,12 +287,15 @@ export function Conversation({ ask, initialChat, member = false }: {
     </div>}
     {(notice || pollError) && <p role="alert" className={styles.error}>{notice || pollError}</p>}
     {detail?.job && ["FAILED", "CANCELLED"].includes(detail.job.status) && <div className={styles.jobControls}>
-      <p>{detail.job.status === "FAILED" ? "답변을 준비하지 못했습니다. 저장된 질문으로 다시 시도할 수 있어요." : "답변 준비를 취소했습니다."}</p>
-      <button type="button" className={styles.reset} disabled={submitting} onClick={() => void jobAction(true)}>답변 다시 시도</button>
+      <p>{detail.job.reason==="CASE_CONTEXT_CHANGED" ? "사건 정보가 변경되어 답변 저장을 취소했습니다. 사실관계를 다시 선택하고 질문해 주세요." : detail.job.status === "FAILED" ? "답변을 준비하지 못했습니다. 저장된 질문으로 다시 시도할 수 있어요." : "답변 준비를 취소했습니다."}</p>
+      {detail.job.reason!=="CASE_CONTEXT_CHANGED"&&<button type="button" className={styles.reset} disabled={submitting} onClick={() => void jobAction(true)}>답변 다시 시도</button>}
     </div>}
     {saved && pending && <button type="button" className={styles.reset} disabled={submitting} onClick={() => void jobAction(false)}>답변 준비 취소</button>}
-    {saved&&member&&<DocumentsPanel key={documentEpoch} chatId={roomId??null} disabled={pending} onBusy={value=>{inFlight.current=value;setDocumentBusy(value);}} onSaved={data=>{applyChat(data);window.history.replaceState(null,"","/?chat="+data.id);window.dispatchEvent(new Event('aurore:chat-history'));}}/>}
+    {saved&&member&&detail?.linkedCase&&<CaseContextPanel key={detail.linkedCase.id+':'+caseEpoch} chatId={detail.id} disabled={pending||documentBusy} value={caseSelection} onChange={setCaseSelection} onBusy={busy=>{inFlight.current=busy;setDocumentBusy(busy);}}/>}
+    {saved&&member&&<DocumentsPanel key={documentEpoch} chatId={roomId??null} disabled={pending||documentBusy} onBusy={value=>{inFlight.current=value;setDocumentBusy(value);}} selected={selectedDocuments} onSelect={setSelectedDocuments} onRemoved={id=>setMessages(previous=>previous.map(message=>({...message,documentQuotes:message.documentQuotes?.filter(quote=>quote.documentId!==id)})))} onSaved={data=>{applyChat(data);window.history.replaceState(null,"","/?chat="+data.id);window.dispatchEvent(new Event('aurore:chat-history'));}}/>}
+    {clarifyTarget&&<div className={styles.caseHint} role="status">이전 질문에 덧붙일 내용을 작성합니다. 첨부자료·사건 정보는 필요한 경우 다시 선택해 주세요. <button type="button" className={styles.reset} disabled={pending||documentBusy} onClick={()=>{setClarifyTarget(null);retryRequest.current=null;}}>새 질문으로 작성</button></div>}
     <form onSubmit={send} className={`${styles.composer} ${!hasMessages ? styles.initialComposer : ""}`}>
+      {selectedDocuments.length>0&&<p className={styles.sourceNote}>이번 질문에 사용할 자료: {selectedDocuments.map(doc=>doc.name).join(' · ')}<button type="button" className={styles.reset} disabled={pending||documentBusy} onClick={()=>setSelectedDocuments([])}>선택 해제</button></p>}
       <label htmlFor="conversation-input">{hasMessages ? "이어서 이야기하기" : "나의 상황"}</label>
       <textarea ref={inputField} id="conversation-input" name="question" value={input}
         onChange={event => setInput(event.target.value)}

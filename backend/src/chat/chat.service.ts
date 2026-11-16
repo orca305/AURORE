@@ -1,5 +1,16 @@
+import { generationErrorCode } from './job-diagnostics.js';
+import { isUncertainSupplement } from './clarification.js';
+import { redactDocument } from '../documents/document-text.js';
+import {
+  loadCaseContext,
+  cleanedFact,
+  validateSelection,
+  type CaseSelection,
+  type CaseContextMeta,
+} from './case-context.js';
 import {
   BadRequestException,
+  ServiceUnavailableException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -16,6 +27,7 @@ import {
   ChatAnswerService,
   type PreparedAnswer,
   type PreparedCitation,
+  type DocumentInput,
 } from './answer.service.js';
 
 const unfinished = ['QUEUED', 'RUNNING', 'RETRY_WAIT'];
@@ -163,7 +175,13 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         id: true,
         sessNm: true,
         linkedCase: {
-          select: { id: true, caseNm: true, delYn: true, userId: true },
+          select: {
+            id: true,
+            caseNm: true,
+            delYn: true,
+            userId: true,
+            revNo: true,
+          },
         },
         uptDttm: true,
         phaseCd: true,
@@ -181,6 +199,24 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
             msgSeq: true,
             roleCd: true,
             msgCont: true,
+            clarifyCd: true,
+            clarifyReplyTo: true,
+            documentQuotes: {
+              where: {
+                document: { delYn: false, userId: owner.userId ?? -1n },
+              },
+              orderBy: { id: 'asc' },
+              select: {
+                id: true,
+                attachDocId: true,
+                quote: true,
+                document: { select: { docNm: true } },
+              },
+            },
+            answerJobs: {
+              select: { providerCd: true, caseContext: true },
+              take: 1,
+            },
             citations: {
               select: {
                 id: true,
@@ -188,6 +224,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
                 label: true,
                 srcUrl: true,
                 viewHref: true,
+                supportVerifyCd: true,
                 srcSnapshotId: true,
                 legalVerId: true,
                 legalPrecId: true,
@@ -196,9 +233,9 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
           },
         },
         jobs: {
-          orderBy: { rgstDttm: 'desc' },
+          orderBy: { input: { msgSeq: 'desc' } },
           take: 1,
-          select: { id: true, statCd: true },
+          select: { id: true, statCd: true, errorCd: true },
         },
       },
     });
@@ -284,10 +321,56 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
               ? ('user' as const)
               : ('assistant' as const),
           text: message.msgCont,
+          ...(message.clarifyCd ? { clarification: message.clarifyCd } : {}),
+          ...(message.clarifyReplyTo
+            ? { clarifyReplyTo: message.clarifyReplyTo }
+            : {}),
+          ...(message.answerJobs[0]?.caseContext
+            ? {
+                caseContext: {
+                  current: Boolean(
+                    room.linkedCase &&
+                    !room.linkedCase.delYn &&
+                    room.linkedCase.userId === owner.userId &&
+                    room.linkedCase.id ===
+                      (
+                        message.answerJobs[0]
+                          .caseContext as unknown as CaseContextMeta
+                      ).caseId &&
+                    room.linkedCase.revNo ===
+                      (
+                        message.answerJobs[0]
+                          .caseContext as unknown as CaseContextMeta
+                      ).revision,
+                  ),
+                  asOf: (
+                    message.answerJobs[0]
+                      .caseContext as unknown as CaseContextMeta
+                  ).asOf,
+                  factCount: (
+                    message.answerJobs[0]
+                      .caseContext as unknown as CaseContextMeta
+                  ).factIds.length,
+                  revision: (
+                    message.answerJobs[0]
+                      .caseContext as unknown as CaseContextMeta
+                  ).revision,
+                },
+              }
+            : {}),
+          documentAnswer: message.answerJobs[0]?.providerCd === 'LOCAL_DOC',
+          documentQuotes: message.documentQuotes.map((quote) => ({
+            id: quote.id.toString(),
+            documentId: quote.attachDocId,
+            name: quote.document.docNm,
+            quote: quote.quote,
+          })),
+
           ...(citation
             ? {
                 source: {
                   quote: citation.citeCont,
+                  verification: citation.supportVerifyCd,
                   label: citation.label,
                   url: citation.srcUrl,
                   ...(current
@@ -321,7 +404,13 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       messages,
       nextBeforeSeq: room.messages.length > 100 ? rows[0].msgSeq : null,
       job: room.jobs[0]
-        ? { id: room.jobs[0].id, status: room.jobs[0].statCd }
+        ? {
+            id: room.jobs[0].id,
+            status: room.jobs[0].statCd,
+            ...(room.jobs[0].errorCd === 'CASE_CONTEXT_CHANGED'
+              ? { reason: 'CASE_CONTEXT_CHANGED' }
+              : {}),
+          }
         : null,
     };
   }
@@ -464,6 +553,9 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     requestId: string,
     question: string,
     revision: number,
+    documentIds: string[] = [],
+    caseSelection?: CaseSelection,
+    clarifyReplyTo?: string,
   ) {
     const text = question.trim();
     if (
@@ -473,13 +565,66 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     ) {
       throw new BadRequestException('질문을 1~1,000자로 입력해 주세요.');
     }
-    const hash = createHash('sha256').update(text).digest('hex');
+    if (
+      !Array.isArray(documentIds) ||
+      documentIds.length > 3 ||
+      documentIds.some(
+        (value) => typeof value !== 'string' || !uuidPattern.test(value),
+      )
+    )
+      throw new BadRequestException('첨부자료는 최대 3개까지 선택해 주세요.');
+    const ids = documentIds.map((value) => value.toLowerCase()).sort();
+    if (new Set(ids).size !== ids.length)
+      throw new BadRequestException('첨부자료 선택이 중복됐습니다.');
+    if (ids.length && owner.userId === null)
+      throw new ForbiddenException('첨부자료 질문은 회원 전용입니다.');
+    if (caseSelection) validateSelection(caseSelection);
+    if (caseSelection && owner.userId === null)
+      throw new ForbiddenException('사건 정보 활용은 회원 전용입니다.');
+    const normalizedSelection = caseSelection
+      ? {
+          revision: caseSelection.revision,
+          factIds: [...caseSelection.factIds].sort(),
+          asOf: caseSelection.asOf,
+          confirmed: true as const,
+        }
+      : undefined;
+    if (
+      clarifyReplyTo !== undefined &&
+      (typeof clarifyReplyTo !== 'string' || !uuidPattern.test(clarifyReplyTo))
+    )
+      throw new BadRequestException('보완할 질문을 확인해 주세요.');
+    const clarificationId = clarifyReplyTo?.toLowerCase();
+    const hash = createHash('sha256')
+      .update(
+        clarificationId
+          ? JSON.stringify([
+              text,
+              ids,
+              normalizedSelection ?? null,
+              clarificationId,
+            ])
+          : normalizedSelection
+            ? JSON.stringify([text, ids, normalizedSelection])
+            : ids.length
+              ? JSON.stringify([text, ids])
+              : text,
+      )
+      .digest('hex');
     await this.db.$transaction(async (tx) => {
       const ownerKey =
         owner.userId !== null
           ? 'chat-user:' + owner.userId
           : 'chat-guest:' + owner.guestSessId;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ownerKey}, 0))`;
+      const contextRoom = normalizedSelection
+        ? await tx.chatSess.findFirst({
+            where: { id, ...visibleRoom(owner) },
+            select: { userCaseId: true },
+          })
+        : null;
+      if (contextRoom?.userCaseId)
+        await tx.$queryRaw`SELECT id FROM user_case WHERE id=${contextRoom.userCaseId}::uuid AND user_id=${owner.userId} FOR SHARE`;
       const title = Array.from(text.replace(/\s+/g, ' ')).slice(0, 80).join('');
       await tx.$executeRaw`
         INSERT INTO chat_sess (id, user_id, guest_sess_id, sess_nm, rgst_dttm, upt_dttm, expr_dttm)
@@ -538,11 +683,81 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       ) {
         throw new ConflictException('이 대화의 답변을 기다려 주세요.');
       }
+      const documents = ids.length
+        ? await tx.attachDoc.findMany({
+            where: {
+              id: { in: ids },
+              chatSessId: id,
+              userId: owner.userId!,
+              delYn: false,
+            },
+            select: { id: true, mdCont: true },
+          })
+        : [];
+      if (documents.length !== ids.length)
+        throw new NotFoundException('선택한 첨부자료를 찾을 수 없습니다.');
+      if (documents.reduce((sum, doc) => sum + doc.mdCont.length, 0) > 12000)
+        throw new BadRequestException(
+          '선택한 Markdown의 합계는 12,000자 이하여야 합니다.',
+        );
+      if (ids.length && !(await this.answers.documentsReady()))
+        throw new ServiceUnavailableException(
+          '첨부자료 답변용 로컬 AI가 준비되지 않았습니다.',
+        );
+      if (normalizedSelection && room.userCaseId !== contextRoom?.userCaseId)
+        throw new ConflictException(
+          '사건 연결이 변경되었습니다. 다시 확인해 주세요.',
+        );
+      const context = normalizedSelection
+        ? await loadCaseContext(
+            tx,
+            room.userCaseId ?? '00000000-0000-4000-8000-000000000000',
+            owner.userId,
+            normalizedSelection,
+          )
+        : null;
+      const clarification = clarificationId
+        ? await tx.chatMsg.findFirst({
+            where: {
+              id: clarificationId,
+              chatSessId: id,
+              roleCd: 'ASSISTANT',
+              delYn: false,
+              clarifyCd: { not: null },
+              msgSeq: room.nextMsgSeq - 1,
+            },
+            select: {
+              parent: {
+                select: { msgCont: true, delYn: true, clarifyReplyTo: true },
+              },
+            },
+          })
+        : null;
+      if (
+        clarificationId &&
+        (!clarification?.parent ||
+          clarification.parent.delYn ||
+          clarification.parent.clarifyReplyTo)
+      )
+        throw new ConflictException(
+          '이 질문은 더 이상 보완할 수 없습니다. 최신 대화를 확인해 주세요.',
+        );
+      if (
+        clarification?.parent &&
+        (context?.text.length ?? 0) +
+          redactDocument(clarification.parent.msgCont).length +
+          40 >
+          8000
+      )
+        throw new BadRequestException(
+          '보완 질문과 사건 정보는 합계 8,000자까지 사용할 수 있습니다. 선택한 사실관계를 줄여 주세요.',
+        );
       const message = await tx.chatMsg.create({
         data: {
           chatSessId: id,
           msgSeq: room.nextMsgSeq,
           roleCd: 'USER',
+          ...(clarificationId ? { clarifyReplyTo: clarificationId } : {}),
           msgCont: text,
         },
       });
@@ -552,6 +767,12 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
           chatSessId: id,
           inputMsgId: message.id,
           requestHash: hash,
+          ...(context ? { caseContext: context.meta } : {}),
+          providerCd: ids.length
+            ? 'LOCAL_DOC'
+            : context
+              ? 'STORED_SEARCH'
+              : 'DEMO',
           ownerAuthHash: owner.authHash,
           phaseCd: room.phaseCd,
           nextRunDttm: nowAtSecond(),
@@ -559,6 +780,15 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
           deadlineDttm: new Date(nowAtSecond().getTime() + 300_000),
         },
       });
+      if (ids.length)
+        await tx.aiJobDoc.createMany({
+          data: documents.map((doc) => ({
+            jobId: requestId,
+            attachDocId: doc.id,
+            chatSessId: id,
+            mdHash: createHash('sha256').update(doc.mdCont).digest('hex'),
+          })),
+        });
       await tx.chatSess.update({
         where: { id },
         data: { revNo: { increment: 1 }, nextMsgSeq: { increment: 1 } },
@@ -800,7 +1030,10 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       where: { id: { in: ids }, delYn: false },
       data: { ...deletion, revNo: { increment: 1 } },
     });
-    await tx.attachDoc.updateMany({where:{chatSessId:{in:ids},delYn:false},data:deletion});
+    await tx.attachDoc.updateMany({
+      where: { chatSessId: { in: ids }, delYn: false },
+      data: deletion,
+    });
     await tx.chatMsg.updateMany({
       where: { chatSessId: { in: ids }, delYn: false },
       data: deletion,
@@ -827,6 +1060,94 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async caseContextOptions(
+    id: string,
+    owner: ChatOwner,
+    limit = 20,
+    offset = 0,
+  ) {
+    if (owner.userId === null)
+      throw new ForbiddenException('사건 정보 활용은 회원 전용입니다.');
+    if (
+      ![10, 20, 50].includes(limit) ||
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      offset > 100000
+    )
+      throw new BadRequestException();
+    return this.db.$transaction(async (tx) => {
+      const initial = await tx.chatSess.findFirst({
+        where: { id, ...visibleRoom(owner) },
+        select: { userCaseId: true },
+      });
+      if (initial?.userCaseId)
+        await tx.$queryRaw`SELECT id FROM user_case WHERE id=${initial.userCaseId}::uuid AND user_id=${owner.userId} FOR SHARE`;
+      const room = await this.lockedRoom(tx, id, owner);
+      if (room.userCaseId !== initial?.userCaseId)
+        throw new ConflictException('사건 연결이 변경되었습니다.');
+      if (!room.userCaseId)
+        throw new NotFoundException('연결된 사건이 없습니다.');
+      await tx.$queryRaw`SELECT id FROM user_case WHERE id=${room.userCaseId}::uuid AND user_id=${owner.userId} FOR SHARE`;
+      const parent = await tx.userCase.findFirst({
+        where: { id: room.userCaseId, userId: owner.userId!, delYn: false },
+        select: { id: true, revNo: true },
+      });
+      if (!parent) throw new NotFoundException('연결된 사건이 없습니다.');
+      const where = {
+        userCaseId: parent.id,
+        delYn: false,
+        verifyStatCd: 'USER_CONFIRMED',
+      };
+      const total = await tx.caseFact.count({ where });
+      const rows = await tx.caseFact.findMany({
+        where,
+        orderBy: { id: 'asc' },
+        take: limit,
+        skip: offset,
+        select: { id: true, factVal: true },
+      });
+      return {
+        caseId: parent.id,
+        revision: parent.revNo,
+        items: rows.map((row) => ({
+          id: row.id.toString(),
+          ...cleanedFact(row.factVal),
+        })),
+        total,
+        offset,
+        nextOffset: offset + limit < total ? offset + limit : null,
+      };
+    });
+  }
+  private async jobCaseContext(
+    job: { caseContext: Prisma.JsonValue; chatSessId: string },
+    userId: bigint | null,
+    tx?: Prisma.TransactionClient,
+  ) {
+    if (!job.caseContext) return null;
+    const check = async (database: Prisma.TransactionClient) => {
+      try {
+        const meta = job.caseContext as unknown as CaseContextMeta;
+        const room = await database.chatSess.findFirst({
+          where: { id: job.chatSessId, userId, delYn: false },
+          select: { userCaseId: true },
+        });
+        if (!room || room.userCaseId !== meta.caseId) throw new Error();
+        const current = await loadCaseContext(database, meta.caseId, userId, {
+          revision: meta.revision,
+          factIds: meta.factIds,
+          asOf: meta.asOf,
+          confirmed: true,
+        });
+        if (current.meta.hash !== meta.hash) throw new Error();
+        return current;
+      } catch {
+        throw new Error('CaseContextChanged');
+      }
+    };
+    return tx ? check(tx) : this.db.$transaction(check);
+  }
+
   async job(id: string, owner: ChatOwner) {
     const job = await this.db.aiJob.findFirst({
       where: { id, chat: visibleRoom(owner) },
@@ -834,6 +1155,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         id: true,
         statCd: true,
         chatSessId: true,
+        caseContext: true,
         input: { select: { msgSeq: true } },
       },
     });
@@ -849,6 +1171,10 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
           ? 'chat-user:' + owner.userId
           : 'chat-guest:' + owner.guestSessId;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ownerKey}, 0))`;
+      if (job.caseContext) {
+        const meta = job.caseContext as unknown as CaseContextMeta;
+        await tx.$queryRaw`SELECT id FROM user_case WHERE id=${meta.caseId}::uuid AND user_id=${owner.userId} FOR SHARE`;
+      }
       const room = await this.lockedRoom(tx, job.chatSessId, owner);
       if (
         (await tx.aiJob.count({
@@ -861,10 +1187,34 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         throw new ConflictException(
           '이후에 나눈 대화가 있어 이전 질문을 다시 실행할 수 없습니다.',
         );
+      const retryJob = await tx.aiJob.findUniqueOrThrow({ where: { id } });
+      if (retryJob.caseContext) {
+        try {
+          await this.jobCaseContext(retryJob, owner.userId, tx);
+        } catch {
+          throw new ConflictException(
+            '사건이 변경되어 다시 실행할 수 없습니다. 사실관계를 다시 선택해 주세요.',
+          );
+        }
+      }
+      if (retryJob.providerCd === 'LOCAL_DOC') {
+        try {
+          await this.jobDocuments(id, job.chatSessId, owner.userId, tx);
+        } catch {
+          throw new ConflictException(
+            '첨부자료가 삭제되었거나 변경되어 다시 실행할 수 없습니다.',
+          );
+        }
+        if (!(await this.answers.documentsReady()))
+          throw new ServiceUnavailableException(
+            '첨부자료 답변용 로컬 AI가 준비되지 않았습니다.',
+          );
+      }
       const changed = await tx.aiJob.updateMany({
         where: { id, statCd: { in: ['FAILED', 'CANCELLED'] } },
         data: {
           statCd: 'QUEUED',
+          resultCd: null,
           attemptNo: 0,
           deadlineDttm: new Date(nowAtSecond().getTime() + 300_000),
           errorCd: null,
@@ -904,7 +1254,10 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         ],
       },
       orderBy: [{ rgstDttm: 'asc' }, { id: 'asc' }],
-      include: { chat: true, input: { select: { msgCont: true } } },
+      include: {
+        chat: true,
+        input: { select: { msgCont: true, clarifyReplyTo: true } },
+      },
     });
     if (!job) return null;
     const ownership = {
@@ -946,6 +1299,68 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
 
   private currentLease(id: string, leaseToken: string): Prisma.AiJobWhereInput {
     return { id, statCd: 'RUNNING', leaseToken, leaseDttm: { gt: new Date() } };
+  }
+
+  private async jobDocuments(
+    jobId: string,
+    chatId: string,
+    userId: bigint | null,
+    tx: Prisma.TransactionClient = this.db,
+  ): Promise<DocumentInput[]> {
+    const links = await tx.aiJobDoc.findMany({
+      where: { jobId, chatSessId: chatId },
+      include: {
+        document: {
+          select: {
+            id: true,
+            docNm: true,
+            mdCont: true,
+            delYn: true,
+            userId: true,
+          },
+        },
+      },
+    });
+    if (
+      !links.length ||
+      links.length > 3 ||
+      links.some(
+        (row) =>
+          row.document.delYn ||
+          row.document.userId !== userId ||
+          createHash('sha256').update(row.document.mdCont).digest('hex') !==
+            row.mdHash,
+      )
+    )
+      throw new Error('DocumentUnavailable');
+    if (links.reduce((sum, row) => sum + row.document.mdCont.length, 0) > 12000)
+      throw new Error('DocumentContextLimit');
+    return links.map((row) => ({
+      id: row.document.id,
+      name: row.document.docNm,
+      markdown: row.document.mdCont,
+      mdHash: row.mdHash,
+    }));
+  }
+
+  private async supplementQuestion(chatId: string, messageId: string) {
+    const row = await this.db.chatMsg.findFirst({
+      where: {
+        id: messageId,
+        chatSessId: chatId,
+        roleCd: 'ASSISTANT',
+        delYn: false,
+        clarifyCd: { not: null },
+      },
+      select: {
+        parent: {
+          select: { msgCont: true, delYn: true, clarifyReplyTo: true },
+        },
+      },
+    });
+    if (!row?.parent || row.parent.delYn || row.parent.clarifyReplyTo)
+      throw new Error('ClarificationUnavailable');
+    return redactDocument(row.parent.msgCont);
   }
 
   async drain() {
@@ -990,8 +1405,43 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
               data: { statCd: 'CANCELLED', leaseToken: null, leaseDttm: null },
             });
           } else {
+            const context = await this.jobCaseContext(job, room.userId);
+            const documentQuestion = job.input.msgCont;
+            const previous = job.input.clarifyReplyTo
+              ? await this.supplementQuestion(
+                  job.chatSessId,
+                  job.input.clarifyReplyTo,
+                )
+              : null;
+            const supplementalContext = previous
+              ? '보완 대상 질문: ' + previous + '\n' + (context?.text ?? '')
+              : context?.text;
             const answer = await Promise.race([
-              this.answers.generate(job.input.msgCont, job.phaseCd),
+              job.providerCd === 'LOCAL_DOC'
+                ? this.jobDocuments(job.id, job.chatSessId, room.userId).then(
+                    (documents) =>
+                      this.answers.generateDocuments(
+                        documentQuestion,
+                        documents,
+                        supplementalContext,
+                      ),
+                  )
+                : previous && isUncertainSupplement(documentQuestion)
+                  ? Promise.resolve({
+                      phase: 'start' as const,
+                      resultCd: 'FACTS_UNCONFIRMED' as const,
+                      text: '확인되지 않은 사실은 추정하지 않겠습니다. 현재 저장된 근거만으로는 답변을 확정할 수 없습니다. 내용을 확인한 뒤 새 질문으로 이어가 주세요.',
+                    })
+                  : context || previous
+                    ? this.answers.generateStored(
+                        documentQuestion,
+                        {
+                          text: supplementalContext ?? '',
+                          asOf: context?.meta.asOf,
+                        },
+                        Boolean(previous),
+                      )
+                    : this.answers.generate(documentQuestion, job.phaseCd),
               new Promise<never>((_, reject) => {
                 deadline = setTimeout(
                   () => reject(new Error('GenerationTimeout')),
@@ -1000,7 +1450,15 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
                 deadline.unref();
               }),
             ]);
-            await this.complete(job.chatSessId, id, leaseToken, answer);
+            await this.complete(
+              job.chatSessId,
+              id,
+              leaseToken,
+              answer,
+              context
+                ? { caseId: context.meta.caseId, userId: room.userId }
+                : undefined,
+            );
           }
         } catch (error) {
           const errorCd =
@@ -1013,8 +1471,13 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
           await this.db.aiJob.updateMany({
             where: this.currentLease(id, leaseToken),
             data: {
-              statCd: job.attemptNo >= 3 ? 'FAILED' : 'RETRY_WAIT',
-              errorCd: 'GENERATION_FAILED',
+              statCd:
+                error instanceof Error && error.message === 'CaseContextChanged'
+                  ? 'CANCELLED'
+                  : job.attemptNo >= 3
+                    ? 'FAILED'
+                    : 'RETRY_WAIT',
+              errorCd: generationErrorCode(error),
               leaseToken: null,
               leaseDttm: null,
               nextRunDttm: new Date(nowAtSecond().getTime() + 1000),
@@ -1036,8 +1499,11 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     jobId: string,
     leaseToken: string,
     answer: PreparedAnswer,
+    contextLock?: { caseId: string; userId: bigint | null },
   ) {
     await this.db.$transaction(async (tx) => {
+      if (contextLock)
+        await tx.$queryRaw`SELECT id FROM user_case WHERE id=${contextLock.caseId}::uuid AND user_id=${contextLock.userId} FOR SHARE`;
       await tx.$queryRaw`SELECT id FROM chat_sess WHERE id = ${roomId}::uuid FOR UPDATE`;
       const job = await tx.aiJob.findFirst({
         where: this.currentLease(jobId, leaseToken),
@@ -1073,6 +1539,28 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         });
         return;
       }
+      await this.jobCaseContext(job, room.userId, tx);
+      const documentInputs =
+        job.providerCd === 'LOCAL_DOC'
+          ? await this.jobDocuments(jobId, roomId, room.userId, tx)
+          : [];
+      if (
+        job.providerCd === 'LOCAL_DOC' &&
+        (!Array.isArray(answer.documentQuotes) ||
+          answer.documentQuotes.length > 3 ||
+          answer.documentQuotes.some(
+            (quote) =>
+              !documentInputs.some(
+                (doc) =>
+                  doc.id === quote.documentId &&
+                  doc.mdHash === quote.mdHash &&
+                  quote.quote.length >= 8 &&
+                  quote.quote.length <= 1200 &&
+                  doc.markdown.includes(quote.quote),
+              ),
+          ))
+      )
+        throw new Error('DocumentQuoteMismatch');
       if (answer.citation?.legalVerId) {
         await tx.$queryRaw`SELECT id FROM legal_ver_rev WHERE legal_ver_id = ${answer.citation.legalVerId} AND src_snapshot_id = ${answer.citation.srcSnapshotId} FOR SHARE`;
       } else if (answer.citation?.legalPrecId) {
@@ -1080,8 +1568,14 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       }
       let citation: PreparedCitation | undefined = answer.citation;
       let text = answer.text;
+      let resultCd =
+        answer.resultCd ??
+        (citation || answer.documentQuotes?.length
+          ? 'EVIDENCE_FOUND'
+          : 'GUIDANCE');
       if (citation && !(await this.citationIsCurrent(citation, tx))) {
         citation = undefined;
+        resultCd = 'SOURCE_CHANGED';
         text =
           '원문 상태가 변경되어 답변을 보류했습니다. 최신 자료로 다시 질문해 주세요.';
       }
@@ -1091,14 +1585,27 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
           prntMsgId: job.inputMsgId,
           msgSeq: room.nextMsgSeq,
           roleCd: 'ASSISTANT',
+          ...(answer.clarifyCd ? { clarifyCd: answer.clarifyCd } : {}),
           msgCont: text,
           ...(citation ? { citations: { create: citation } } : {}),
         },
       });
+      if (job.providerCd === 'LOCAL_DOC' && answer.documentQuotes?.length)
+        await tx.docQuote.createMany({
+          data: answer.documentQuotes.map((quote) => ({
+            chatSessId: roomId,
+            msgId: message.id,
+            attachDocId: quote.documentId,
+            quote: quote.quote,
+            mdHash: quote.mdHash,
+          })),
+        });
       const finalized = await tx.aiJob.updateMany({
         where: this.currentLease(jobId, leaseToken),
         data: {
           statCd: 'SUCCEEDED',
+          resultCd,
+          ...(answer.providerCd ? { providerCd: answer.providerCd } : {}),
           answerMsgId: message.id,
           leaseToken: null,
           leaseDttm: null,

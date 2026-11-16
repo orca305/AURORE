@@ -42,10 +42,22 @@ async function mutation<T=ChatDetail>(path: string, body?: object, create = fals
   return result;
 }
 
-export async function sendChatMessage(id: string, requestId: string, question: string, revision: number) {
+export async function sendChatMessage(id: string, requestId: string, question: string, revision: number, documentIds:string[] = [], caseContext?:import("./types").CaseSelection,clarifyReplyTo?:string) {
   if (!chatIdPattern.test(id) || !chatIdPattern.test(requestId) ||
     typeof question !== "string" || Array.from(question).length > 1000 || !Number.isInteger(revision) || revision < 0) return invalid();
-  return mutation("/chat-sessions/" + id + "/messages", { question, requestId, revision }, true);
+  if(!Array.isArray(documentIds)||documentIds.length>3||documentIds.some(value=>!chatIdPattern.test(value))||new Set(documentIds).size!==documentIds.length)return invalid();
+  if(clarifyReplyTo!==undefined&&!chatIdPattern.test(clarifyReplyTo))return invalid();
+  const result=await mutation("/chat-sessions/" + id + "/messages", { question, requestId, revision, documentIds,...(caseContext?{caseContext}:{}),...(clarifyReplyTo?{clarifyReplyTo}:{}) }, true);
+  if(documentIds.length){if(result.status===503)result.error='첨부자료 답변용 로컬 AI가 준비되지 않았습니다. 모델 연결 후 다시 시도해 주세요.';if(result.status===400)result.error='첨부자료는 최대 3개, 선택한 Markdown 합계 12,000자까지 사용할 수 있습니다.';if(result.status===404)result.error='선택한 첨부자료가 삭제되었거나 이 대화의 자료가 아닙니다. 다시 확인해 주세요.';}
+  if(clarifyReplyTo&&result.status===409)result.error='보완할 질문이 변경되었습니다. 최신 대화를 확인해 주세요.';
+  if(caseContext){if(result.status===409)result.error='사건 또는 대화가 변경되었습니다. 사용할 사실관계를 다시 확인해 주세요.';if(result.status===400)result.error='사실관계는 최대 10개·합계 8,000자이며 조회 기준일을 확인해야 합니다.';}
+  return result;
+}
+
+export async function caseContextOptions(id:string,limit=20,offset=0):Promise<ChatResult<import('./types').CaseContextPage>>{
+ if(!chatIdPattern.test(id)||![10,20,50].includes(limit)||!Number.isInteger(offset)||offset<0||offset>100000)return invalid();
+ const credential=await chatCredential();if(!credential)return {data:null,status:401,error:'로그인 상태를 확인해 주세요.'};
+ return requestChat('/chat-sessions/'+id+'/case-context?'+new URLSearchParams({limit:String(limit),offset:String(offset)}),credential);
 }
 
 export async function refreshChat(id: string, beforeSeq?: number) {

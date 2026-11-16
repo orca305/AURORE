@@ -383,6 +383,14 @@ export class DocumentsService {
       });
       if (!result.count)
         throw new NotFoundException('첨부자료를 찾을 수 없습니다.');
+      await tx.aiJob.updateMany({
+        where: {
+          chatSessId: chatId,
+          statCd: { in: ['QUEUED', 'RUNNING', 'RETRY_WAIT'] },
+          documentLinks: { some: { attachDocId: id } },
+        },
+        data: { statCd: 'CANCELLED', leaseToken: null, leaseDttm: null },
+      });
       await tx.chatSess.update({
         where: { id: chatId },
         data: { revNo: { increment: 1 }, uptDttm: now() },

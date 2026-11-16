@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
+import { tmpdir, hostname } from 'node:os';
 import { ConfigService } from '@nestjs/config';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import { AdminRefreshService } from './admin-refresh.service.js';
@@ -102,17 +102,15 @@ async function fixture(count = 1) {
       message: 'OC=SYNTHETIC_SECRET C:/private/path',
     }),
   );
-  const query = vi
-    .fn()
-    .mockResolvedValue([
-      {
-        edition_id: 1,
-        del_yn: false,
-        law_deleted: false,
-        current_hash: beforeHash,
-        applied: false,
-      },
-    ]);
+  const query = vi.fn().mockResolvedValue([
+    {
+      edition_id: 1,
+      del_yn: false,
+      law_deleted: false,
+      current_hash: beforeHash,
+      applied: false,
+    },
+  ]);
   const execute = vi.fn();
   const db = {
     $transaction: vi.fn(async (work: (tx: unknown) => Promise<unknown>) =>
@@ -221,4 +219,25 @@ it('변경 조문을 50개씩 제공하고 이미 반영된 정정이나 낡은 
   expect((await service.review(id)).status).toBe('stale-review');
   query.mockResolvedValue([{ applied: true }]);
   await expect(service.review(id)).rejects.toHaveProperty('status', 404);
+});
+
+it('수집 점유 상태와 안전한 실패 코드만 노출한다', async () => {
+  const { journal, service } = await fixture();
+  await writeFile(
+    join(journal, 'run.lock.json'),
+    JSON.stringify({
+      pid: process.pid,
+      host: hostname(),
+      token: randomUUID(),
+      startedAt: new Date().toISOString(),
+    }),
+  );
+  const result = await service.overview();
+  expect(result.execution.status).toBe('RUNNING');
+  expect(result.history.find((row) => row.status === 'FAILED')?.errorCode).toBe(
+    'STAGING_FAILED',
+  );
+  expect(JSON.stringify(result)).not.toMatch(
+    /SYNTHETIC_SECRET|"pid"|"host"|"token"|reportPath/,
+  );
 });

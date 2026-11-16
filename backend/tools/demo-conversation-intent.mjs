@@ -78,5 +78,5 @@ export function routeConversation(question, phase) {
     if (renewal && !describesSending && /언제|시점|효력이생기/u.test(text)) return { intent: "renewal" };
     return { phase: "renewal-delivery", text: deliveryQuestion };
   }
-  return { phase: "start", text: "현재 검증한 예제 범위에서는 이 질문에 답할 근거를 확인하지 못했습니다." };
+  return { phase: "start", search: true, text: "현재 검증한 예제 범위에서는 이 질문에 답할 근거를 확인하지 못했습니다." };
 }

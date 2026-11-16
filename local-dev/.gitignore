@@ -1,2 +1,8 @@
 /snapshots/
 /refresh-runs/
+
+/precedent-runs/
+
+/collection-scheduler/
+
+/backups/

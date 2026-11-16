@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { hostname } from 'node:os';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
@@ -73,11 +74,134 @@ test(
       );
       db = new PrismaService(new ConfigService({ DATABASE_URL: url.href }));
       await db.$connect();
+      let refreshJournal, collectionRoot, schedulerDirectory;
+      if (process.env.AURORE_JOBS_UI) {
+        temp = await mkdtemp(join(tmpdir(), 'aurore-jobs-ui-'));
+        refreshJournal = join(temp, 'journal');
+        schedulerDirectory = join(temp, 'scheduler');
+        await mkdir(schedulerDirectory);
+        const { disabledSchedulerConfig, runSchedulerOnce } =
+          await import('./collection-scheduler.mjs');
+        const scheduled = {
+          ...disabledSchedulerConfig(),
+          enabled: true,
+          law: {
+            enabled: true,
+            dailyAt: '03:00',
+            journal: join(temp, 'scheduled-law'),
+            fromDate: '20261115',
+          },
+          precedent: { enabled: false, dailyAt: '04:00', directories: [] },
+          backup: {
+            enabled: true,
+            dailyAt: '02:00',
+            root: join(temp, 'backup-fixture'),
+          },
+        };
+        await writeFile(
+          join(schedulerDirectory, 'config.json'),
+          JSON.stringify(scheduled),
+        );
+        const tickDate = new Date();
+        tickDate.setUTCHours(5, 0, 0, 0);
+        for (let attempt = 0; attempt < 3; attempt++)
+          await runSchedulerOnce(schedulerDirectory, {
+            now: () => new Date(tickDate.valueOf() + attempt * 61 * 60000),
+            runLaw: async () => {
+              throw new Error('PRIVATE_SCHEDULER_CANARY');
+            },
+            runBackup: async () => ({
+              processed: 1,
+              hasBacklog: false,
+              retentionRemoved: 2,
+            }),
+          });
+
+        collectionRoot = join(temp, 'collections');
+        const { resumePrecedentCollection } =
+          await import('./resume-precedent-collection.mjs');
+        await resumePrecedentCollection(join(collectionRoot, 'sample'), {
+          queue: [
+            { ID: '11', caseNumber: '2026다11' },
+            { ID: '22', caseNumber: '2026다22' },
+          ],
+          limit: 1,
+          readSource: async (item) => ({
+            bytes: Buffer.from(
+              JSON.stringify({
+                PrecService: {
+                  판례정보일련번호: item.ID,
+                  사건번호: item.caseNumber,
+                  사건명: '보증금 반환 검토 예제',
+                  법원명: '대법원',
+                  선고일자: '20260101',
+                  판시사항: '임대차 종료 후 보증금 반환에 관한 가상 쟁점',
+                  판결요지: '검증용 요지입니다.',
+                  판례내용:
+                    '가상 판례 원문입니다.<br/>검토 화면의 줄바꿈을 확인합니다.',
+                  private: 'PRIVATE_COLLECTION_CANARY',
+                },
+              }),
+            ),
+          }),
+        });
+        await mkdir(refreshJournal);
+        await writeFile(
+          join(refreshJournal, 'start.json'),
+          JSON.stringify({ fromDate: '20261101' }),
+        );
+        await writeFile(
+          join(refreshJournal, '20261101.json'),
+          JSON.stringify({
+            status: 'staged',
+            report: {
+              date: '20261101',
+              candidates: [],
+              prepared: { editions: [] },
+              corrections: [],
+            },
+          }),
+        );
+        await writeFile(
+          join(refreshJournal, '20261102.failed-' + randomUUID() + '.json'),
+          JSON.stringify({
+            status: 'failed',
+            date: '20261102',
+            attemptedAt: new Date().toISOString(),
+            code: 'PREVIEW_FAILED',
+            message: 'PRIVATE_BATCH_CANARY',
+          }),
+        );
+        const exited = spawnSync(process.execPath, ['-e', 'process.exit(0)'], {
+          windowsHide: true,
+        });
+        assert.equal(exited.status, 0);
+        await writeFile(
+          join(refreshJournal, 'run.lock.json'),
+          JSON.stringify({
+            pid: exited.pid,
+            host: hostname(),
+            token: randomUUID(),
+            startedAt: new Date().toISOString(),
+          }),
+        );
+      }
       const module = await Test.createTestingModule({ imports: [AppModule] })
         .overrideProvider(PrismaService)
         .useValue(db)
         .overrideProvider(ConfigService)
-        .useValue(new ConfigService({ DATABASE_URL: url.href }))
+        .useValue(
+          new ConfigService({
+            DATABASE_URL: url.href,
+            ...(refreshJournal
+              ? {
+                  AURORE_LAW_REFRESH_JOURNAL: refreshJournal,
+                  AURORE_PRECEDENT_COLLECTION_ROOT: collectionRoot,
+                  AURORE_COLLECTION_SCHEDULER_DIR: schedulerDirectory,
+                }
+              : {}),
+          }),
+        )
         .compile();
       app = module.createNestApplication({ logger: false });
       app.useGlobalPipes(
@@ -119,6 +243,17 @@ test(
         rawError = 'PRIVATE_ERR_DO_NOT_EXPOSE',
         rawProvider = 'PRIVATE_PROVIDER',
         records = [];
+      const resultCodes = [
+        'EVIDENCE_FOUND',
+        'SOURCE_GAP',
+        'RELEVANCE_GAP',
+        'DOCUMENT_GAP',
+        'AI_NOT_READY',
+        'FACTS_UNCONFIRMED',
+        'SOURCE_CHANGED',
+        'GUIDANCE',
+      ];
+      let successSerial = 0;
       let serial = 0;
       async function fixture(status, errorCode, time, hidden = null) {
         const chatId = randomUUID(),
@@ -173,7 +308,20 @@ test(
             },
           },
         });
-        const providerCd = serial % 9 === 0 ? rawProvider : 'DEMO';
+        const resultCode =
+          status === 'SUCCEEDED'
+            ? resultCodes[successSerial++ % resultCodes.length]
+            : null;
+        const providerCd =
+          serial % 9 === 0
+            ? rawProvider
+            : resultCode === 'AI_NOT_READY'
+              ? 'STORED_SEARCH'
+              : resultCode === 'DOCUMENT_GAP'
+                ? 'LOCAL_DOC'
+                : resultCode
+                  ? 'LOCAL_RAG'
+                  : 'DEMO';
         await db.aiJob.create({
           data: {
             id,
@@ -186,6 +334,7 @@ test(
             statCd: status,
             providerCd,
             errorCd: errorCode,
+            resultCd: resultCode,
             attemptNo: status === 'FAILED' ? 3 : status === 'QUEUED' ? 0 : 1,
             leaseToken: lease ? randomUUID() : null,
             leaseDttm: lease,
@@ -199,6 +348,7 @@ test(
           id,
           status,
           errorCode,
+          resultCode,
           providerCd,
           chatId,
           inputId,
@@ -222,11 +372,17 @@ test(
           'ATTEMPTS_EXHAUSTED',
           null,
           rawError,
+          'CASE_CONTEXT_CHANGED',
+          'AI_UNAVAILABLE',
+          'AI_CONFIGURATION',
+          'EVIDENCE_INVALID',
+          'SOURCE_UNAVAILABLE',
+          'AI_UPSTREAM_FAILURE',
         ];
       for (let n = 0; n < 55; n++)
         await fixture(
           statuses[n % 7],
-          errors[n % 5],
+          errors[n % errors.length],
           new Date(
             Date.parse('2026-11-13T00:00:00+09:00') + Math.floor(n / 3) * 1000,
           ),
@@ -256,6 +412,7 @@ test(
         'errorCode',
         'id',
         'provider',
+        'resultCode',
         'status',
         'updatedAt',
       ];
@@ -277,7 +434,15 @@ test(
             assert.deepEqual(Object.keys(row).sort(), keys);
             assert.ok(Date.parse(row.updatedAt) <= previous);
             previous = Date.parse(row.updatedAt);
-            assert.ok(['DEMO', 'OTHER'].includes(row.provider));
+            assert.ok(
+              [
+                'DEMO',
+                'OTHER',
+                'LOCAL_DOC',
+                'LOCAL_RAG',
+                'STORED_SEARCH',
+              ].includes(row.provider),
+            );
             assert.ok(
               row.errorCode === null ||
                 [
@@ -285,6 +450,12 @@ test(
                   'TOTAL_TIMEOUT',
                   'ATTEMPTS_EXHAUSTED',
                   'OTHER',
+                  'CASE_CONTEXT_CHANGED',
+                  'AI_UNAVAILABLE',
+                  'AI_CONFIGURATION',
+                  'EVIDENCE_INVALID',
+                  'SOURCE_UNAVAILABLE',
+                  'AI_UPSTREAM_FAILURE',
                 ].includes(row.errorCode),
             );
             assert.ok(!JSON.stringify(row).includes(canary));
@@ -322,6 +493,34 @@ test(
         1,
       );
       assert.equal((await read({ status: 'all', to: '2026-11-12' })).total, 1);
+      for (const result of ['NONE', ...resultCodes]) {
+        const page = await read({ status: 'all', result, limit: '50' });
+        assert.equal(
+          page.total,
+          visible.filter((row) =>
+            result === 'NONE'
+              ? row.resultCode === null
+              : row.resultCode === result,
+          ).length,
+        );
+        assert.ok(
+          page.items.every(
+            (row) => row.resultCode === (result === 'NONE' ? null : result),
+          ),
+        );
+      }
+      const allResults = await read({ status: 'all', limit: '50' });
+      assert.equal(allResults.counts.needsEvidence, 3);
+      assert.equal(allResults.counts.aiNotReady, 1);
+      assert.equal(
+        allResults.counts.evidenceInvalid,
+        visible.filter((row) => row.errorCode === 'EVIDENCE_INVALID').length,
+      );
+      assert.equal(
+        (await read({ status: 'FAILED', result: 'AI_NOT_READY' })).total,
+        0,
+      );
+
       const selected = visible[14];
       assert.equal(
         (
@@ -370,6 +569,9 @@ test(
           canary,
           rawError,
           rawProvider,
+          'caseContext',
+          'documentLinks',
+          'factIds',
           'chatSessId',
           'inputMsgId',
           'answerMsgId',
@@ -390,6 +592,7 @@ test(
       assert.equal((await get('/' + randomUUID())).status, 404);
       for (const query of [
         'status=bad',
+        'result=PRIVATE_RESULT',
         'error=bad',
         'q=%25',
         'q=bad_text',
@@ -430,7 +633,67 @@ test(
       assert.equal((await get()).status, 401);
       assert.equal((await get('/' + visible[0].id)).status, 401);
       if (process.env.AURORE_JOBS_UI) {
-        temp = await mkdtemp(join(tmpdir(), 'aurore-jobs-ui-'));
+        if (!temp) temp = await mkdtemp(join(tmpdir(), 'aurore-jobs-ui-'));
+        const uiToken = (await auth.login('jobs_admin', 'Synthetic8!')).token;
+        const refresh = await fetch(base + '/admin/legal-refresh', {
+          headers: { Authorization: 'Bearer ' + uiToken },
+        });
+        assert.equal(refresh.status, 200);
+        const refreshData = await refresh.json();
+        assert.equal(refreshData.execution.status, 'RECOVERY_REQUIRED');
+        assert.equal(
+          refreshData.history.find((row) => row.status === 'FAILED').errorCode,
+          'PREVIEW_FAILED',
+        );
+        assert.ok(
+          !JSON.stringify(refreshData).includes('PRIVATE_BATCH_CANARY'),
+        );
+        assert.ok(!JSON.stringify(refreshData).includes('run.lock'));
+        const privacyResponse = await fetch(base + '/admin/privacy-retention', {
+          headers: { Authorization: 'Bearer ' + uiToken },
+        });
+        assert.equal(privacyResponse.status, 200);
+        const privacyData = await privacyResponse.json();
+        assert.equal(privacyData.contentAccess, false);
+        assert.equal(privacyData.purgeImplemented, false);
+        assert.ok(!JSON.stringify(privacyData).includes('PRIVATE_'));
+        assert.ok(!JSON.stringify(privacyData).includes(temp));
+        assert.ok(!JSON.stringify(privacyData).includes('jobs_admin'));
+        const scheduleResponse = await fetch(
+          base + '/admin/collection-schedule',
+          { headers: { Authorization: 'Bearer ' + uiToken } },
+        );
+        assert.equal(scheduleResponse.status, 200);
+        const scheduleData = await scheduleResponse.json();
+        assert.equal(scheduleData.jobs[0].attempts, 3);
+        assert.equal(scheduleData.jobs[0].code, 'RUN_FAILED');
+        assert.equal(scheduleData.jobs[2].kind, 'backup');
+        assert.equal(scheduleData.jobs[2].status, 'SUCCEEDED');
+        assert.equal(scheduleData.jobs[2].retentionRemoved, 2);
+        assert.ok(
+          !JSON.stringify(scheduleData).includes('PRIVATE_SCHEDULER_CANARY'),
+        );
+        assert.ok(!JSON.stringify(scheduleData).includes(temp));
+        const listResponse = await fetch(
+          base + '/admin/precedent-collections',
+          { headers: { Authorization: 'Bearer ' + uiToken } },
+        );
+        assert.equal(listResponse.status, 200);
+        const collectionList = await listResponse.json();
+        assert.equal(collectionList.items[0].collected, 1);
+        const sourceResponse = await fetch(
+          base +
+            '/admin/precedent-collections/' +
+            collectionList.items[0].id +
+            '/items/11',
+          { headers: { Authorization: 'Bearer ' + uiToken } },
+        );
+        assert.equal(sourceResponse.status, 200);
+        const sourceData = await sourceResponse.json();
+        assert.equal(sourceData.status, 'NEW');
+        assert.ok(
+          !JSON.stringify(sourceData).includes('PRIVATE_COLLECTION_CANARY'),
+        );
         web = spawn(
           process.execPath,
           [

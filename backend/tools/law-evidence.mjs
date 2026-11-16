@@ -28,7 +28,7 @@ function* textPaths(value, path) {
   }
 }
 
-function collectEvidence(payload, hash) {
+export function collectEvidence(payload, hash) {
   const evidence = [];
   function add(path, fields) {
     const text = textAt(payload, path);

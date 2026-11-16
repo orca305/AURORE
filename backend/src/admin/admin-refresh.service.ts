@@ -24,6 +24,10 @@ type Pending = {
   path: string;
   status: string;
 };
+type Execution = {
+  status: 'IDLE' | 'RUNNING' | 'RECOVERY_REQUIRED' | 'OTHER_HOST' | 'INVALID';
+  startedAt: string | null;
+};
 type State = {
   fromDate: string | null;
   lastCompletedDate: string | null;
@@ -54,6 +58,7 @@ type Run = {
   id: string;
   date: string;
   status: 'STAGED' | 'FAILED';
+  errorCode: string | null;
   recordedAt: string;
   candidates: number;
   editions: number;
@@ -83,6 +88,114 @@ export class AdminRefreshService {
     private readonly config: ConfigService,
   ) {}
 
+  async privacyOverview() {
+    try {
+      const tools = (await import(
+        new URL('../../tools/privacy-retention.mjs', import.meta.url).href
+      )) as {
+        auditPrivacyRetention: (
+          db: {
+            query: (
+              sql: string,
+              values: unknown[],
+            ) => Promise<{ rows: unknown[] }>;
+          },
+          now: Date,
+        ) => Promise<{
+          asOf: string;
+          readOnly: true;
+          contentAccess: false;
+          purgeImplemented: false;
+          counts: Record<string, number>;
+        }>;
+        auditTemporaryBackups: (now: Date) => Promise<unknown>;
+      };
+      const now = new Date();
+      const report = await this.db.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+          return tools.auditPrivacyRetention(
+            {
+              query: async (sql, values) => {
+                if (!/^WITH\b/.test(sql))
+                  throw new Error('Only audit reads allowed');
+                return {
+                  rows: await tx.$queryRawUnsafe<unknown[]>(sql, ...values),
+                };
+              },
+            },
+            now,
+          );
+        },
+        { isolationLevel: 'RepeatableRead', timeout: 15000 },
+      );
+      const temporaryBackups = await tools.auditTemporaryBackups(now);
+      let backup: {
+        enabled: boolean;
+        status: string;
+        lastSuccessAt: string | null;
+        worker: string;
+      } | null = null;
+      try {
+        const schedule = (await this.schedule()) as {
+          worker: string;
+          jobs: {
+            kind: string;
+            enabled: boolean;
+            status: string;
+            lastSuccessAt: string | null;
+          }[];
+        };
+        const item = schedule.jobs.find((row) => row.kind === 'backup');
+        if (item)
+          backup = {
+            enabled: item.enabled,
+            status: item.status,
+            lastSuccessAt: item.lastSuccessAt,
+            worker: schedule.worker,
+          };
+      } catch {}
+      return {
+        ...report,
+        temporaryBackups,
+        backup,
+        unassessed: [
+          'DIAGNOSTIC_FILES',
+          'TRAINING_COPIES',
+          'BROWSER_MEMORY',
+          'OTHER_BACKUP_COPIES',
+        ],
+      };
+    } catch {
+      throw new ServiceUnavailableException(
+        '개인정보 보관 현황을 집계하지 못했습니다. 잠시 후 다시 확인해 주세요.',
+      );
+    }
+  }
+  async schedule() {
+    const configured = this.config.get<string>(
+      'AURORE_COLLECTION_SCHEDULER_DIR',
+    );
+    if (configured && !isAbsolute(configured))
+      throw new ServiceUnavailableException(
+        '예약 수집 저장소 설정을 확인해 주세요.',
+      );
+    const directory =
+      configured ||
+      fileURLToPath(
+        new URL('../../../local-dev/collection-scheduler/', import.meta.url),
+      );
+    try {
+      const tool = (await import(
+        new URL('../../tools/collection-scheduler.mjs', import.meta.url).href
+      )) as { schedulerStatus: (directory: string) => Promise<unknown> };
+      return await tool.schedulerStatus(directory);
+    } catch {
+      throw new ServiceUnavailableException(
+        '예약 설정 또는 실행 기록을 확인해 주세요.',
+      );
+    }
+  }
   private directory() {
     const configured = this.config.get<string>('AURORE_LAW_REFRESH_JOURNAL');
     if (configured && !isAbsolute(configured))
@@ -118,6 +231,10 @@ export class AdminRefreshService {
       refreshJournalStatus: (directory: string) => Promise<State>;
     };
     const state = await resume.refreshJournalStatus(journal);
+    const lock = (await import(
+      new URL('../../tools/refresh-run-lock.mjs', import.meta.url).href
+    )) as { refreshExecutionState: (directory: string) => Promise<Execution> };
+    const execution = await lock.refreshExecutionState(journal);
     const pending = await this.db.$transaction(
       async (tx) => {
         await tx.$executeRaw`SET TRANSACTION READ ONLY`;
@@ -134,7 +251,7 @@ export class AdminRefreshService {
       },
       { isolationLevel: 'RepeatableRead', timeout: 15000 },
     );
-    return { journal, state, pending };
+    return { journal, state, pending, execution };
   }
 
   private async runs(journal: string, state: State) {
@@ -143,12 +260,18 @@ export class AdminRefreshService {
       .filter((name) => /^\d{8}(?:\.failed-[0-9a-f-]{36})?\.json$/.test(name))
       .sort()
       .reverse();
+    const failures = (await import(
+      new URL('../../tools/refresh-failures.mjs', import.meta.url).href
+    )) as {
+      safeRefreshFailure: (value: unknown) => { code: string; message: string };
+    };
     const completed: Run[] = [];
     // ponytail: the latest 100 journal records cover the single-machine beta; persist a paginated ledger when it outgrows this.
     for (const name of names.slice(0, 100)) {
       const target = join(journal, name);
       const record = JSON.parse(await readFile(target, 'utf8')) as {
         status?: string;
+        code?: string;
         date?: string;
         attemptedAt?: string;
         report?: {
@@ -171,12 +294,13 @@ export class AdminRefreshService {
         failed &&
         record.attemptedAt &&
         Number.isFinite(Date.parse(record.attemptedAt))
-          ? record.attemptedAt
+          ? new Date(record.attemptedAt).toISOString()
           : (await stat(target)).mtime.toISOString();
       completed.push({
         id: createHash('sha256').update(name).digest('hex'),
         date,
         status: failed ? 'FAILED' : 'STAGED',
+        errorCode: failed ? failures.safeRefreshFailure(record).code : null,
         recordedAt,
         candidates: record.report?.candidates?.length ?? 0,
         editions: record.report?.prepared?.editions?.length ?? 0,
@@ -192,7 +316,7 @@ export class AdminRefreshService {
 
   async overview() {
     try {
-      const { journal, state, pending } = await this.inbox();
+      const { journal, state, pending, execution } = await this.inbox();
       const history = await this.runs(journal, state);
       const names = await this.db.legal.findMany({
         where: {
@@ -206,6 +330,7 @@ export class AdminRefreshService {
       return {
         asOf: new Date().toISOString(),
         initialized: Boolean(state.fromDate),
+        execution,
         ...state,
         summary: {
           runs: history.total,
@@ -312,25 +437,28 @@ export class AdminRefreshService {
       afterHash: correction.afterHash,
       totalChanges: correction.changes.length,
       offset,
-      nextOffset: offset + limit < correction.changes.length ? offset + limit : null,
-      changes: correction.changes.slice(offset, offset + limit).map((change) => ({
-        key: change.key,
-        change: change.change,
-        before: change.before
-          ? {
-              number: change.before.displayNumber,
-              title: change.before.title ?? null,
-              text: change.before.text,
-            }
-          : null,
-        after: change.after
-          ? {
-              number: change.after.displayNumber,
-              title: change.after.title ?? null,
-              text: change.after.text,
-            }
-          : null,
-      })),
+      nextOffset:
+        offset + limit < correction.changes.length ? offset + limit : null,
+      changes: correction.changes
+        .slice(offset, offset + limit)
+        .map((change) => ({
+          key: change.key,
+          change: change.change,
+          before: change.before
+            ? {
+                number: change.before.displayNumber,
+                title: change.before.title ?? null,
+                text: change.before.text,
+              }
+            : null,
+          after: change.after
+            ? {
+                number: change.after.displayNumber,
+                title: change.after.title ?? null,
+                text: change.after.text,
+              }
+            : null,
+        })),
     };
   }
 }

@@ -27,7 +27,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
         <h1>대화를 열 수 없습니다</h1>
         <p>{selected.error}</p><Link href="/">새 대화 시작</Link>
       </div> : <Conversation member={Boolean(member)} key={selected?.data?.id ?? "new"} initialChat={selected?.data ?? null} />}
-      <p className={styles.footnote}>임대차 보증금·계약 갱신 예제를 체험할 수 있어요. 실제 개인정보는 입력하지 마세요.</p>
+      <p className={styles.footnote}>저장된 원문 범위에서 근거를 찾습니다. 검색 후보와 AI 검토 결과를 구분해 확인해 주세요. 실제 개인정보는 입력하지 마세요.</p>
     </main>
   </div>;
 }

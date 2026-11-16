@@ -3,6 +3,7 @@ import {
   readAdminJob,
   safeJobError,
   safeJobProvider,
+  safeJobResult,
   type JobsQuery,
 } from './admin-jobs.js';
 import { listAdminActivity, type ActivityQuery } from './admin-activity.js';
@@ -451,6 +452,7 @@ export class AdminService {
               id: true,
               statCd: true,
               providerCd: true,
+              resultCd: true,
               attemptNo: true,
               errorCd: true,
               rgstDttm: true,
@@ -487,6 +489,7 @@ export class AdminService {
             provider: safeJobProvider(row.providerCd),
             attempts: row.attemptNo,
             errorCode: safeJobError(row.errorCd),
+            resultCode: safeJobResult(row.resultCd),
             createdAt: row.rgstDttm.toISOString(),
             updatedAt: row.uptDttm.toISOString(),
           })),

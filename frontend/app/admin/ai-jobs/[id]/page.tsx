@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requestAdmin, type AdminJobDetail } from "../../../_admin/requests";
 import { date, states } from "../../../_admin/format";
-import { jobErrors, jobProviders } from "../../../_admin/job-format";
+import { jobErrors, jobProviders,jobResults } from "../../../_admin/job-format";
 import { parsePageSize } from "../../../_components/page-size";
 import styles from "../../page.module.css";
 export const metadata = { title: "AI 작업 상세 | AURORE" };
@@ -31,7 +31,8 @@ export default async function JobDetail({
       </p>
     );
   const job = (await response.json()) as AdminJobDetail,
-    error = jobErrors[job.errorCode ?? "NONE"] ?? jobErrors.OTHER;
+    error = jobErrors[job.errorCode ?? "NONE"] ?? jobErrors.OTHER,
+    result=jobResults[job.resultCode??"NONE"]??jobResults.OTHER;
   const facts = [
     ["처리 방식", jobProviders[job.provider] ?? "기타 처리"],
     ["시도 횟수", job.attempts + "회"],
@@ -85,6 +86,7 @@ export default async function JobDetail({
           주세요.
         </p>
       )}
+      <section className={styles.jobError} aria-labelledby="result-heading"><h3 id="result-heading">처리 결과 · {result.label}</h3>{job.resultCode&&<code>{job.resultCode}</code>}<p>{result.detail}</p></section>
       <section className={styles.jobError} aria-labelledby="error-heading">
         <h3 id="error-heading">{error.label}</h3>
         {job.errorCode && <code>{job.errorCode}</code>}

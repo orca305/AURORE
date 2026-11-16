@@ -1,3 +1,4 @@
+import { JOB_ERROR_CODES, JOB_RESULT_CODES } from '../chat/job-diagnostics.js';
 import {
   Controller,
   Body,
@@ -26,6 +27,7 @@ import {
   IsUUID,
   Matches,
   Length,
+  ValidateIf,
 } from 'class-validator';
 import { AdminCorrectionService } from './admin-correction.service.js';
 import { AdminRefreshService } from './admin-refresh.service.js';
@@ -66,15 +68,10 @@ class JobsDto extends MemberHistoryDto {
   ])
   status = 'FAILED';
   @IsOptional()
-  @IsIn([
-    'all',
-    'GENERATION_FAILED',
-    'TOTAL_TIMEOUT',
-    'ATTEMPTS_EXHAUSTED',
-    'OTHER',
-    'NONE',
-  ])
+  @IsIn(['all', ...JOB_ERROR_CODES, 'OTHER', 'NONE'])
   error = 'all';
+  @IsOptional() @IsIn(['all', ...JOB_RESULT_CODES, 'NONE', 'OTHER']) result =
+    'all';
   @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) from = '';
   @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) to = '';
 }
@@ -108,6 +105,14 @@ class PrecedentReviewDto {
   @Equals(true) confirmed!: true;
 }
 
+class PrecedentIngestDto {
+  @IsUUID('4') requestId!: string;
+  @ValidateIf((_object, value) => value !== null)
+  @Matches(/^[a-f0-9]{64}$/)
+  beforeHash!: string | null;
+  @Matches(/^[a-f0-9]{64}$/) afterHash!: string;
+  @Equals(true) confirmed!: true;
+}
 @Controller('admin')
 @UseGuards(AdminGuard)
 export class AdminController {
@@ -167,6 +172,18 @@ export class AdminController {
     return { admin: true };
   }
 
+  @Get('privacy-retention')
+  @Header('Cache-Control', 'no-store')
+  privacyRetention() {
+    return this.refresh.privacyOverview();
+  }
+
+  @Get('collection-schedule')
+  @Header('Cache-Control', 'no-store')
+  collectionSchedule() {
+    return this.refresh.schedule();
+  }
+
   @Get('legal-refresh')
   @Header('Cache-Control', 'no-store')
   refreshOverview() {
@@ -198,6 +215,56 @@ export class AdminController {
   @Header('Cache-Control', 'no-store')
   processingHistory() {
     return this.correction.history();
+  }
+
+  @Get('precedent-collections')
+  @Header('Cache-Control', 'no-store')
+  collections(
+    @Query('offset') offset?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.precedent.collections(offset, limit);
+  }
+  @Get('precedent-collections/history')
+  @Header('Cache-Control', 'no-store')
+  collectionHistory(
+    @Query('offset') offset?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.precedent.collectionHistory(offset, limit);
+  }
+  @Post('precedent-collections/:id/items/:sourceId/approve')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  approveCollectedPrecedent(
+    @Param('id') id: string,
+    @Param('sourceId') sourceId: string,
+    @Body() input: PrecedentIngestDto,
+    @Headers('authorization') authorization?: string,
+  ) {
+    return this.precedent.approveCollectedPrecedent(
+      id,
+      sourceId,
+      input,
+      authorization,
+    );
+  }
+  @Get('precedent-collections/:id')
+  @Header('Cache-Control', 'no-store')
+  collection(
+    @Param('id') id: string,
+    @Query('offset') offset?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.precedent.collection(id, offset, limit);
+  }
+  @Get('precedent-collections/:id/items/:sourceId')
+  @Header('Cache-Control', 'no-store')
+  collectedPrecedent(
+    @Param('id') id: string,
+    @Param('sourceId') sourceId: string,
+  ) {
+    return this.precedent.collectedPrecedent(id, sourceId);
   }
 
   @Get('precedent-reviews')

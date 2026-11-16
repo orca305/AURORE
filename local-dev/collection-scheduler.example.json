@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "enabled": false,
+  "law": {
+    "enabled": false,
+    "dailyAt": "03:00",
+    "journal": "C:/dev/easy-law-ai/local-dev/refresh-runs",
+    "fromDate": null
+  },
+  "precedent": {
+    "enabled": false,
+    "dailyAt": "04:00",
+    "directories": []
+  },
+  "backup": {
+    "enabled": false,
+    "dailyAt": "02:00",
+    "root": "C:/Users/USER/AppData/Local/AURORE/backups"
+  }
+}

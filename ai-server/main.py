@@ -7,7 +7,10 @@ from typing import Annotated, Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, StringConstraints
 
+from document_answer import router as document_router
+
 app = FastAPI(title="AURORE AI", version="3.2.0")
+app.include_router(document_router)
 
 
 @app.get("/")

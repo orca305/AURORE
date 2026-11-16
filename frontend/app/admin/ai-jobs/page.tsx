@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requestAdmin, type AdminJobList } from "../../_admin/requests";
 import { date, number, states } from "../../_admin/format";
-import { jobErrors, jobProviders } from "../../_admin/job-format";
+import { jobErrors, jobProviders,jobResults } from "../../_admin/job-format";
 import { parsePageSize } from "../../_components/page-size";
 import { PageSizeSelect } from "../../_components/page-size-select";
 import styles from "../page.module.css";
@@ -19,9 +19,10 @@ export default async function JobsPage({
     status =
       rawStatus === "all" || Object.hasOwn(states, rawStatus)
         ? rawStatus
-        : "FAILED",
+        : "all",
     rawError = text(params.error),
-    error = Object.hasOwn(jobErrors, rawError) ? rawError : "all";
+    error = Object.hasOwn(jobErrors, rawError) ? rawError : "all",
+    result=Object.hasOwn(jobResults,text(params.result))?text(params.result):"all";
   const from = text(params.from),
     to = text(params.to),
     limit = parsePageSize(params.limit),
@@ -33,6 +34,7 @@ export default async function JobsPage({
       q,
       status,
       error,
+      result,
       from,
       to,
       limit: String(limit),
@@ -46,7 +48,7 @@ export default async function JobsPage({
     return "/admin/ai-jobs?" + value;
   };
   const filtered = Boolean(
-    q || status !== "FAILED" || error !== "all" || from || to,
+    q || status !== "all" || result!=="all" || error !== "all" || from || to,
   );
   return (
     <>
@@ -54,8 +56,7 @@ export default async function JobsPage({
         <div>
           <h2>AI 작업</h2>
           <p>
-            실패 작업을 기본으로 보여줍니다. 삭제·보관 만료된 대화의 작업은
-            제외합니다.
+            처리 완료와 근거 확보를 구분해 확인합니다. 삭제·보관 만료된 대화의 작업은 제외합니다.
           </p>
         </div>
         <Link href={pageUrl(offset)} className={styles.refresh}>
@@ -99,6 +100,7 @@ export default async function JobsPage({
             ))}
           </select>
         </label>
+        <label>처리 결과<select name="result" defaultValue={result}><option value="all">전체 결과</option>{Object.entries(jobResults).map(([code,value])=><option key={code} value={code}>{value.label}</option>)}</select></label>
         <label>
           시작일
           <input
@@ -135,12 +137,15 @@ export default async function JobsPage({
         </p>
       ) : (
         <>
-          <dl className={styles.metrics}>
+          <dl className={styles.metrics+" "+styles.jobMetrics}>
             {(
               [
                 ["조회 작업", data.total],
                 ["실패", data.counts.failed],
                 ["재시도 대기", data.counts.retrying],
+                ["근거 미확보",data.counts.needsEvidence],
+                ["AI 미준비",data.counts.aiNotReady],
+                ["인용 검증 실패",data.counts.evidenceInvalid],
               ] as const
             ).map(([label, count]) => (
               <div
@@ -175,6 +180,7 @@ export default async function JobsPage({
                   <th scope="col">작업 번호</th>
                   <th scope="col">상태</th>
                   <th scope="col">처리 방식</th>
+                  <th scope="col">처리 결과</th>
                   <th scope="col">시도</th>
                   <th scope="col">오류 유형</th>
                   <th scope="col">변경 시각</th>
@@ -205,6 +211,7 @@ export default async function JobsPage({
                       </span>
                     </td>
                     <td>{jobProviders[row.provider] ?? "기타 처리"}</td>
+                    <td>{jobResults[row.resultCode??'NONE']?.label??jobResults.OTHER.label}</td>
                     <td>{row.attempts}회</td>
                     <td>
                       {jobErrors[row.errorCode ?? "NONE"]?.label ?? "기타 오류"}

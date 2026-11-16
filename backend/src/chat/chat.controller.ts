@@ -12,6 +12,10 @@ import {
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
+  ValidateNested,
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
   Equals,
   ValidateIf,
   IsInt,
@@ -50,7 +54,28 @@ class CorrectionHistoryDto extends PageSizeDto {
 class RenameDto extends RevisionDto {
   @IsString() @MaxLength(320) title!: string;
 }
+class CaseContextDto {
+  @IsInt() @Min(1) revision!: number;
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ArrayUnique()
+  @Matches(/^[1-9]\d{0,17}$/, { each: true })
+  factIds!: string[];
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) asOf!: string;
+  @Equals(true) confirmed!: true;
+}
 class SubmitDto extends RevisionDto {
+  @IsOptional() @IsUUID('4') clarifyReplyTo?: string;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CaseContextDto)
+  caseContext?: CaseContextDto;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  documentIds?: string[];
   @IsUUID('4')
   requestId!: string;
 
@@ -122,6 +147,21 @@ export class ChatController {
     };
   }
 
+  @Get(':id/case-context')
+  @Header('Cache-Control', 'no-store')
+  async caseContext(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Query() query: CorrectionHistoryDto,
+  ) {
+    return this.chat.caseContextOptions(
+      id,
+      await this.auth.resolveOwner(authorization),
+      query.limit,
+      query.offset,
+    );
+  }
+
   @Post(':id/messages')
   @HttpCode(202)
   @Header('Cache-Control', 'no-store')
@@ -136,6 +176,9 @@ export class ChatController {
       body.requestId,
       body.question,
       body.revision,
+      body.documentIds,
+      body.caseContext,
+      body.clarifyReplyTo,
     );
   }
 

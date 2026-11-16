@@ -50,7 +50,9 @@ test(
       db,
       app,
       web,
-      temp;
+      temp,
+      documentAi;
+    const originalAiUrl = process.env.AURORE_AI_URL;
     try {
       run('docker', [
         'exec',
@@ -1467,6 +1469,255 @@ test(
         12,
       );
       assert.equal((await docGet(documentChat)).status, 404);
+
+      const { createServer } = await import('node:http');
+      let aiReady = false,
+        badQuote = false,
+        gateReply = null,
+        requestSeen = false;
+      const requests = [];
+      documentAi = createServer(async (req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        if (req.url === '/documents/health') {
+          res.end(JSON.stringify({ ready: aiReady }));
+          return;
+        }
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw);
+        requests.push(body);
+        requestSeen = true;
+        if (gateReply) await gateReply;
+        res.end(
+          JSON.stringify({
+            quotes: [
+              {
+                documentId: body.documents[0].id,
+                quote: badQuote
+                  ? '원문에 없는 계약 내용입니다.'
+                  : body.documents[0].markdown,
+              },
+            ],
+            supportChecked: true,
+          }),
+        );
+      });
+      await new Promise((resolve) =>
+        documentAi.listen(0, '127.0.0.1', resolve),
+      );
+      process.env.AURORE_AI_URL =
+        'http://127.0.0.1:' + documentAi.address().port;
+      const aiChat = randomUUID();
+      async function addAiDocument(text) {
+        const preview = await (await upload(aiChat, text, 'ai.md')).json();
+        const response = await docPost(aiChat, {
+          receipt: preview.receipt,
+          markdown: preview.markdown,
+          confirmed: true,
+        });
+        assert.equal(response.status, 201);
+        return {
+          id: JSON.parse(
+            Buffer.from(preview.receipt.split('.')[0], 'base64url'),
+          ).id,
+          markdown: preview.markdown,
+        };
+      }
+      const chosen = await addAiDocument(
+          '계약 종료일은 2026년 11월 8일입니다.',
+        ),
+        notChosen = await addAiDocument(
+          '선택하지 않은 비공개 가상 자료입니다.',
+        );
+      const aiRevision = () =>
+        db.chatSess
+          .findUniqueOrThrow({ where: { id: aiChat } })
+          .then((row) => row.revNo);
+      const sendDocuments = (
+        requestId,
+        documentIds,
+        revision,
+        credential = 'Bearer ' + token,
+      ) =>
+        fetch(base + '/chat-sessions/' + aiChat + '/messages', {
+          method: 'POST',
+          headers: {
+            Authorization: credential,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requestId,
+            question: '계약 종료일은 언제인가요?',
+            documentIds,
+            revision,
+          }),
+        });
+      assert.equal(
+        (
+          await sendDocuments(
+            randomUUID(),
+            [chosen.id],
+            await aiRevision(),
+            'Guest ' + guest,
+          )
+        ).status,
+        403,
+      );
+      assert.equal(
+        (
+          await sendDocuments(
+            randomUUID(),
+            [chosen.id, chosen.id],
+            await aiRevision(),
+          )
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await sendDocuments(
+            randomUUID(),
+            [chosen.id, randomUUID(), randomUUID(), randomUUID()],
+            await aiRevision(),
+          )
+        ).status,
+        400,
+      );
+      assert.equal(
+        (await sendDocuments(randomUUID(), [documentId], await aiRevision()))
+          .status,
+        404,
+      );
+      assert.equal(
+        (await sendDocuments(randomUUID(), [chosen.id], await aiRevision()))
+          .status,
+        503,
+      );
+      assert.equal(await db.aiJob.count({ where: { chatSessId: aiChat } }), 0);
+      assert.equal(
+        await db.chatMsg.count({ where: { chatSessId: aiChat } }),
+        0,
+      );
+      aiReady = true;
+      const acceptedId = randomUUID(),
+        revisionForAi = await aiRevision();
+      assert.equal(
+        (
+          await sendDocuments(
+            acceptedId,
+            [chosen.id.toUpperCase()],
+            revisionForAi,
+          )
+        ).status,
+        202,
+      );
+      assert.equal(
+        (await sendDocuments(acceptedId, [chosen.id], revisionForAi)).status,
+        202,
+      );
+      assert.equal(
+        (await sendDocuments(acceptedId, [notChosen.id], revisionForAi)).status,
+        409,
+      );
+      await app.get(ChatService).drain();
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].documents.length, 1);
+      assert.equal(requests[0].documents[0].id, chosen.id);
+      assert.equal(requests[0].documents[0].markdown, chosen.markdown);
+      assert.ok(!JSON.stringify(requests).includes('선택하지 않은 비공개'));
+      const aiOwner = await auth.resolveOwner('Bearer ' + token);
+      let aiDetail = await app.get(ChatService).read(aiChat, aiOwner);
+      const evidenceAnswer = aiDetail.messages.find(
+        (row) => row.role === 'assistant',
+      );
+      assert.equal(evidenceAnswer.documentQuotes.length, 1);
+      assert.equal(evidenceAnswer.documentQuotes[0].quote, chosen.markdown);
+      assert.equal(evidenceAnswer.documentAnswer, true);
+      assert.ok(!evidenceAnswer.text.includes(chosen.markdown));
+      assert.equal(
+        (await db.aiJob.findUniqueOrThrow({ where: { id: acceptedId } }))
+          .statCd,
+        'SUCCEEDED',
+      );
+      badQuote = true;
+      const badId = randomUUID();
+      assert.equal(
+        (await sendDocuments(badId, [chosen.id], await aiRevision())).status,
+        202,
+      );
+      for (let n = 0; n < 3; n++) {
+        await db.aiJob.update({
+          where: { id: badId },
+          data: { nextRunDttm: new Date(0) },
+        });
+        await app.get(ChatService).drain();
+      }
+      assert.equal(
+        (await db.aiJob.findUniqueOrThrow({ where: { id: badId } })).statCd,
+        'FAILED',
+      );
+      assert.equal(
+        await db.docQuote.count({ where: { chatSessId: aiChat } }),
+        1,
+      );
+      assert.equal(
+        (await db.aiJob.findUniqueOrThrow({ where: { id: badId } })).errorCd,
+        'EVIDENCE_INVALID',
+      );
+      aiReady = false;
+      await assert.rejects(app.get(ChatService).retry(badId, aiOwner), {
+        status: 503,
+      });
+      assert.equal(
+        (await db.aiJob.findUniqueOrThrow({ where: { id: badId } })).statCd,
+        'FAILED',
+      );
+      aiReady = true;
+      badQuote = false;
+      let release;
+      gateReply = new Promise((resolve) => {
+        release = resolve;
+      });
+      requestSeen = false;
+      const cancelId = randomUUID();
+      assert.equal(
+        (await sendDocuments(cancelId, [notChosen.id], await aiRevision()))
+          .status,
+        202,
+      );
+      const inProgress = app.get(ChatService).drain();
+      for (let n = 0; n < 100 && !requestSeen; n++) await delay(10);
+      assert.ok(requestSeen);
+      assert.equal((await docDelete(aiChat, notChosen.id)).status, 200);
+      release();
+      await inProgress;
+      gateReply = null;
+      assert.equal(
+        (await db.aiJob.findUniqueOrThrow({ where: { id: cancelId } })).statCd,
+        'CANCELLED',
+      );
+      await assert.rejects(app.get(ChatService).retry(cancelId, aiOwner), {
+        status: 409,
+      });
+      assert.equal(
+        (await db.aiJob.findUniqueOrThrow({ where: { id: cancelId } })).statCd,
+        'CANCELLED',
+      );
+      assert.equal((await docDelete(aiChat, chosen.id)).status, 200);
+      aiDetail = await app.get(ChatService).read(aiChat, aiOwner);
+      assert.equal(
+        aiDetail.messages.find((row) => row.role === 'assistant').documentQuotes
+          .length,
+        0,
+      );
+      assert.equal(
+        (await sendDocuments(randomUUID(), [chosen.id], await aiRevision()))
+          .status,
+        404,
+      );
+      await addAiDocument(
+        '임차인은 2026년 11월 8일 계약 종료 의사를 전달했습니다.',
+      );
       const overview = await (
         await fetch(base + '/admin/overview', {
           headers: { Authorization: 'Bearer ' + admin },
@@ -1504,6 +1755,8 @@ test(
       );
       assert.equal(await db.userCase.count(), count);
       if (process.env.AURORE_CASES_UI) {
+        app.get(ChatService).stopping = false;
+        app.get(ChatService).onModuleInit();
         temp = await mkdtemp(join(tmpdir(), 'aurore-cases-ui-'));
         web = spawn(
           process.execPath,
@@ -1640,6 +1893,12 @@ test(
           else web.once('exit', resolve);
         });
       }
+      if (documentAi) {
+        documentAi.closeAllConnections();
+        await new Promise((resolve) => documentAi.close(resolve));
+      }
+      if (originalAiUrl === undefined) delete process.env.AURORE_AI_URL;
+      else process.env.AURORE_AI_URL = originalAiUrl;
       await app?.close();
       await db?.$disconnect();
       if (created && /^aurore_cases_test_[0-9a-f]{12}$/.test(name))

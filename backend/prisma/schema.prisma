@@ -31,6 +31,7 @@ model AppUser {
   roles      UserRole[]
   precedentReviews LegalPrecReviewHist[]
   correctionActions LegalCorrHist[]
+  precedentImports LegalPrecIngestHist[]
 
   @@map("app_user")
 }
@@ -171,6 +172,11 @@ model ChatSess {
 }
 
 model ChatMsg {
+ clarifyCd String? @map("clarify_cd") @db.VarChar(24)
+ clarifyReplyTo String? @map("clarify_reply_to") @db.Uuid
+ clarificationParent ChatMsg? @relation("ClarificationReply",fields:[chatSessId,clarifyReplyTo],references:[chatSessId,id],onDelete:Restrict,onUpdate:Restrict,map:"fk_chat_msg_clarification")
+ clarificationReplies ChatMsg[] @relation("ClarificationReply")
+  documentQuotes DocQuote[]
   sourcedFacts CaseFact[]
   id         String   @id @default(uuid()) @db.Uuid
   chatSessId String   @map("chat_sess_id") @db.Uuid
@@ -189,12 +195,16 @@ model ChatMsg {
   answerJobs AiJob[] @relation("JobAnswer")
   citations  AnsCite[]
 
+  @@index([chatSessId,clarifyReplyTo],map:"idx_chat_msg_clarification")
   @@unique([chatSessId, id], map: "uq_chat_msg_same_chat")
   @@unique([chatSessId, msgSeq], map: "uq_chat_msg_sequence")
   @@map("chat_msg")
 }
 
 model AiJob {
+  resultCd String? @map("result_cd") @db.VarChar(24)
+  caseContext Json? @map("case_context") @db.JsonB
+  documentLinks AiJobDoc[]
   id            String   @id @db.Uuid
   chatSessId    String   @map("chat_sess_id") @db.Uuid
   inputMsgId    String   @map("input_msg_id") @db.Uuid
@@ -216,6 +226,7 @@ model AiJob {
   input         ChatMsg @relation("JobInput", fields: [chatSessId, inputMsgId], references: [chatSessId, id], onDelete: Restrict, onUpdate: Restrict)
   answer        ChatMsg? @relation("JobAnswer", fields: [chatSessId, answerMsgId], references: [chatSessId, id], onDelete: Restrict, onUpdate: Restrict)
 
+  @@unique([chatSessId,id],map:"uq_ai_job_chat")
   @@unique([chatSessId, inputMsgId], map: "uq_ai_job_input")
   @@unique([chatSessId, answerMsgId], map: "uq_ai_job_answer")
   @@index([statCd, nextRunDttm, rgstDttm], map: "idx_ai_job_queue")
@@ -555,6 +566,8 @@ model CaseHist {
 }
 
 model AttachDoc {
+ jobLinks AiJobDoc[]
+ quotes DocQuote[]
  id String @id @db.Uuid
  userId BigInt @map("user_id")
  chatSessId String @map("chat_sess_id") @db.Uuid
@@ -573,6 +586,52 @@ model AttachDoc {
  uptDttm DateTime @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
  user AppUser @relation(fields:[userId],references:[id],onDelete:Restrict,onUpdate:Restrict)
  chat ChatSess @relation(fields:[chatSessId,userId],references:[id,userId],onDelete:Restrict,onUpdate:Restrict,map:"fk_attach_doc_owner")
+ @@unique([chatSessId,id],map:"uq_attach_doc_chat")
  @@index([chatSessId,delYn,rgstDttm(sort:Desc),id(sort:Desc)],map:"idx_attach_doc_chat")
  @@map("attach_doc")
+}
+
+model AiJobDoc {
+ jobId String @map("job_id") @db.Uuid
+ attachDocId String @map("attach_doc_id") @db.Uuid
+ chatSessId String @map("chat_sess_id") @db.Uuid
+ mdHash String @map("md_hash") @db.VarChar(64)
+ job AiJob @relation(fields:[chatSessId,jobId],references:[chatSessId,id],onDelete:Restrict,onUpdate:Restrict,map:"fk_job_doc_job")
+ document AttachDoc @relation(fields:[chatSessId,attachDocId],references:[chatSessId,id],onDelete:Restrict,onUpdate:Restrict,map:"fk_job_doc_document")
+ @@id([jobId,attachDocId])
+ @@index([attachDocId],map:"idx_job_doc_document")
+ @@map("ai_job_doc")
+}
+model DocQuote {
+ id BigInt @id @default(autoincrement())
+ chatSessId String @map("chat_sess_id") @db.Uuid
+ msgId String @map("msg_id") @db.Uuid
+ attachDocId String @map("attach_doc_id") @db.Uuid
+ quote String @db.Text
+ mdHash String @map("md_hash") @db.VarChar(64)
+ quoteVerifyCd String @default("MATCHED") @map("quote_verify_cd") @db.VarChar(24)
+ supportVerifyCd String @default("MODEL_REVIEWED") @map("support_verify_cd") @db.VarChar(24)
+ rgstDttm DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+ message ChatMsg @relation(fields:[chatSessId,msgId],references:[chatSessId,id],onDelete:Restrict,onUpdate:Restrict,map:"fk_doc_quote_message")
+ document AttachDoc @relation(fields:[chatSessId,attachDocId],references:[chatSessId,id],onDelete:Restrict,onUpdate:Restrict,map:"fk_doc_quote_document")
+ @@index([msgId,id],map:"idx_doc_quote_message")
+ @@index([attachDocId],map:"idx_doc_quote_document")
+ @@map("doc_quote")
+}
+
+model LegalPrecIngestHist {
+  id String @id @db.Uuid
+  batchKey String @map("batch_key") @db.VarChar(64)
+  sourceKey String @map("source_key") @db.VarChar(12)
+  userId BigInt @map("user_id")
+  beforeHash String? @map("before_hash") @db.VarChar(64)
+  afterHash String @map("after_hash") @db.VarChar(64)
+  statCd String @map("stat_cd") @db.VarChar(16)
+  resultCd String @map("result_cd") @db.VarChar(32)
+  revNo Int? @map("rev_no")
+  rgstDttm DateTime @map("rgst_dttm") @db.Timestamptz(0)
+  endDttm DateTime @map("end_dttm") @db.Timestamptz(0)
+  user AppUser @relation(fields:[userId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  @@index([rgstDttm(sort:Desc),id(sort:Desc)],map:"idx_legal_prec_ingest_hist_date")
+  @@map("legal_prec_ingest_hist")
 }
