@@ -118,7 +118,7 @@ export class CasesService {
   }
   async list(
     owner: Owner,
-    query: { q: string; limit: number; offset: number },
+    query: { q: string; limit: number; offset: number; sort?: 'newest' | 'oldest' },
   ) {
     const term = query.q.trim().replace(/[\\%_]/g, '\\$&'),
       where = {
@@ -137,7 +137,7 @@ export class CasesService {
             ...summarySelect,
             _count: { select: { facts: { where: { delYn: false } } } },
           },
-          orderBy: [{ uptDttm: 'desc' }, { id: 'desc' }],
+          orderBy: [{ uptDttm: query.sort==='oldest'?'asc':'desc' }, { id: query.sort==='oldest'?'asc':'desc' }],
           take: query.limit,
           skip: query.offset,
         });

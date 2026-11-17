@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import {
   Body,
   Controller,
@@ -6,9 +7,21 @@ import {
   Headers,
   HttpCode,
   Post,
+  Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { IsString, MaxLength } from 'class-validator';
+import {
+  Equals,
+  IsBoolean,
+  IsString,
+  MaxLength,
+  IsOptional,
+  IsIn,
+  IsInt,
+  Min,
+  Max,
+  Matches,
+} from 'class-validator';
 import { AuthService } from './auth.service.js';
 
 class LoginDto {
@@ -29,6 +42,25 @@ class ChangePasswordDto {
   @IsString()
   @MaxLength(64)
   newPassword!: string;
+}
+
+class ConsentHistoryDto {
+  @IsOptional() @Type(() => Number) @IsIn([10, 20, 50]) limit = 20;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100000) offset = 0;
+}
+class ConsentDto {
+  @IsBoolean() agreed!: boolean;
+  @Matches(/^(0|[1-9]\d{0,18})$/) revision!: string;
+  @IsBoolean() @Equals(true) confirmed!: boolean;
+}
+class WithdrawalDto {
+  @IsString()
+  @MaxLength(64)
+  currentPassword!: string;
+
+  @IsBoolean()
+  @Equals(true)
+  confirmed!: boolean;
 }
 
 class SignupDto extends LoginDto {
@@ -93,6 +125,52 @@ export class AuthController {
       sessionToken(authorization),
       body.currentPassword,
       body.newPassword,
+    );
+  }
+
+  @Get('learning-consent')
+  @Header('Cache-Control', 'no-store')
+  learningConsent(
+    @Headers('authorization') authorization: string | undefined,
+    @Query() query: ConsentHistoryDto,
+  ) {
+    return this.auth.learningConsent(
+      sessionToken(authorization),
+      query.limit,
+      query.offset,
+    );
+  }
+
+  @Post('learning-consent')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  saveLearningConsent(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: ConsentDto,
+  ) {
+    return this.auth.setLearningConsent(
+      sessionToken(authorization),
+      body.agreed,
+      body.revision,
+    );
+  }
+
+  @Get('withdrawal')
+  @Header('Cache-Control', 'no-store')
+  withdrawalPreview(@Headers('authorization') authorization?: string) {
+    return this.auth.withdrawalPreview(sessionToken(authorization));
+  }
+
+  @Post('withdrawal')
+  @HttpCode(202)
+  @Header('Cache-Control', 'no-store')
+  withdraw(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: WithdrawalDto,
+  ) {
+    return this.auth.withdraw(
+      sessionToken(authorization),
+      body.currentPassword,
     );
   }
 

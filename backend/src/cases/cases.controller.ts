@@ -29,6 +29,8 @@ import {
 import { AuthService } from '../auth/auth.service.js';
 import { CasesService } from './cases.service.js';
 class ListDto {
+  @IsOptional() @IsIn(['newest','oldest']) sort: 'newest' | 'oldest' = 'newest';
+
   @IsOptional() @IsString() @MaxLength(200) q = '';
   @IsOptional() @Type(() => Number) @IsIn([10, 20, 50]) limit = 20;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100000) offset = 0;

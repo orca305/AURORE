@@ -307,6 +307,18 @@ test(
           res.end(JSON.stringify({ ready }));
           return;
         }
+        if (req.url === '/intent/classify') {
+          let intentBody = '';
+          for await (const part of req) intentBody += part;
+          assert.deepEqual(Object.keys(JSON.parse(intentBody)), ['question']);
+          res.end(JSON.stringify({ evaluationEligible: false, routingEnabled: false }));
+          return;
+        }
+        if (req.url !== '/documents/answer') {
+          res.statusCode = 404;
+          res.end('{}');
+          return;
+        }
         let body = '';
         for await (const part of req) body += part;
         const payload = JSON.parse(body);

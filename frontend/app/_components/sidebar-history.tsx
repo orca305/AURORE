@@ -45,7 +45,7 @@ export function SidebarHistory() {
         {!result.data?.items.length && <p>아직 대화 기록이 없습니다.</p>}
         <ul>{result.data?.items.slice(0, 10).map(row => <li key={row.id}><Link href={"/?chat=" + row.id} prefetch={false} title={row.title} aria-current={selected === row.id ? "page" : undefined} onClick={() => { setSelected(row.id); if (matchMedia("(max-width: 800px)").matches && details.current) details.current.open = false; }}><span className={styles.historyTitle}>{row.title}</span>{row.unreadCorrectionCount > 0 && <span className={styles.unread} aria-label={"미확인 정정 " + row.unreadCorrectionCount + "개"}>{row.unreadCorrectionCount}</span>}</Link><RenameChat chat={row}/></li>)}</ul>
       </>}
-      <Link href="/conversations" prefetch={false} className={styles.allHistory} onClick={() => { if (matchMedia("(max-width: 800px)").matches && details.current) details.current.open = false; }}>전체 기록 보기 ↗</Link>
+      <Link href="/conversations" prefetch={false} className={styles.allHistory} onClick={() => { if (matchMedia("(max-width: 800px)").matches && details.current) details.current.open = false; }} data-action-link>전체 기록 보기 </Link>
     </div>
   </details>;
 }

@@ -94,3 +94,36 @@ export async function secureAccount(mode: "password" | "logout-all", _previous: 
   });
   redirect(response?.status === 401 ? "/login?expired=1" : mode === "password" ? "/login?passwordChanged=1" : "/login?signedOut=1");
 }
+
+export async function withdrawAccount(_previous: string | null, form: FormData) {
+  const origin = await trustedOrigin();
+  if (!origin) return '요청을 확인할 수 없습니다. 페이지를 다시 열어 주세요.';
+  const token=await currentToken();
+  if (!token) redirect('/login?expired=1');
+  const currentPassword=form.get('currentPassword');
+  if (typeof currentPassword!=='string' || form.get('confirmed')!=='on') return '현재 비밀번호와 탈퇴 안내 확인을 입력해 주세요.';
+  const response=await authRequest('withdrawal',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({currentPassword,confirmed:true})});
+  if (response?.status===400 || response?.status===409) {
+    const data=await response.json() as {message?:unknown};
+    return typeof data.message==='string'?data.message:'입력 내용과 계정 상태를 확인해 주세요.';
+  }
+  if (response?.status===429) return '요청이 많습니다. 잠시 후 다시 시도해 주세요.';
+  if (response?.status===401) return '로그인이 만료되었거나 이미 탈퇴한 계정입니다. 다시 로그인해 계정 상태를 확인해 주세요.';
+  if (response?.status!==202) return '탈퇴 결과를 확인하지 못했습니다. 다시 시도하거나 로그인 상태를 확인해 주세요.';
+  const result=await response.json() as {withdrawn?:boolean};
+  if (result.withdrawn!==true) return '탈퇴 결과를 확인하지 못했습니다. 다시 로그인해 계정 상태를 확인해 주세요.';
+  (await cookies()).set(sessionCookie,'',{httpOnly:true,sameSite:'lax',secure:origin.protocol==='https:',path:'/',maxAge:0});
+  redirect('/login?withdrawn=1');
+}
+
+export async function saveLearningConsent(revision:string,_previous:string|null,form:FormData){
+ if(!(await trustedOrigin()))return '요청을 확인할 수 없습니다. 페이지를 다시 열어 주세요.';
+ const token=await currentToken();if(!token)return '다시 로그인해 주세요.';
+ const choice=form.get('agreed');
+ if(!/^(0|[1-9]\d{0,18})$/.test(revision)||!['yes','no'].includes(String(choice))||form.get('confirmed')!=='on')return '학습 활용 선택과 안내 확인을 입력해 주세요.';
+ const response=await authRequest('learning-consent',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({agreed:choice==='yes',revision,confirmed:true})});
+ if(response?.status===400||response?.status===409){const data=await response.json() as {message?:unknown};return typeof data.message==='string'?data.message:'선택 내용을 확인해 주세요.';}
+ if(response?.status===401)return '로그인이 만료됐습니다. 다시 로그인해 주세요.';
+ if(!response?.ok)return '저장 결과를 확인하지 못했습니다. 새로고침 후 선택 상태를 확인해 주세요.';
+ const {revalidatePath}=await import('next/cache');revalidatePath('/account');revalidatePath('/admin/privacy-retention');return null;
+}

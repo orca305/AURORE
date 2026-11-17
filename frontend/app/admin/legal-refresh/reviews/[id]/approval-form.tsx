@@ -10,5 +10,5 @@ export function ApprovalForm({id,beforeHash,afterHash}:{id:string;beforeHash:str
   if(result?.terminal) request.current=null;
   return result;
  },null);
- return <form action={action} className={styles.approval}><h3>정정 승인</h3><p>공식 원문을 다시 확인한 뒤 새 이력으로 반영합니다. 기존 원문과 인용 근거는 보존됩니다.</p><label><input type="checkbox" name="confirmed" value="yes" required disabled={pending}/>전후 원문을 확인했으며 이 정정을 반영하는 데 동의합니다.</label>{state?.error && <p role="alert" className={styles.approvalError}>{state.error}</p>}<button type="submit" disabled={pending}>{pending ? "공식 원문 확인·반영 중…" : "정정 승인 후 반영"}</button></form>;
+ return <form action={action} className={styles.approval}><h3>정정 승인</h3><p>공식 원문을 다시 확인한 뒤 새 이력으로 반영합니다. 기존 원문과 인용 근거는 보존됩니다.</p><label><input type="checkbox" name="confirmed" value="yes" required disabled={pending}/>전후 원문을 확인했으며 이 정정을 반영하는 데 동의합니다.</label>{state?.error && <p role="alert" className={styles.approvalError}>{state.error}</p>}<button type="submit" disabled={pending} data-primary>{pending ? "공식 원문 확인·반영 중…" : "정정 승인 후 반영"}</button></form>;
 }

@@ -103,3 +103,29 @@ body:has([data-site-navigation]) { padding-left: var(--site-sidebar-width); }
 .correction-unread { display:inline-block; margin-left:10px; padding:3px 7px; border:1px solid var(--border); background:var(--user-message); color:var(--accent); font-family:"Noto Sans KR",sans-serif; font-size:11px; vertical-align:middle; white-space:nowrap; }
 
 .list-tools { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:16px; }
+
+.search-row select { min-height:44px; padding:8px 12px; border:1px solid var(--border); color:var(--foreground); background:var(--background); font:inherit; max-width:100%; }
+
+:root { --control-height:40px; --disabled-bg:#e7eae8; --disabled-text:#7c8781; --disabled-border:#d0d7d2; --content-top-space:clamp(4.75rem,9svh,7rem); }
+:root[data-theme="dark"] { --sidebar:#202525; --hover:#2c3433; --selected:#303b37; --disabled-bg:#2c3331; --disabled-text:#849087; --disabled-border:#414c45; }
+body { padding-bottom:48px; }
+.ui-button,a[data-action-link] { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:var(--control-height); padding:8px 12px; border:1px solid var(--border); background:var(--background); color:var(--accent); text-decoration:none; font:inherit; font-size:12px; line-height:1.4; cursor:pointer; vertical-align:middle; }
+body button:not(:disabled):not([data-primary]):hover,a[data-action-link]:hover,.ui-button:not(:disabled):hover { background:var(--hover); border-color:var(--strong-border); }
+body button[data-primary]:not(:disabled):not([data-danger]):hover { background:var(--button-hover); color:var(--on-accent); }
+:root body button:disabled,:root body input[type=submit]:disabled { opacity:1; color:var(--disabled-text); background:var(--disabled-bg); border-color:var(--disabled-border); cursor:not-allowed; box-shadow:none; }
+:root body button:disabled svg { opacity:.65; }
+.icon-button { width:var(--control-height); height:var(--control-height); padding:8px; flex:none; }
+.refresh-spinning { animation:refresh-spin .9s linear infinite; } @keyframes refresh-spin{to{transform:rotate(360deg)}} @media(prefers-reduced-motion:reduce){.refresh-spinning{animation:none}}
+.site-copyright { position:fixed; right:clamp(16px,1.5vw,28px); bottom:max(10px,env(safe-area-inset-bottom)); z-index:24; color:var(--muted); background:var(--background); padding:2px 5px; font-size:11px; pointer-events:none; }
+.search-row { align-items:center; flex-wrap:wrap; }
+.search-row input { flex:1 1 160px; width:auto; height:var(--control-height); min-height:var(--control-height); padding:8px 12px; font-size:14px; line-height:1.4; }
+.search-row select,.search-row button { height:var(--control-height); min-height:var(--control-height); margin:0; line-height:1.4; }
+.search-row select { width:auto; flex:0 1 auto; }
+.search-row .ui-button { flex:none; padding:8px 14px; color:var(--accent); border:1px solid var(--border); background:var(--background); }
+.page-size select,.pagination a,.pagination button { height:var(--control-height); min-height:var(--control-height); margin:0; line-height:1.4; }
+.section-heading { align-items:center; flex-wrap:wrap; }
+.legal-title-row { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:9px; }
+.legal-title-row h3 { margin:0; }
+.legal-list h3 a { font-size:inherit; }
+.search-actions{display:inline-flex;align-items:center;gap:8px;flex:none;max-width:100%}.search-row{min-width:0;gap:10px}.search-row>*{max-width:100%;box-sizing:border-box}.search-row select{min-width:0}.search-row button,.search-actions button{flex:none;height:var(--control-height);min-height:var(--control-height);padding-block:0;line-height:1.4}.search-row .icon-button{width:var(--control-height);padding:0}.search-row .search-actions{margin:0}.search-row input{min-width:120px}.search-actions .ui-button{height:var(--control-height);min-height:var(--control-height)}.sort-select{display:inline-flex;align-items:center;gap:6px;margin:0;font-size:12px;color:var(--muted)}.sort-select select{height:var(--control-height);min-height:var(--control-height);padding:6px 10px;border:1px solid var(--border);background:var(--background);color:var(--foreground)}
+@media(max-width:650px){.search-row input{flex-basis:100%;width:100%}.search-row{gap:8px}.search-row select{flex-shrink:1}.memberMenu{gap:6px}}

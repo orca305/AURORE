@@ -108,7 +108,7 @@ export function CaseForm({
           ) : (
             <>
               <label>
-                관련 날짜 <span>선택</span>
+                <span className={styles.fieldCaption}>관련 날짜 <small>선택</small></span>
                 <input
                   type="date"
                   name="occurredOn"
@@ -161,7 +161,7 @@ export function CaseForm({
         <p role="alert" className={styles.error}>
           {state.error}{" "}
           {state.terminal && command.caseId && (
-            <a href={"/cases/" + command.caseId}>최신 내용 확인 ↗</a>
+            <a href={"/cases/" + command.caseId} data-action-link>최신 내용 확인 </a>
           )}
         </p>
       )}
@@ -170,7 +170,7 @@ export function CaseForm({
           type="submit"
           disabled={pending}
           data-danger={deleting || undefined}
-        >
+         data-primary>
           {pending ? "처리 중…" : label}
         </button>
       </div>

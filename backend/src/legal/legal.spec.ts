@@ -284,7 +284,7 @@ describe('등록 인증과 입력 검증', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(
       await pipe.transform({}, { type: 'query', metatype: ListLegalsDto }),
-    ).toEqual({ limit: 20, offset: 0 });
+    ).toEqual({ limit: 20, offset: 0,sort:'newest' });
   });
 });
 

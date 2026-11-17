@@ -1,5 +1,6 @@
 export const jobProviders:Record<string,string>={DEMO:'검증 예제',LOCAL_DOC:'로컬 AI · 첨부자료',LOCAL_RAG:'로컬 AI · 법령근거',STORED_SEARCH:'저장 원문 검색',OTHER:'기타 처리'};
 export const jobErrors:Record<string,{label:string;detail:string}>={
+ ACCOUNT_WITHDRAWN:{label:'회원 탈퇴',detail:'계정 탈퇴로 답변 작업을 취소했습니다.'},
  CASE_CONTEXT_CHANGED:{label:'사건 정보 변경',detail:'선택한 사실관계 또는 사건 연결이 변경되어 답변 저장을 취소했습니다.'},
  AI_UNAVAILABLE:{label:'AI 연결·응답 불가',detail:'로컬 AI 서버 연결 또는 응답을 확인하지 못했습니다. 서버·모델 준비 상태와 응답 지연을 확인해 주세요.'},
  AI_UPSTREAM_FAILURE:{label:'모델 연결·출력 처리 실패',detail:'AI 서버가 모델 연결 또는 출력 검증 단계에서 처리를 완료하지 못했습니다. 모델 서버 상태와 출력 검증을 확인해 주세요. 원문 불일치로 원인을 단정하지 않습니다.'},

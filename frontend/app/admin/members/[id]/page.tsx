@@ -57,9 +57,7 @@ export default async function MemberPage({
             {member.loginIdMasked} · {member.nicknameMasked}
           </p>
         </div>
-        <Link href={path + "?limit=" + limit} className={styles.refresh}>
-          새로고침 ↻
-        </Link>
+
       </div>
       {query.updated === "1" && (
         <p role="status" className={styles.notice}>

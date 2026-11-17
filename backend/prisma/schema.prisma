@@ -8,6 +8,10 @@ datasource db {
 }
 
 model AppUser {
+  termChanges LegalTermHist[]
+  withdrawArchDttm DateTime? @map("withdraw_arch_dttm") @db.Timestamptz(0)
+  notifications UserNtf[]
+  bookmarks UserBmark[]
   documents AttachDoc[]
   citationReads CiteNoticeRead[]
   id         BigInt   @id @default(autoincrement())
@@ -260,6 +264,8 @@ model AnsCite {
 }
 
 model Legal {
+  changeEvents LegalChgEvt[]
+  bookmarks UserBmark[]
   id       BigInt     @id @default(autoincrement())
   srcCd    String     @default("LEGACY") @map("src_cd") @db.VarChar(60)
   srcKey   String     @map("src_key")
@@ -276,6 +282,8 @@ model Legal {
 }
 
 model SrcSnapshot {
+ terms LegalTerm[] @relation("TermSource")
+ termChanges LegalTermHist[] @relation("TermHistorySource")
   noticeReads CiteNoticeRead[]
   id       BigInt     @id @default(autoincrement())
   srcCd    String     @map("src_cd") @db.VarChar(60)
@@ -294,6 +302,8 @@ model SrcSnapshot {
 }
 
 model LegalPrec {
+  changeEvents LegalChgEvt[]
+  bookmarks UserBmark[]
   id         BigInt         @id @default(autoincrement())
   srcCd      String         @map("src_cd") @db.VarChar(60)
   srcKey     String         @map("src_key")
@@ -310,6 +320,9 @@ model LegalPrec {
 }
 
 model LegalPrecRev {
+  changeEvents LegalChgEvt[] @relation("PrecEventSource")
+  priorChangeEvents LegalChgEvt[] @relation("PrecEventBefore")
+  @@unique([id,legalPrecId],map:"uq_legal_prec_rev_id_target")
   id            BigInt      @id @default(autoincrement())
   legalPrecId   BigInt      @map("legal_prec_id")
   srcSnapshotId BigInt      @map("src_snapshot_id")
@@ -355,6 +368,7 @@ model LegalPrecProvi {
 }
 
 model LegalVer {
+  changeEvents LegalChgEvt[]
   id            BigInt       @id @default(autoincrement())
   legalId       BigInt       @map("legal_id")
   verKey        String       @map("ver_key")
@@ -368,6 +382,7 @@ model LegalVer {
   legal         Legal        @relation(fields: [legalId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   revisions     LegalVerRev[]
 
+  @@unique([id, legalId],map:"uq_legal_ver_id_legal")
   @@unique([legalId, verKey, enfcDt], map: "uq_legal_ver_edition")
   citations AnsCite[]
 
@@ -377,6 +392,8 @@ model LegalVer {
 }
 
 model LegalVerRev {
+  changeEvents LegalChgEvt[] @relation("EventSource")
+  priorChangeEvents LegalChgEvt[] @relation("EventBefore")
   id            BigInt       @id @default(autoincrement())
   legalVerId    BigInt       @map("legal_ver_id")
   revNo         Int          @map("rev_no")
@@ -388,6 +405,7 @@ model LegalVerRev {
   provisions    LegalProvi[]
   citations AnsCite[] @relation("CitationLegalRevision")
 
+  @@unique([id, legalVerId],map:"uq_legal_ver_rev_id_version")
   @@unique([legalVerId, revNo], map: "uq_legal_ver_rev_no")
   @@unique([legalVerId, srcSnapshotId], map: "uq_legal_ver_rev_source")
   @@index([srcSnapshotId], map: "idx_legal_ver_rev_snapshot")
@@ -634,4 +652,116 @@ model LegalPrecIngestHist {
   user AppUser @relation(fields:[userId],references:[id],onDelete:Restrict,onUpdate:Restrict)
   @@index([rgstDttm(sort:Desc),id(sort:Desc)],map:"idx_legal_prec_ingest_hist_date")
   @@map("legal_prec_ingest_hist")
+}
+
+model UserBmark {
+  id BigInt @id @default(autoincrement())
+  userId BigInt @map("user_id")
+  legalId BigInt? @map("legal_id")
+  legalPrecId BigInt? @map("legal_prec_id")
+  delYn Boolean @default(false) @map("del_yn")
+  delDttm DateTime? @map("del_dttm") @db.Timestamptz(0)
+  delId BigInt? @map("del_id")
+  rgstDttm DateTime @default(dbgenerated("date_trunc('second'::text, CURRENT_TIMESTAMP)")) @map("rgst_dttm") @db.Timestamptz(0)
+  uptDttm DateTime @default(dbgenerated("date_trunc('second'::text, CURRENT_TIMESTAMP)")) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  legal Legal? @relation(fields: [legalId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  precedent LegalPrec? @relation(fields: [legalPrecId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  // XOR target and active-only unique constraints are maintained in the SQL migration.
+  @@index([userId, rgstDttm(sort: Desc), id(sort: Desc)], map: "idx_user_bmark_user_date")
+  @@map("user_bmark")
+}
+model LegalChgEvt {
+  id BigInt @id @default(autoincrement())
+  evtKey String @unique(map:"uq_legal_chg_evt_key") @map("evt_key") @db.VarChar(120)
+  legalId BigInt? @map("legal_id")
+  legalVerId BigInt? @map("legal_ver_id")
+  srcRevId BigInt? @map("src_rev_id")
+  bfRevId BigInt? @map("bf_rev_id")
+  evtTypeCd String @map("evt_type_cd") @db.VarChar(20)
+  scopeCd String @map("scope_cd") @db.VarChar(20)
+  baseDt DateTime @map("base_dt") @db.Date
+  evtDttm DateTime @map("evt_dttm") @db.Timestamptz(0)
+  evtTitle String @map("evt_title") @db.VarChar(300)
+  evtCont String @map("evt_cont") @db.Text
+  delYn Boolean @default(false) @map("del_yn")
+  delDttm DateTime? @map("del_dttm") @db.Timestamptz(0)
+  delId BigInt? @map("del_id")
+  rgstDttm DateTime @default(dbgenerated("date_trunc('second'::text, CURRENT_TIMESTAMP)")) @map("rgst_dttm") @db.Timestamptz(0)
+  legal Legal? @relation(fields:[legalId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  version LegalVer? @relation(fields:[legalVerId,legalId],references:[id,legalId],onDelete:Restrict,onUpdate:Restrict)
+  sourceRevision LegalVerRev? @relation("EventSource",fields:[srcRevId,legalVerId],references:[id,legalVerId],onDelete:Restrict,onUpdate:Restrict)
+  beforeRevision LegalVerRev? @relation("EventBefore",fields:[bfRevId,legalVerId],references:[id,legalVerId],onDelete:Restrict,onUpdate:Restrict)
+  legalPrecId BigInt? @map("legal_prec_id")
+  srcPrecRevId BigInt? @map("src_prec_rev_id")
+  bfPrecRevId BigInt? @map("bf_prec_rev_id")
+  precedent LegalPrec? @relation(fields:[legalPrecId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  sourcePrecedent LegalPrecRev? @relation("PrecEventSource",fields:[srcPrecRevId,legalPrecId],references:[id,legalPrecId],onDelete:Restrict,onUpdate:Restrict)
+  beforePrecedent LegalPrecRev? @relation("PrecEventBefore",fields:[bfPrecRevId,legalPrecId],references:[id,legalPrecId],onDelete:Restrict,onUpdate:Restrict)
+  @@index([legalPrecId,evtDttm,id],map:"idx_legal_chg_evt_prec_date")
+  deliveries UserNtf[]
+  @@index([legalId,evtDttm,id],map:"idx_legal_chg_evt_legal_date")
+  @@map("legal_chg_evt")
+}
+
+model UserNtf {
+  id BigInt @id @default(autoincrement())
+  userId BigInt @map("user_id")
+  evtId BigInt @map("evt_id")
+  readDttm DateTime? @map("read_dttm") @db.Timestamptz(0)
+  delYn Boolean @default(false) @map("del_yn")
+  delDttm DateTime? @map("del_dttm") @db.Timestamptz(0)
+  delId BigInt? @map("del_id")
+  rgstDttm DateTime @default(dbgenerated("date_trunc('second'::text, CURRENT_TIMESTAMP)")) @map("rgst_dttm") @db.Timestamptz(0)
+  user AppUser @relation(fields:[userId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  event LegalChgEvt @relation(fields:[evtId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+  @@unique([userId,evtId],map:"uq_user_ntf_event")
+  @@index([userId,delYn,readDttm,id(sort:Desc)],map:"idx_user_ntf_user_read")
+  @@map("user_ntf")
+}
+model LegalTerm {
+ srcCd String @default("MANUAL") @map("src_cd") @db.VarChar(20)
+ srcKey String? @map("src_key") @db.VarChar(30)
+ srcHash String? @map("src_hash") @db.VarChar(64)
+ srcSnapshotId BigInt? @map("src_snapshot_id")
+ snapshot SrcSnapshot? @relation("TermSource",fields:[srcSnapshotId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ @@unique([srcCd,srcKey],map:"uq_legal_term_source")
+ id BigInt @id @default(autoincrement())
+ termNm String @map("term_nm") @db.VarChar(100)
+ normNm String @map("norm_nm") @db.VarChar(100)
+ aliases String[] @default([])
+ defCont String @map("def_cont") @db.Text
+ easyCont String? @map("easy_cont") @db.Text
+ srcNm String @map("src_nm") @db.VarChar(200)
+ srcUrl String @map("src_url") @db.VarChar(2000)
+ srcRef String? @map("src_ref") @db.Text
+ statCd String @default("DRAFT") @map("stat_cd") @db.VarChar(16)
+ revNo Int @default(1) @map("rev_no")
+ pubDttm DateTime? @map("pub_dttm") @db.Timestamptz(0)
+ delYn Boolean @default(false) @map("del_yn")
+ delDttm DateTime? @map("del_dttm") @db.Timestamptz(0)
+ delId BigInt? @map("del_id")
+ rgstDttm DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+ uptDttm DateTime @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
+ histories LegalTermHist[]
+ @@index([statCd,delYn,uptDttm(sort:Desc),id(sort:Desc)],map:"idx_legal_term_list")
+ @@map("legal_term")
+}
+model LegalTermHist {
+ srcSnapshotId BigInt? @map("src_snapshot_id")
+ snapshot SrcSnapshot? @relation("TermHistorySource",fields:[srcSnapshotId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ id String @id @db.Uuid
+ legalTermId BigInt @map("legal_term_id")
+ actorUserId BigInt @map("actor_user_id")
+ revNo Int @map("rev_no")
+ actCd String @map("act_cd") @db.VarChar(16)
+ requestHash String @map("request_hash") @db.VarChar(64)
+ bfData Json? @map("bf_data") @db.JsonB
+ afData Json @map("af_data") @db.JsonB
+ rgstDttm DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+ term LegalTerm @relation(fields:[legalTermId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ actor AppUser @relation(fields:[actorUserId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ @@unique([legalTermId,revNo],map:"uq_legal_term_hist_revision")
+ @@index([actorUserId],map:"idx_legal_term_hist_actor")
+ @@map("legal_term_hist")
 }

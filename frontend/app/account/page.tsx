@@ -1,3 +1,5 @@
+import { LearningConsentPanel } from '../_auth/learning-consent-panel';
+import { parsePageSize } from '../_components/page-size';
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PasswordForm, SignOutAllForm } from "../_auth/account-form";
@@ -7,7 +9,8 @@ import styles from "../_auth/account.module.css";
 
 export const metadata = {title: "마이페이지 | AURORE"};
 
-export default async function Account() {
+export default async function Account({searchParams}:{searchParams:Promise<{limit?:string;offset?:string}>}) {
+  const params=await searchParams,limit=parsePageSize(params.limit),offset=/^\d{1,6}$/.test(params.offset??'')?Math.min(Number(params.offset),100000):0;
   const member = await currentMember();
   if (!member) redirect("/login");
   return <div className={styles.page}>
@@ -26,11 +29,12 @@ export default async function Account() {
               <div><dt>아이디</dt><dd>{member.loginId}</dd></div>
               <div><dt>닉네임</dt><dd>{member.nickname}</dd></div>
             </dl>
-            <div className={styles.accountLinks}><Link href="/conversations">나의 대화 기록 ↗</Link><Link href="/">새 대화 시작 ↗</Link></div>
+            <div className={styles.accountLinks}><Link href="/conversations" data-action-link>나의 대화 기록 </Link><Link href="/" data-action-link>새 대화 시작 </Link></div>
           </section>
           <section className={styles.accountCard} aria-labelledby="sessions-heading">
             <h2 id="sessions-heading">로그인 관리</h2>
             <SignOutAllForm />
+            <div className={styles.section}><h2>회원 탈퇴</h2><p className={styles.help}>탈퇴 전에 자료 처리 범위를 확인할 수 있습니다.</p><Link href="/account/withdrawal" className="ui-button">탈퇴 안내 확인</Link></div>
           </section>
         </div>
         <section className={styles.accountCard} aria-labelledby="password-heading">
@@ -39,6 +43,7 @@ export default async function Account() {
           <PasswordForm />
         </section>
       </div>
+      <LearningConsentPanel limit={limit} offset={offset}/>
     </main>
   </div>;
 }

@@ -21,6 +21,7 @@ export const safeJobResult = (value: string | null) =>
       ? value
       : 'OTHER';
 export type JobsQuery = {
+  sort?: 'newest' | 'oldest';
   q: string;
   status: string;
   error: string;
@@ -82,6 +83,7 @@ const basic = (row: BasicJobRow) => ({
   updatedAt: row.updated_at.toISOString(),
 });
 export async function listAdminJobs(db: PrismaService, query: JobsQuery) {
+  const direction=query.sort==='oldest'?Prisma.sql`ASC`:Prisma.sql`DESC`;
   validateAdminPeriod(query.from, query.to);
   const filtered = Prisma.sql`${visibleJobs}, filtered AS (SELECT * FROM visible_jobs WHERE
    (${query.status}='all' OR status=${query.status}) AND
@@ -106,7 +108,7 @@ export async function listAdminJobs(db: PrismaService, query: JobsQuery) {
         Prisma.sql`${filtered} SELECT count(*) AS total,count(*) FILTER(WHERE status='FAILED') AS failed,count(*) FILTER(WHERE status='RETRY_WAIT') AS retrying,count(*) FILTER(WHERE result_code IN ('SOURCE_GAP','RELEVANCE_GAP','DOCUMENT_GAP')) AS needs_evidence,count(*) FILTER(WHERE result_code='AI_NOT_READY') AS ai_not_ready,count(*) FILTER(WHERE error_code='EVIDENCE_INVALID') AS evidence_invalid FROM filtered`,
       );
       const rows = await tx.$queryRaw<BasicJobRow[]>(
-        Prisma.sql`${filtered} SELECT id,status,provider,error_code,result_code,attempts,created_at,updated_at FROM filtered ORDER BY updated_at DESC,id DESC LIMIT ${query.limit} OFFSET ${query.offset}`,
+        Prisma.sql`${filtered} SELECT id,status,provider,error_code,result_code,attempts,created_at,updated_at FROM filtered ORDER BY updated_at ${direction},id ${direction} LIMIT ${query.limit} OFFSET ${query.offset}`,
       );
       const total = Number(counts.total);
       return {

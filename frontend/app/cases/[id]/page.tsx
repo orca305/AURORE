@@ -92,7 +92,7 @@ export default async function CasePage({
   return (
     <>
       <section className="intro">
-        <Link href={"/cases?limit=" + limit}>← 내 사건</Link>
+        <Link href={"/cases?limit=" + limit}>← 나의 사건</Link>
         <h1>{parent.title}</h1>
         <p>
           {parent.typeName} · {date(parent.updatedAt)} 수정
@@ -135,7 +135,7 @@ export default async function CasePage({
           </h2>
           <div className="list-tools">
             <PageSizeSelect value={limit} />
-            <Link href={path + "/timeline?limit=" + limit}>타임라인 보기 ↗</Link>
+            <Link href={path + "/timeline?limit=" + limit} data-action-link>타임라인 보기 </Link>
             <a href={path+"/export"} download>정리본 내려받기 ↓</a>
             <a href="#add-fact">사실관계 추가 ↓</a>
           </div>
@@ -157,7 +157,7 @@ export default async function CasePage({
                     )}
                   </div>
                   <div className={styles.factTools}>
-                    <Link href={path + "/facts/" + row.id}>수정 ↗</Link>
+                    <Link href={path + "/facts/" + row.id} data-action-link>수정 </Link>
                     <DeleteCase
                       command={{
                         operation: "deleteFact",
@@ -170,7 +170,7 @@ export default async function CasePage({
                   </div>
                 </header>
                 <p className={styles.content}>{row.content}</p>
-                {row.imported && <p className={styles.factDate}>{row.source ? <Link href={'/?chat='+row.source.chatId}>가져온 대화 ↗</Link> : '가져온 대화가 삭제되었거나 보관이 종료됐습니다.'}</p>}
+                {row.imported && <p className={styles.factDate}>{row.source ? <Link href={'/?chat='+row.source.chatId} data-action-link>가져온 대화 </Link> : '가져온 대화가 삭제되었거나 보관이 종료됐습니다.'}</p>}
 
               </li>
             ))}

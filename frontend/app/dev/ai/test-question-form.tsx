@@ -26,7 +26,7 @@ export function TestQuestionForm({ ask }: { ask: (previous: Result, form: FormDa
       <label htmlFor="test-question">테스트 질문</label>
       <div className="search-row">
         <input id="test-question" name="question" value={question} onChange={event => setQuestion(event.target.value)} required maxLength={1000} placeholder={example} />
-        <button type="submit" disabled={pending}>{pending ? "응답 중…" : "보내기"}</button>
+        <button type="submit" disabled={pending} data-primary>{pending ? "응답 중…" : "보내기"}</button>
       </div>
       <button type="button" className="mt-3 underline" onClick={() => setQuestion(example)}>임차권등기명령 예제 입력</button>
     </form>

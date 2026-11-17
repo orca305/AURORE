@@ -1,3 +1,4 @@
+import { compareStoredPrecedent } from './precedent-comparison.js';
 import { compareStoredVersions } from "./legal-comparison.js";
 import type { CompareVersionsDto } from "./dto/compare-versions.dto.js";
 import {
@@ -37,6 +38,7 @@ function publicVersion({ revisions, ...row }: Prisma.LegalVerGetPayload<{ select
 
 @Injectable()
 export class LegalService {
+  precedentComparison(id:bigint,before:bigint,after:bigint){return compareStoredPrecedent(this.prisma,id,before,after);}
   constructor(private readonly prisma: PrismaService) {}
 
   comparison(id:bigint,query:CompareVersionsDto){return compareStoredVersions(this.prisma,id,query);}
@@ -50,7 +52,7 @@ export class LegalService {
           : {}),
       },
       select: publicSelect,
-      orderBy: { id: 'asc' },
+      orderBy: [{ rgstDttm: query.sort==='oldest'?'asc':'desc' },{id:query.sort==='oldest'?'asc':'desc'}],
       take: query.limit,
       skip: query.offset,
     });
@@ -83,7 +85,7 @@ export class LegalService {
           ],
         } : {}),
       },
-      orderBy: [{ decisionDt: 'desc' }, { id: 'desc' }],
+      orderBy: [{ decisionDt: query.sort==='oldest'?'asc':'desc' }, { id: query.sort==='oldest'?'asc':'desc' }],
       take: query.limit,
       skip: query.offset,
       select: {
@@ -97,6 +99,7 @@ export class LegalService {
         snapshot: { select: { srcUrl: true, contHash: true } },
         precedent: {
           select: {
+            id: true,
             srcKey: true,
             revisions: {
               where: { currentYn: false },
@@ -191,6 +194,7 @@ export class LegalService {
         decisionDate: decisionDt.toISOString().slice(0, 10),
         sourceUrl: snapshot.srcUrl,
         sourceHash: snapshot.contHash,
+        id: String(precedent.id),
         sourceKey: precedent.srcKey,
         excerpt,
         references,
@@ -251,8 +255,8 @@ export class LegalService {
       },
       select: versionSelect,
       orderBy: [
-        { enfcDt: { sort: 'desc', nulls: 'last' } },
-        { id: 'desc' },
+        { enfcDt: { sort: query.sort==='oldest'?'asc':'desc', nulls: 'last' } },
+        { id: query.sort==='oldest'?'asc':'desc' },
       ],
       take: query.limit,
       skip: query.offset,

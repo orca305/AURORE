@@ -81,13 +81,13 @@ export function StatusForm({
         <p role="alert" className={styles.approvalError}>
           {state.error}{" "}
           {state.terminal && (
-            <a href={"/admin/members/" + id + "?limit=" + limit}>
-              최신 상태 확인 ↗
+            <a href={"/admin/members/" + id + "?limit=" + limit} data-action-link>
+              최신 상태 확인
             </a>
           )}
         </p>
       )}
-      <button type="submit" disabled={pending}>
+      <button type="submit" disabled={pending} data-primary>
         {pending
           ? "처리 중…"
           : target === "BLOCKED"

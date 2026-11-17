@@ -52,12 +52,7 @@ export default async function JobDetail({
           <h2>AI 작업 상세</h2>
           <p className={styles.jobId}>{job.id}</p>
         </div>
-        <Link
-          href={"/admin/ai-jobs/" + id + "?limit=" + limit}
-          className={styles.refresh}
-        >
-          새로고침 ↻
-        </Link>
+
       </div>
       <div className={styles.jobStatus}>
         <span

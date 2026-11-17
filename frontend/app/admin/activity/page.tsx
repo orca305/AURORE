@@ -1,3 +1,5 @@
+import { SortSelect } from '../../_components/sort-select';
+import { ResetSearch } from '../../_components/page-actions';
 import Link from "next/link";
 import { requestAdmin, type AdminActivity } from "../../_admin/requests";
 import { correctionResults, date, number } from "../../_admin/format";
@@ -37,7 +39,9 @@ export default async function ActivityPage({
     offset = /^\d{1,6}$/.test(rawOffset)
       ? Math.min(Number(rawOffset), 100000)
       : 0;
+  const sort=params.sort==='oldest'?'oldest':'newest';
   const query = new URLSearchParams({
+    sort,
     q,
     kind,
     result,
@@ -66,9 +70,7 @@ export default async function ActivityPage({
             확인합니다.
           </p>
         </div>
-        <Link className={styles.refresh} href={url(offset)}>
-          새로고침 ↻
-        </Link>
+
       </div>
       <form
         action="/admin/activity"
@@ -125,10 +127,8 @@ export default async function ActivityPage({
         </label>
         <input type="hidden" name="limit" value={limit} />
         <div className={styles.activitySearchActions}>
-          <button type="submit">조회</button>
-          {filtered && (
-            <Link href={"/admin/activity?limit=" + limit}>조건 지우기</Link>
-          )}
+          <SortSelect value={sort} basis="처리일"/><button type="submit" data-primary>조회</button><ResetSearch/>
+
         </div>
       </form>
       {!data ? (
@@ -192,8 +192,8 @@ export default async function ActivityPage({
                     <td className={styles.activitySubject}>
                       {row.subject}
                       {row.href && (
-                        <Link className={styles.subtext} href={row.href}>
-                          관련 화면 ↗
+                        <Link className={styles.subtext} href={row.href} data-action-link>
+                          관련 화면
                         </Link>
                       )}
                     </td>

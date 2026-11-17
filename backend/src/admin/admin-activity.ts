@@ -2,6 +2,7 @@ import { validateAdminPeriod } from './date-range.js';
 import { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 export type ActivityQuery = {
+  sort?: 'newest' | 'oldest';
   q: string;
   kind: string;
   result: string;
@@ -14,6 +15,7 @@ export async function listAdminActivity(
   db: PrismaService,
   query: ActivityQuery,
 ) {
+  const direction=query.sort==='oldest'?Prisma.sql`ASC`:Prisma.sql`DESC`;
   validateAdminPeriod(query.from, query.to);
   const term = '%' + query.q.trim().replace(/[\\%_]/g, '\\$&') + '%';
   const actor = Prisma.sql`CASE WHEN u.del_yn OR us.cd='WITHDRAWN' THEN '탈퇴한 관리자' ELSE left(u.login_id,2)||repeat('*',greatest(char_length(u.login_id)-2,1)) END`;
@@ -65,7 +67,7 @@ export async function listAdminActivity(
           href: string | null;
         }[]
       >(Prisma.sql`${events}
-      SELECT id,kind,result,action,occurred_at,subject,reason,operator,href FROM filtered ORDER BY occurred_at DESC,kind ASC,sequence DESC NULLS LAST,id DESC LIMIT ${query.limit} OFFSET ${query.offset}`);
+      SELECT id,kind,result,action,occurred_at,subject,reason,operator,href FROM filtered ORDER BY occurred_at ${direction},kind ASC,sequence ${direction} NULLS LAST,id ${direction} LIMIT ${query.limit} OFFSET ${query.offset}`);
       const total = Number(counts.total);
       return {
         total,

@@ -61,6 +61,17 @@ const activeUser = {
   delYn: false,
   status: activeStatus,
 } satisfies Prisma.AppUserWhereInput;
+const learningCategory = {
+  cd: 'LEARNING',
+  delYn: false,
+  useYn: true,
+  parent: {
+    cd: 'USER_AGR',
+    delYn: false,
+    useYn: true,
+    parent: { ...root, prntCdId: null },
+  },
+} satisfies Prisma.CmmnCdWhereInput;
 const idPattern = /^[a-z][a-z0-9_]{3,11}$/;
 
 function passwordHash(password: string, salt: Uint8Array) {
@@ -192,15 +203,25 @@ export class AuthService {
             }),
           ]);
           if (!status || !learning) throw new ServiceUnavailableException();
+          const registeredAt = nowAtSecond();
           await tx.appUser.create({
             data: {
+              rgstDttm: registeredAt,
+              uptDttm: registeredAt,
               loginId,
               nickNm,
               statCdId: status.id,
               auth: { create: { pwSalt, pwHash } },
-              statuses: { create: { statCdId: status.id } },
+              statuses: {
+                create: { statCdId: status.id, rgstDttm: registeredAt },
+              },
               agreements: {
-                create: { agrCdId: learning.id, agrYn: false, polVer: '3.3' },
+                create: {
+                  agrCdId: learning.id,
+                  agrYn: false,
+                  polVer: '3.3',
+                  rgstDttm: registeredAt,
+                },
               },
             },
           });
@@ -437,6 +458,296 @@ export class AuthService {
         });
       });
     });
+  }
+
+  async learningConsent(token: string, limit = 20, offset = 0) {
+    const member = await this.session(token, false),
+      userId = BigInt(member.id);
+    return this.db.$transaction(
+      async (tx) => {
+        if (!(await this.ownerIsActive(userId, null, sessionHash(token), tx)))
+          throw new UnauthorizedException('다시 로그인해 주세요.');
+        if(!(await tx.cmmnCd.count({where:learningCategory})))throw new ServiceUnavailableException('학습 활용 동의 설정을 확인해 주세요.');
+      const now = nowAtSecond(),
+          where = {
+            userId,
+            category: learningCategory,
+            rgstDttm: { lte: now },
+          };
+        const latest = await tx.userAgrYnHist.findFirst({
+          where,
+          orderBy: [{ rgstDttm: 'desc' }, { id: 'desc' }],
+        });
+        const total = await tx.userAgrYnHist.count({ where });
+        const rows = await tx.userAgrYnHist.findMany({
+          where,
+          orderBy: [{ rgstDttm: 'desc' }, { id: 'desc' }],
+          take: limit,
+          skip: offset,
+          select: { id: true, agrYn: true, polVer: true, rgstDttm: true },
+        });
+        return {
+          agreed: latest?.agrYn ?? false,
+          revision: latest ? String(latest.id) : '0',
+          policyVersion: '3.3',
+          total,
+          limit,
+          offset,
+          nextOffset:
+            offset + limit < total && offset < 100000
+              ? Math.min(offset + limit, 100000)
+              : null,
+          history: rows.map((h) => ({
+            id: String(h.id),
+            agreed: h.agrYn,
+            policyVersion: h.polVer,
+            recordedAt: h.rgstDttm.toISOString(),
+          })),
+          learningPipelineAvailable: false,
+        };
+      },
+      { isolationLevel: 'RepeatableRead' },
+    );
+  }
+
+  async setLearningConsent(token: string, agreed: boolean, revision: string) {
+    const member = await this.session(token, false),
+      userId = BigInt(member.id);
+    return this.db.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM app_user WHERE id=${userId} FOR UPDATE`;
+        if (!(await this.ownerIsActive(userId, null, sessionHash(token), tx)))
+          throw new UnauthorizedException('다시 로그인해 주세요.');
+        const code = await tx.cmmnCd.findFirst({
+          where: learningCategory,
+          select: {
+            id: true,
+            prntCdId: true,
+            parent: { select: { prntCdId: true } },
+          },
+        });
+        if (!code)
+          throw new ServiceUnavailableException(
+            '학습 활용 동의 설정을 확인해 주세요.',
+          );
+        await tx.$queryRaw`SELECT id FROM cmmn_cd WHERE id IN (${code.id},${code.prntCdId},${code.parent!.prntCdId}) ORDER BY id FOR SHARE`;
+        if (
+          !(await tx.cmmnCd.count({
+            where: { ...learningCategory, id: code.id },
+          }))
+        )
+          throw new ServiceUnavailableException(
+            '학습 활용 동의 설정을 확인해 주세요.',
+          );
+        const now = nowAtSecond();
+        if (
+          await tx.userAgrYnHist.count({
+            where: { userId, agrCdId: code.id, rgstDttm: { gt: now } },
+          })
+        )
+          throw new ConflictException(
+            '동의 기록 시각을 확인하지 못했습니다. 잠시 후 새로고침해 주세요.',
+          );
+        const latest = await tx.userAgrYnHist.findFirst({
+          where: { userId, agrCdId: code.id },
+          orderBy: [{ rgstDttm: 'desc' }, { id: 'desc' }],
+        });
+        if ((latest ? String(latest.id) : '0') !== revision)
+          throw new ConflictException(
+            '다른 화면에서 동의 선택이 바뀌었습니다. 새로고침 후 다시 확인해 주세요.',
+          );
+        if (latest?.agrYn === agreed && latest.polVer === '3.3')
+          return { agreed, revision: String(latest.id), changed: false };
+        const row = await tx.userAgrYnHist.create({
+          data: {
+            userId,
+            agrCdId: code.id,
+            agrYn: agreed,
+            polVer: '3.3',
+            rgstDttm: now,
+          },
+          select: { id: true },
+        });
+        return { agreed, revision: String(row.id), changed: true };
+      },
+      { timeout: 15000 },
+    );
+  }
+
+  async withdrawalPreview(token: string) {
+    const member = await this.session(token, false),
+      userId = BigInt(member.id);
+    return this.db.$transaction(
+      async (tx) => {
+        if (!(await this.ownerIsActive(userId, null, sessionHash(token), tx)))
+          throw new UnauthorizedException('다시 로그인해 주세요.');
+        const [chats, cases, documents, bookmarks, notifications] =
+          await Promise.all([
+            tx.chatSess.count({ where: { userId, delYn: false } }),
+            tx.userCase.count({ where: { userId, delYn: false } }),
+            tx.attachDoc.count({ where: { userId, delYn: false } }),
+            tx.userBmark.count({ where: { userId, delYn: false } }),
+            tx.userNtf.count({ where: { userId, delYn: false } }),
+          ]);
+        return {
+          counts: { chats, cases, documents, bookmarks, notifications },
+          purgeCompleted: false,
+        };
+      },
+      { isolationLevel: 'RepeatableRead' },
+    );
+  }
+
+  async withdraw(token: string, rawPassword: string) {
+    const member = await this.session(token, false),
+      userId = BigInt(member.id);
+    const password = rawPassword.normalize('NFC');
+    if (!validPasswordLength(password))
+      throw new BadRequestException('현재 비밀번호를 확인해 주세요.');
+    await this.limit('withdrawal:' + member.id, async () => {
+      const auth = await this.db.userAuth.findUnique({ where: { userId } });
+      const digest = await passwordHash(password, auth?.pwSalt ?? dummySalt);
+      if (!auth || !timingSafeEqual(digest, auth.pwHash))
+        throw new BadRequestException('현재 비밀번호를 확인해 주세요.');
+      await this.db.$transaction(
+        async (tx) => {
+          // Same serialization as administrator status changes; never leave the service without an active administrator.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('aurore-member-status'))`;
+          const locked = await tx.$queryRaw<{ id: bigint }[]>`
+          SELECT u.id FROM app_user u JOIN user_auth a ON a.user_id=u.id
+          WHERE u.id=${userId} AND a.pw_hash=${auth.pwHash} AND a.pw_salt=${auth.pwSalt} FOR UPDATE OF u,a`;
+          if (
+            !locked.length ||
+            !(await this.ownerIsActive(userId, null, sessionHash(token), tx))
+          )
+            throw new UnauthorizedException('다시 로그인해 주세요.');
+          const role = {
+            delYn: false,
+            role: {
+              cd: 'ADMIN',
+              nodeTypeCd: 'VALUE',
+              delYn: false,
+              useYn: true,
+              parent: {
+                cd: 'USER_ROLE',
+                nodeTypeCd: 'GROUP',
+                delYn: false,
+                useYn: true,
+                parent: { ...root, prntCdId: null },
+              },
+            },
+          } satisfies Prisma.UserRoleWhereInput;
+          if (await tx.userRole.count({ where: { ...role, userId } })) {
+            const others = await tx.appUser.count({
+              where: {
+                ...activeUser,
+                id: { not: userId },
+                roles: { some: role },
+              },
+            });
+            if (!others)
+              throw new ConflictException(
+                '마지막 관리자는 탈퇴할 수 없습니다. 다른 활성 회원에게 관리자 권한을 지정한 뒤 다시 시도해 주세요.',
+              );
+          }
+          const withdrawnWhere = { ...activeStatus, cd: 'WITHDRAWN' };
+          const learningWhere = {
+            cd: 'LEARNING',
+            delYn: false,
+            useYn: true,
+            parent: { cd: 'USER_AGR', delYn: false, useYn: true, parent: root },
+          };
+          const codes = await tx.cmmnCd.findMany({
+            where: { OR: [withdrawnWhere, learningWhere] },
+            select: {
+              id: true,
+              cd: true,
+              prntCdId: true,
+              parent: { select: { prntCdId: true } },
+            },
+          });
+          const withdrawn = codes.find((c) => c.cd === 'WITHDRAWN'),
+            learning = codes.find((c) => c.cd === 'LEARNING');
+          if (!withdrawn || !learning)
+            throw new ServiceUnavailableException(
+              '회원 상태 설정을 확인해 주세요.',
+            );
+          const ids = [
+            ...new Set(
+              codes.flatMap((c) => [c.id, c.prntCdId!, c.parent!.prntCdId!]),
+            ),
+          ];
+          await tx.$queryRaw`SELECT id FROM cmmn_cd WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR SHARE`;
+          if (
+            (await tx.cmmnCd.count({
+              where: { OR: [withdrawnWhere, learningWhere] },
+            })) !== 2
+          )
+            throw new ServiceUnavailableException(
+              '회원 상태 설정을 확인해 주세요.',
+            );
+          const now = nowAtSecond(),
+            requestId = randomUUID();
+          const previous = await tx.appUser.findUniqueOrThrow({
+            where: { id: userId },
+            select: { statCdId: true },
+          });
+          await tx.appUser.update({
+            where: { id: userId },
+            data: {
+              statCdId: withdrawn.id,
+              delYn: true,
+              delDttm: now,
+              delId: userId,
+              uptDttm: now,
+            },
+          });
+          await tx.userSess.updateMany({
+            where: { userId, revokeDttm: null },
+            data: { revokeDttm: now },
+          });
+          await tx.userAgrYnHist.create({
+            data: {
+              userId,
+              agrCdId: learning.id,
+              agrYn: false,
+              polVer: '3.3',
+              rgstDttm: now,
+            },
+          });
+          // Old answer completions lock case/chat rows before checking the owner. Defer child row cleanup to avoid reversing that lock order.
+          await tx.aiJob.updateMany({
+            where: {
+              chat: { userId },
+              statCd: { in: ['QUEUED', 'RUNNING', 'RETRY_WAIT'] },
+            },
+            data: {
+              statCd: 'CANCELLED',
+              leaseToken: null,
+              leaseDttm: null,
+              errorCd: 'ACCOUNT_WITHDRAWN',
+              uptDttm: now,
+            },
+          });
+          await tx.userStatHist.create({
+            data: {
+              userId,
+              statCdId: withdrawn.id,
+              prevStatCdId: previous.statCdId,
+              actorUserId: userId,
+              reason: 'SELF_WITHDRAWAL',
+              requestId,
+              requestHash: createHash('sha256')
+                .update('SELF_WITHDRAWAL:' + userId + ':' + requestId)
+                .digest('hex'),
+              rgstDttm: now,
+            },
+          });
+        },
+        { timeout: 15000 },
+      );
+    });
+    return { withdrawn: true, archivePending: true, purgeCompleted: false };
   }
 
   async logoutAll(token: string) {

@@ -1,3 +1,4 @@
+import { ResetSearch } from '../../../../_components/page-actions';
 import { parsePageSize } from "../../../../_components/page-size";
 import { PageSizeSelect } from "../../../../_components/page-size-select";
 import Link from "next/link";
@@ -56,7 +57,7 @@ async function ProvisionResults({ id, versionId, searchParams }: {
       <h1>{result.status === "ok" ? result.meta.legalName : "조문 검색"}</h1>
       <p>
         {result.status === "ok" && result.meta.enfcDt && `${result.meta.enfcDt.slice(0, 10)} 시행본 · `}
-        조문 번호나 본문 키워드로 검색할 수 있습니다. <Link href={"/legals/"+id+"/compare?beforeVersionId="+versionId}>다른 시행본과 비교 ↗</Link>
+        조문 번호나 본문 키워드로 검색할 수 있습니다. <Link href={"/legals/"+id+"/compare?beforeVersionId="+versionId} data-action-link>다른 시행본과 비교 </Link>
         {source && <> <a className="underline" href={source} target="_blank" rel="noopener noreferrer">해당 시행본 원문</a></>}
       </p>
     </section>
@@ -66,7 +67,7 @@ async function ProvisionResults({ id, versionId, searchParams }: {
       <div className="search-row">
         <input id="provision-query" name="q" defaultValue={q} maxLength={200} placeholder="예시 제6조의2 또는 보증금" />
         {asOf && <input type="hidden" name="asOf" value={asOf} />}
-        <button type="submit">검색</button>
+        <button type="submit" data-primary>검색</button><ResetSearch/>
       </div>
     </form>
     <section aria-labelledby="provision-results" className="results">

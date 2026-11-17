@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -9,6 +10,8 @@ import {
 } from 'class-validator';
 
 export class ListLegalsDto {
+  @IsOptional() @IsIn(['newest','oldest']) sort: 'newest' | 'oldest' = 'newest';
+
   @IsOptional()
   @IsString()
   @MaxLength(200)

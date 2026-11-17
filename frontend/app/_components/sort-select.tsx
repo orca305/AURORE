@@ -1,0 +1,1 @@
+export function SortSelect({value='newest',basis}:{value?:string;basis?:string}){return <select name="sort" defaultValue={value} aria-label={basis?basis+' 정렬':'조회 순서'} title={basis?basis+' 기준 정렬':undefined}><option value="newest">최신순</option><option value="oldest">과거순</option></select>;}

@@ -16,7 +16,7 @@ export default async function CasesLayout({ children }: { children: ReactNode })
       <main className="shell">
         {response?.ok ? children : (
           <section className="intro">
-            <h1>내 사건에 연결하지 못했습니다</h1>
+            <h1>나의 사건에 연결하지 못했습니다</h1>
             <p>잠시 후 다시 시도해 주세요.</p>
           </section>
         )}

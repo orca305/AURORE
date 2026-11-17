@@ -1,3 +1,4 @@
+import { classifyQuestion } from './intent-routing.js';
 import type { JobResultCode } from './job-diagnostics.js';
 import { missingEvidence, type ClarifyCode } from './clarification.js';
 import { retrieveStoredEvidence } from './stored-evidence.js';
@@ -187,7 +188,25 @@ export class ChatAnswerService {
         return evidence.loadEvidence(directory);
       },
     );
-    if (reply.search) return this.generateStored(question);
+    if (reply.search) {
+      const intent = await classifyQuestion(
+        question,
+        process.env.AURORE_AI_URL || 'http://127.0.0.1:8000',
+      );
+      if (intent === 'GENERAL')
+        return {
+          phase: 'start',
+          resultCd: 'GUIDANCE',
+          text: '일상 이야기도 괜찮아요. 어떤 이야기를 나누고 싶으세요?',
+        };
+      if (intent === 'CLARIFY')
+        return {
+          phase: 'start',
+          resultCd: 'FACTS_UNCONFIRMED',
+          text: '어떤 상황인지 조금 더 설명해 주시겠어요? 법률 문제라면 궁금한 점과 관련된 사실을 함께 알려 주세요.',
+        };
+      return this.generateStored(question);
+    }
     if (!reply.source)
       return {
         phase: reply.phase,

@@ -35,6 +35,7 @@ export function Conversation({ ask, initialChat, member = false }: {
   const [clarifyTarget,setClarifyTarget]=useState<string|null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [documentBusy,setDocumentBusy]=useState(false);
+  const [documentsOpen,setDocumentsOpen]=useState(false);
   const [selectedDocuments,setSelectedDocuments]=useState<{id:string;name:string}[]>([]);
   const [documentEpoch,setDocumentEpoch]=useState(0);
   const [caseSelection,setCaseSelection]=useState<import("./types").CaseSelection|null>(null);
@@ -174,6 +175,7 @@ export function Conversation({ ask, initialChat, member = false }: {
 
   function reset() {
     if(documentBusy)return;
+    setDocumentsOpen(false);
     setDocumentEpoch(value=>value+1);
     setClarifyTarget(null);
     setCaseSelection(null);setCaseEpoch(value=>value+1);
@@ -234,11 +236,11 @@ export function Conversation({ ask, initialChat, member = false }: {
     <div className={styles.context}>
       <div>
         <div className={styles.titleRow}><h1>{detail?.title ?? (messages.length ? "나의 법률 대화" : "무슨 일이 있었나요?")}</h1>
-        {(messages.length > 0 || detail) && <button type="button" disabled={documentBusy || submitting || (pending && !pollError)} className={styles.newChat} onClick={reset}>새 대화 ↗</button>}</div>
+        {(messages.length > 0 || detail) && <button type="button" disabled={documentBusy || submitting || (pending && !pollError)} className={styles.newChat} onClick={reset}>새 대화 </button>}</div>
         <p>나의 상황을 이야기하고, 필요한 사실을 함께 확인합니다.</p>
       </div>
     </div>
-    {saved && member && (detail ? <CaseConnection key={detail.id} chat={detail} pending={pending||documentBusy} onSave={async id=>{const error=await connectCase(id);if(!error){setCaseSelection(null);setCaseEpoch(value=>value+1);}return error;}}/> : <p className={styles.caseHint}>대화를 시작하면 내 사건을 연결할 수 있습니다.</p>)}
+    {saved && member && (detail ? <CaseConnection key={detail.id} chat={detail} pending={pending||documentBusy} onSave={async id=>{const error=await connectCase(id);if(!error){setCaseSelection(null);setCaseEpoch(value=>value+1);}return error;}}/> : <p className={styles.caseHint}>대화를 시작하면 나의 사건을 연결할 수 있습니다.</p>)}
     {messages.some(message=>message.source?.correction)&&<div className={styles.correctionNotice} role="status"><strong>{messages.some(message=>message.source?.correction&&!message.source.correction.readAt)?'미확인 정정 안내':'정정 안내 확인 완료'}</strong><p>{messages.some(message=>message.source?.correction&&!message.source.correction.readAt)?'이 대화에 표시된 답변에 미확인 정정 안내가 있습니다. 전후 원문을 살펴본 뒤 안내를 확인해 주세요.':'표시된 정정 안내를 모두 확인했습니다. 이전 답변과 인용문은 그대로 유지됩니다.'}</p></div>}
     {saved&&roomId&&<CorrectionHistory chatId={roomId}/>}
     {olderCursor && <button className={styles.reset} type="button" disabled={loadingEarlier} onClick={() => void earlier()}>
@@ -254,20 +256,20 @@ export function Conversation({ ask, initialChat, member = false }: {
               {message.caseContext&&<p className={styles.sourceNote}>사건 사실관계 {message.caseContext.factCount}개 · 사건 버전 {message.caseContext.revision} · 법령 조회 기준일 {message.caseContext.asOf}{message.caseContext.current===false&&<span> · 이후 사건 정보나 연결이 변경되었습니다. 현재 사실관계로 다시 질문해 주세요.</span>}</p>}
               {message.clarifyReplyTo&&<p className={styles.sourceNote}>이전 질문에 보완한 내용</p>}
               <p className={styles.messageText}>{message.text}</p>
-              {saved&&message.clarification&&message.id===messages.at(-1)?.id&&!pending&&<div className={styles.followups} aria-label="근거 보완 안내"><button type="button" disabled={documentBusy} onClick={()=>{setClarifyTarget(message.id!);inputField.current?.focus();}}>내용 보완하기 ↗</button></div>}
-              {saved && member && detail?.linkedCase && message.role === "user" && message.id && <Link className={styles.factImport} href={'/cases/'+detail.linkedCase.id+'/from-message/'+message.id}>사실관계로 가져오기 ↗</Link>}
+              {saved&&message.clarification&&message.id===messages.at(-1)?.id&&!pending&&<div className={styles.followups} aria-label="근거 보완 안내"><button type="button" disabled={documentBusy} onClick={()=>{setClarifyTarget(message.id!);inputField.current?.focus();}}>내용 보완하기 </button></div>}
+              {saved && member && detail?.linkedCase && message.role === "user" && message.id && <Link className={styles.factImport} href={'/cases/'+detail.linkedCase.id+'/from-message/'+message.id} data-action-link>사실관계로 가져오기 </Link>}
 
               {message.documentAnswer&&<div className={styles.documentEvidence}><p className={styles.citationLabel}>회원이 검토한 첨부자료</p>{message.documentQuotes?.map(quote=><figure className={styles.citation} key={quote.id}><blockquote>{quote.quote}</blockquote><figcaption><a href={'/api/chat-documents/'+roomId+'/'+quote.documentId+'/download'} download>{quote.name} ↓</a><span>원문 일치 · 질문 관련성 AI 검토</span></figcaption></figure>)}{!message.documentQuotes?.length&&<p className={styles.sourceNote}>관련 원문을 확인하지 못했거나 첨부자료가 삭제되어 인용을 표시할 수 없습니다.</p>}</div>}
               {message.source && <figure className={styles.citation}>
                 <p className={styles.citationLabel}>{message.source.verification==='UNREVIEWED'?'검색 후보 · 질문 관련성 미검증':'확인한 원문'}</p>
                 <blockquote>{message.source.quote}</blockquote>
                 <figcaption>
-                  {message.source.href && <Link href={message.source.href}>{message.source.label} <span aria-hidden="true">↗</span></Link>}
+                  {message.source.href && <Link href={message.source.href} data-action-link>{message.source.label}</Link>}
                   <a href={message.source.url} target="_blank" rel="noopener noreferrer">{message.source.href ? "법제처 원문" : message.source.label}</a>
                 </figcaption>
                 {message.source.verification==='MODEL_REVIEWED'&&<p className={styles.sourceNote}>원문 일치 · 질문 관련성 AI 검토</p>}
                 {message.source.warning && <p className={styles.sourceWarning}>{message.source.warning}</p>}
-                {message.source.correction&&<div className={styles.correctionLinks}><span>{new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeZone:'Asia/Seoul'}).format(new Date(message.source.correction.recordedAt))} 정정 원문 등록</span>{message.source.correction.compareHref&&<Link href={message.source.correction.compareHref}>정정 전후 비교 ↗</Link>}<Link href={message.source.correction.currentHref}>현재 원문 확인 ↗</Link></div>}
+                {message.source.correction&&<div className={styles.correctionLinks}><span>{new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeZone:'Asia/Seoul'}).format(new Date(message.source.correction.recordedAt))} 정정 원문 등록</span>{message.source.correction.compareHref&&<Link href={message.source.correction.compareHref} data-action-link>정정 전후 비교 </Link>}<Link href={message.source.correction.currentHref} data-action-link>현재 원문 확인 </Link></div>}
                 {saved&&roomId&&message.id&&message.source.correction&&<CorrectionRead chatId={roomId} messageId={message.id} noticeKey={message.source.correction.key} readAt={message.source.correction.readAt} onConfirmed={(key,date)=>setMessages(previous=>previous.map(row=>row.id===message.id&&row.source?.correction?.key===key?{...row,source:{...row.source,correction:{...row.source.correction,readAt:date}}}:row))} onStale={()=>{void refreshChat(roomId).then(result=>{if(result.data)applyChat(result.data);});}}/>}
               </figure>}
             </div>
@@ -278,11 +280,11 @@ export function Conversation({ ask, initialChat, member = false }: {
       </section>
       {!pending && followups[phase].length > 0 && <div className={styles.followups} aria-label="빠른 답변">
         {followups[phase].map(text => <button key={text} type="button"
-          onClick={() => { setInput(text); inputField.current?.focus(); }}>{text} ↗</button>)}
+          onClick={() => { setInput(text); inputField.current?.focus(); }}>{text} </button>)}
       </div>}
       <div className={styles.sources}>
         <p>답변에 쓰인 법령·판례는 인용문과 함께 표시합니다.</p>
-        <Link href="/legals">법규 원문 검색 ↗</Link>
+        <Link href="/legals" data-action-link>법규 원문 검색 </Link>
       </div>
     </div>}
     {(notice || pollError) && <p role="alert" className={styles.error}>{notice || pollError}</p>}
@@ -292,7 +294,7 @@ export function Conversation({ ask, initialChat, member = false }: {
     </div>}
     {saved && pending && <button type="button" className={styles.reset} disabled={submitting} onClick={() => void jobAction(false)}>답변 준비 취소</button>}
     {saved&&member&&detail?.linkedCase&&<CaseContextPanel key={detail.linkedCase.id+':'+caseEpoch} chatId={detail.id} disabled={pending||documentBusy} value={caseSelection} onChange={setCaseSelection} onBusy={busy=>{inFlight.current=busy;setDocumentBusy(busy);}}/>}
-    {saved&&member&&<DocumentsPanel key={documentEpoch} chatId={roomId??null} disabled={pending||documentBusy} onBusy={value=>{inFlight.current=value;setDocumentBusy(value);}} selected={selectedDocuments} onSelect={setSelectedDocuments} onRemoved={id=>setMessages(previous=>previous.map(message=>({...message,documentQuotes:message.documentQuotes?.filter(quote=>quote.documentId!==id)})))} onSaved={data=>{applyChat(data);window.history.replaceState(null,"","/?chat="+data.id);window.dispatchEvent(new Event('aurore:chat-history'));}}/>}
+
     {clarifyTarget&&<div className={styles.caseHint} role="status">이전 질문에 덧붙일 내용을 작성합니다. 첨부자료·사건 정보는 필요한 경우 다시 선택해 주세요. <button type="button" className={styles.reset} disabled={pending||documentBusy} onClick={()=>{setClarifyTarget(null);retryRequest.current=null;}}>새 질문으로 작성</button></div>}
     <form onSubmit={send} className={`${styles.composer} ${!hasMessages ? styles.initialComposer : ""}`}>
       {selectedDocuments.length>0&&<p className={styles.sourceNote}>이번 질문에 사용할 자료: {selectedDocuments.map(doc=>doc.name).join(' · ')}<button type="button" className={styles.reset} disabled={pending||documentBusy} onClick={()=>setSelectedDocuments([])}>선택 해제</button></p>}
@@ -308,18 +310,20 @@ export function Conversation({ ask, initialChat, member = false }: {
         required maxLength={1000} placeholder="상황이나 궁금한 점을 편하게 적어 주세요." />
       <div className={styles.composeFooter}>
         <p>Enter 전송 · Shift + Enter 줄바꿈</p>
-        <button type="submit" disabled={documentBusy || pending || !input.trim()} className={styles.send}>
-          {pending ? "확인 중…" : "보내기 →"}
-        </button>
+        <div className={styles.composeActions}>{saved&&member&&<button type="button" className={styles.attach} aria-expanded={documentsOpen} disabled={documentBusy||pending} onClick={()=>setDocumentsOpen(value=>!value)}>첨부파일</button>}
+        <button type="submit" disabled={documentBusy || pending || !input.trim()} className={styles.send} data-primary>
+          {pending ? "확인 중…" : "보내기"}
+        </button></div>
       </div>
       {!hasMessages && <div className={styles.examples} aria-label="예시 질문">
         <span>예시로 시작</span>
         {examples.map(({ topic, question }) => <button key={topic} type="button" className={styles.example}
           title={question} onClick={() => { setInput(question); inputField.current?.focus(); }}>
-          <strong>{topic} ↗</strong><small>{question}</small>
+          <strong>{topic} </strong><small>{question}</small>
         </button>)}
       </div>}
     </form>
-    {!hasMessages && !pending && <p className={styles.sourceNote}>답변은 법령·판례의 원문과 함께 확인할 수 있습니다. <Link href="/legals">법규 검색 ↗</Link></p>}
+    {saved&&member&&<DocumentsPanel open={documentsOpen} onClose={()=>setDocumentsOpen(false)} key={documentEpoch} chatId={roomId??null} disabled={pending||documentBusy} onBusy={value=>{inFlight.current=value;setDocumentBusy(value);}} selected={selectedDocuments} onSelect={setSelectedDocuments} onRemoved={id=>setMessages(previous=>previous.map(message=>({...message,documentQuotes:message.documentQuotes?.filter(quote=>quote.documentId!==id)})))} onSaved={data=>{applyChat(data);window.history.replaceState(null,"","/?chat="+data.id);window.dispatchEvent(new Event('aurore:chat-history'));}}/>}
+    {!hasMessages && !pending && <p className={styles.sourceNote}>답변은 법령·판례의 원문과 함께 확인할 수 있습니다. <Link href="/legals" data-action-link>법규 검색 </Link></p>}
   </section>;
 }

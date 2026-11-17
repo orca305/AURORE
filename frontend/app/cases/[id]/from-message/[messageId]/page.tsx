@@ -9,7 +9,7 @@ export default async function FactDraftPage({params}:{params:Promise<{id:string;
   const {id,messageId}=await params;if(!caseIdPattern.test(id)||!caseIdPattern.test(messageId))notFound();
   const response=await requestCase('/'+id+'/drafts/'+messageId);
   if(response?.status===404)notFound();
-  if(!response?.ok)return <section className="intro"><h1>{response?.status===409?'이미 저장한 메시지입니다':'초안을 불러오지 못했습니다'}</h1><p>{response?.status===409?'이 사건에 저장된 기존 사실관계를 확인하고 수정해 주세요.':'연결된 사건과 대화가 유효한지 확인한 후 다시 시도해 주세요.'}</p><Link href={'/cases/'+id}>사건 확인 ↗</Link></section>;
+  if(!response?.ok)return <section className="intro"><h1>{response?.status===409?'이미 저장한 메시지입니다':'초안을 불러오지 못했습니다'}</h1><p>{response?.status===409?'이 사건에 저장된 기존 사실관계를 확인하고 수정해 주세요.':'연결된 사건과 대화가 유효한지 확인한 후 다시 시도해 주세요.'}</p><Link href={'/cases/'+id} data-action-link>사건 확인 </Link></section>;
   const data=await response.json() as {case:CaseSummary;source:{chatId:string;messageId:string};title:string;content:string};
   return <>
     <section className="intro"><Link href={'/?chat='+data.source.chatId}>← 가져온 대화</Link><h1>사실관계 초안 확인</h1><p>{data.case.title}에 저장할 내용을 확인해 주세요.</p></section>

@@ -14,5 +14,5 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const theme = preferences.get("aurore_theme")?.value === "dark" ? "dark" : "light";
   const savedSidebar = preferences.get("aurore_sidebar")?.value;
   const sidebar = savedSidebar === "collapsed" || savedSidebar === "expanded" ? savedSidebar : "auto";
-  return <html lang="ko" data-theme={theme} data-sidebar={sidebar}><body><UiPreferences initialTheme={theme} initialSidebar={sidebar}>{children}<ScrollControls/></UiPreferences></body></html>;
+  return <html lang="ko" data-theme={theme} data-sidebar={sidebar}><body><UiPreferences initialTheme={theme} initialSidebar={sidebar}>{children}<div role="contentinfo" className="site-copyright">© 2026 우정범. All rights reserved.</div><ScrollControls/></UiPreferences></body></html>;
 }

@@ -10,6 +10,7 @@ export const JOB_RESULT_CODES = [
 ] as const;
 export type JobResultCode = (typeof JOB_RESULT_CODES)[number];
 export const JOB_ERROR_CODES = [
+  'ACCOUNT_WITHDRAWN',
   'CASE_CONTEXT_CHANGED',
   'GENERATION_FAILED',
   'TOTAL_TIMEOUT',

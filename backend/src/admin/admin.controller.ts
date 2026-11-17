@@ -35,6 +35,8 @@ import { AdminGuard } from './admin.guard.js';
 import { AdminService } from './admin.service.js';
 
 class MembersDto {
+  @IsOptional() @IsIn(['newest','oldest']) sort: 'newest' | 'oldest' = 'newest';
+
   @IsOptional() @IsString() @MaxLength(200) q = '';
   @IsOptional() @IsIn(['all', 'ACTIVE', 'BLOCKED']) status = 'all';
   @IsOptional() @Type(() => Number) @IsIn([10, 20, 50]) limit = 20;
@@ -42,6 +44,8 @@ class MembersDto {
 }
 
 class MemberHistoryDto {
+  @IsOptional() @IsIn(['newest','oldest']) sort: 'newest' | 'oldest' = 'newest';
+
   @IsOptional() @Type(() => Number) @IsIn([10, 20, 50]) limit = 20;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100000) offset = 0;
 }

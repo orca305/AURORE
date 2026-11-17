@@ -1,3 +1,9 @@
+import { ShortTitle } from '../_components/short-title';
+import { SortSelect } from '../_components/sort-select';
+import { ResetSearch } from '../_components/page-actions';
+import { BookmarkButton } from '../_bookmarks/bookmark-button';
+import { bookmarkStates } from '../_bookmarks/requests';
+import { currentMember } from '../_auth/session';
 import { parsePageSize } from "../_components/page-size";
 import { PageSizeSelect } from "../_components/page-size-select";
 import { Suspense } from "react";
@@ -5,10 +11,11 @@ import Link from "next/link";
 import { SiteHeader } from "../_components/site-header";
 
 type Legal = { id: string; srcCd: string; srcKey: string; legalNm: string };
-type Search = Promise<{ limit?: string | string[]; q?: string | string[]; offset?: string | string[] }>;
+type Search = Promise<{ limit?: string | string[]; q?: string | string[]; sort?: string | string[]; offset?: string | string[] }>;
 
 async function LegalResults({ searchParams }: { searchParams: Search }) {
   const params = await searchParams;
+  const sort=params.sort==='oldest'?'oldest':'newest';
   const pageSize = parsePageSize(params.limit);
   const q = (typeof params.q === "string" ? params.q : "").slice(0, 200);
   const offsetValue = typeof params.offset === "string" ? params.offset : "0";
@@ -17,7 +24,7 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
   let unavailable = false;
   try {
     const url = new URL("/legals", process.env.BACKEND_URL || "http://127.0.0.1:3001");
-    url.search = new URLSearchParams({ q, offset: String(offset), limit: String(pageSize + 1) }).toString();
+    url.search = new URLSearchParams({ q, sort, offset: String(offset), limit: String(pageSize + 1) }).toString();
     const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(5000) });
     if (!response.ok) throw new Error("법규 목록 조회 실패");
     const data: unknown = await response.json();
@@ -28,7 +35,9 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
   } catch {
     unavailable = true;
   }
-  const pageUrl = (next: number) => `/legals?${new URLSearchParams({ q, offset: String(next), limit: String(pageSize) })}`;
+  const member=await currentMember();
+  const saved=member?await bookmarkStates('LEGAL',rows.slice(0,pageSize).map(row=>row.id)):null;
+  const pageUrl = (next: number) => `/legals?${new URLSearchParams({ q, sort, offset: String(next), limit: String(pageSize) })}`;
 
   return <>
     <form className="search" action="/legals" role="search">
@@ -36,7 +45,7 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
       <input type="hidden" name="limit" value={pageSize} />
       <div className="search-row">
         <input id="legal-query" name="q" defaultValue={q} maxLength={200} placeholder="찾고 싶은 법규 이름을 입력하세요" />
-        <button type="submit">검색</button>
+        <SortSelect value={sort} basis="등록일"/><button type="submit" data-primary>검색</button><ResetSearch/>
       </div>
     </form>
     <section aria-labelledby="results-title" className="results">
@@ -44,10 +53,11 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
       {unavailable ? <p role="status" className="empty">법규 목록을 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.</p>
         : rows.length === 0 ? <p className="empty">{q ? "검색 결과가 없습니다. 다른 이름으로 검색해 보세요." : "아직 등록된 법규가 없습니다."}</p>
         : <ul className="legal-list">{rows.slice(0, pageSize).map(row => <li key={row.id}>
-          <h3>{row.legalNm}</h3><p>출처 {row.srcCd} · {row.srcKey}</p>
+          <div className="legal-title-row"><h3><ShortTitle text={row.legalNm}/></h3>{member&&<BookmarkButton key={row.id+':'+String(saved?.has(row.id))} kind='LEGAL' id={row.id} saved={saved?saved.has(row.id):null} title={row.legalNm} compact/>}</div><p>출처 {row.srcCd} · {row.srcKey}</p>
           <Link href={`/legals/${row.id}/versions`} className="mt-2 inline-block underline">
             시행본 조회<span className="sr-only"> · {row.legalNm}</span>
           </Link>
+
         </li>)}</ul>}
       {!unavailable && <nav aria-label="검색 결과 페이지" className="pagination">
         <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지</span>

@@ -68,6 +68,7 @@ export class AdminService {
   }
 
   async members(query: {
+    sort?: 'newest' | 'oldest';
     q: string;
     status: string;
     limit: number;
@@ -101,7 +102,7 @@ export class AdminService {
           }),
           tx.appUser.findMany({
             where,
-            orderBy: [{ rgstDttm: 'desc' }, { id: 'desc' }],
+            orderBy: [{ rgstDttm: query.sort==='oldest'?'asc':'desc' }, { id: query.sort==='oldest'?'asc':'desc' }],
             take: limit,
             skip: offset,
             select: {

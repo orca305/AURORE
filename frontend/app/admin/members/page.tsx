@@ -1,3 +1,5 @@
+import { SortSelect } from '../../_components/sort-select';
+import { ResetSearch } from '../../_components/page-actions';
 import Link from "next/link";
 import { requestAdmin, type MemberList } from "../../_admin/requests";
 import { date, number } from "../../_admin/format";
@@ -30,7 +32,9 @@ export default async function MembersPage({
   const offset = /^\d{1,6}$/.test(rawOffset)
     ? Math.min(Number(rawOffset), 100000)
     : 0;
+  const sort=params.sort==='oldest'?'oldest':'newest';
   const query = new URLSearchParams({
+    sort,
     q,
     status,
     limit: String(limit),
@@ -62,9 +66,7 @@ export default async function MembersPage({
           <h2>회원 관리</h2>
           <p>회원 상태와 가입 현황을 확인합니다. 탈퇴 계정은 제외합니다.</p>
         </div>
-        <Link className={styles.refresh} href={pageUrl(offset)}>
-          새로고침 ↻
-        </Link>
+
       </div>
       <dl className={styles.metrics}>
         {metrics.map(([label, count]) => (
@@ -100,10 +102,8 @@ export default async function MembersPage({
           </select>
         </label>
         <input type="hidden" name="limit" value={limit} />
-        <button type="submit">검색</button>
-        {(q || status !== "all") && (
-          <Link href={"/admin/members?limit=" + limit}>조건 지우기</Link>
-        )}
+        <SortSelect value={sort} basis="가입일"/><button type="submit" data-primary>검색</button><ResetSearch/>
+
       </form>
       <div className={styles.sectionTitle}>
         <h3>
@@ -145,7 +145,7 @@ export default async function MembersPage({
                   </span>
                 </td>
                 <td>{date(row.joinedAt)}</td>
-                <td><Link href={"/admin/members/" + row.id + "?limit=" + limit}>상태·이력 ↗</Link></td>
+                <td><Link href={"/admin/members/" + row.id + "?limit=" + limit} data-action-link>상태·이력 </Link></td>
               </tr>
             ))}
           </tbody>

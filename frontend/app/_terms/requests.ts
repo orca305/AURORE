@@ -1,0 +1,3 @@
+import {currentToken} from '../_auth/session';
+export async function requestTerms(path:string,administrative=false,init?:RequestInit){const token=administrative?await currentToken():null;if(administrative&&!token)return null;try{return await fetch(new URL((administrative?'/admin':'')+'/terms'+path,process.env.BACKEND_URL||'http://127.0.0.1:3001'),{...init,headers:{...init?.headers,...(token?{Authorization:'Bearer '+token}:{})},cache:'no-store',signal:init?.signal??AbortSignal.timeout(8000)});}catch{return null;}}
+export function validTermId(value:string){return /^[1-9]\d{0,18}$/.test(value)&&BigInt(value)<=BigInt('9223372036854775807');}

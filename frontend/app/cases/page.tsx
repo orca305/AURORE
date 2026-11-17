@@ -1,3 +1,5 @@
+import { SortSelect } from '../_components/sort-select';
+import { ResetSearch } from '../_components/page-actions';
 import Link from "next/link";
 import { requestCase } from "../_cases/requests";
 import type { CaseList } from "../_cases/types";
@@ -5,7 +7,7 @@ import { parsePageSize } from "../_components/page-size";
 import { PageSizeSelect } from "../_components/page-size-select";
 import { date, number } from "../_admin/format";
 import styles from "./page.module.css";
-export const metadata = { title: "내 사건 | AURORE" };
+export const metadata = { title: "나의 사건 | AURORE" };
 export default async function CasesPage({
   searchParams,
 }: {
@@ -16,7 +18,9 @@ export default async function CasesPage({
     limit = parsePageSize(params.limit),
     raw = typeof params.offset === "string" ? params.offset : "0",
     offset = /^\d{1,6}$/.test(raw) ? Math.min(Number(raw), 100000) : 0;
+  const sort=params.sort==='oldest'?'oldest':'newest';
   const query = new URLSearchParams({
+      sort,
       q,
       limit: String(limit),
       offset: String(offset),
@@ -31,7 +35,7 @@ export default async function CasesPage({
   return (
     <>
       <section className="intro">
-        <h1>내 사건</h1>
+        <h1>나의 사건</h1>
         <p>
           확인한 사실을 정리하고 변경 내용을 기록합니다. 저장한 사건은 본인만 볼
           수 있습니다.
@@ -53,7 +57,7 @@ export default async function CasesPage({
             maxLength={200}
             placeholder="사건 제목을 입력하세요"
           />
-          <button type="submit">검색</button>
+          <SortSelect value={sort} basis="수정일"/><button type="submit" data-primary>검색</button><ResetSearch/>
         </div>
       </form>
       <section className="results">
@@ -63,7 +67,7 @@ export default async function CasesPage({
           </h2>
           <div className="list-tools">
             <PageSizeSelect value={limit} />
-            <Link href="/cases/new">사건 등록 ↗</Link>
+            <Link href="/cases/new" data-action-link>사건 등록 </Link>
           </div>
         </div>
         {!data ? (

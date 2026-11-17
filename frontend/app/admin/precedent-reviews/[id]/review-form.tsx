@@ -12,6 +12,6 @@ export function ReviewForm({id,reviewHash,canVerify}:{id:string;reviewHash:strin
   <label>검토 사유<textarea name="reason" required maxLength={2000} rows={4} placeholder="판결문과 시행본을 대조한 근거를 남겨 주세요."/></label>
   <label><input type="checkbox" name="confirmed" value="yes" required/>판결문과 정정 전후 조문을 확인했으며 이 검토 결과를 저장합니다.</label>
   {state?.error&&<p role="alert" className={styles.approvalError}>{state.error}</p>}
-  <button type="submit" disabled={pending}>{pending?'저장 중…':'검토 결과 저장'}</button>
+  <button type="submit" disabled={pending} data-primary>{pending?'저장 중…':'검토 결과 저장'}</button>
  </form>;
 }

@@ -18,7 +18,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
         <p>회원 기록은 계정으로, 비회원 기록은 현재 브라우저의 인증으로 확인합니다. 비회원 대화는 생성일부터 1개월 보관합니다.</p>
       </section>
       <div className="section-heading">
-        <h2>나의 대화</h2><div className="list-tools"><PageSizeSelect value={pageSize}/><Link href="/">새 대화 ↗</Link></div>
+        <h2>나의 대화</h2><div className="list-tools"><PageSizeSelect value={pageSize}/><Link href="/" data-action-link>새 대화 </Link></div>
       </div>
       <section className="results conversation-results">
         {result.data ? <HistoryList key={pageSize} initial={result.data} pageSize={pageSize} />

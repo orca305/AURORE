@@ -1,3 +1,4 @@
+import { Matches, MaxLength } from 'class-validator';
 import {
   BadRequestException,
   Body,
@@ -23,6 +24,10 @@ function parseId(value: string): bigint {
   return BigInt(value);
 }
 
+class ComparePrecedentDto {
+  @MaxLength(19) @Matches(/^[1-9]\d{0,18}$/) beforeRevisionId!: string;
+  @MaxLength(19) @Matches(/^[1-9]\d{0,18}$/) afterRevisionId!: string;
+}
 @Controller('legals')
 export class LegalController {
   constructor(private readonly legal: LegalService) {}
@@ -41,6 +46,19 @@ export class LegalController {
   @Get('precedents')
   precedents(@Query() query: ListLegalsDto) {
     return this.legal.precedents(query);
+  }
+
+  @Get('precedents/:id/comparison')
+  @Header('Cache-Control', 'no-store')
+  precedentComparison(
+    @Param('id') id: string,
+    @Query() query: ComparePrecedentDto,
+  ) {
+    return this.legal.precedentComparison(
+      parseId(id),
+      parseId(query.beforeRevisionId),
+      parseId(query.afterRevisionId),
+    );
   }
 
   @Get(':id/comparison')

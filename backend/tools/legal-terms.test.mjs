@@ -1,0 +1,75 @@
+import {createServer} from 'node:net';
+import assert from 'node:assert/strict';
+import {randomBytes,randomUUID,createHash} from 'node:crypto';
+import {spawn,spawnSync} from 'node:child_process';
+import {createRequire} from 'node:module';
+import {mkdtemp} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
+import test from 'node:test';
+const require=createRequire(import.meta.url);let development;
+try{development=new URL(process.env.DATABASE_URL);if(development.hostname!=='127.0.0.1'||development.port!=='5433'||development.pathname!=='/aurore_dev_check')development=null;}catch{development=null;}
+test('legal dictionary enforces review, immutable history, ownership of receipts, concurrency, literal search and soft deletion',{skip:!development&&'Use --env-file=../local-dev/.env',timeout:180000},async()=>{
+ require('reflect-metadata');const {ConfigService}=require('@nestjs/config'),{Test}=require('@nestjs/testing'),{ValidationPipe}=require('@nestjs/common');
+ const {PrismaService}=await import('../dist/prisma/prisma.service.js'),{AppModule}=await import('../dist/app.module.js'),{AuthService}=await import('../dist/auth/auth.service.js'),{AccountRetentionService}=await import('../dist/auth/account-retention.service.js'),{ChatService}=await import('../dist/chat/chat.service.js'),{NotificationsService}=await import('../dist/notifications/notifications.service.js');
+ const {auditPrivacyRetention}=await import('./privacy-retention.mjs');
+ const name='aurore_terms_'+randomBytes(6).toString('hex'),url=new URL(development);url.pathname='/'+name;
+ const run=(cmd,args,options={})=>{const p=spawnSync(cmd,args,{encoding:'utf8',windowsHide:true,...options});assert.equal(p.status,0,p.stderr);};let db,app,web,created=false;
+ try{
+  run('docker',['exec','aurore-dev-check-postgres','createdb','-U','aurore_dev_check',name]);created=true;
+  run(process.execPath,['node_modules/prisma/build/index.js','migrate','deploy','--config','prisma7.config.ts'],{env:{...process.env,DATABASE_URL:url.href}});
+  db=new PrismaService(new ConfigService({DATABASE_URL:url.href}));await db.$connect();const temp=await mkdtemp(join(tmpdir(),'aurore-withdrawal-'));
+  const config=new ConfigService({DATABASE_URL:url.href,AURORE_COLLECTION_SCHEDULER_DIR:join(temp,'scheduler'),AURORE_LAW_REFRESH_JOURNAL:join(temp,'refresh'),AURORE_PRECEDENT_COLLECTION_ROOT:join(temp,'precedents'),MOLEG_OC:''});
+  const module=await Test.createTestingModule({imports:[AppModule]}).overrideProvider(PrismaService).useValue(db).overrideProvider(ConfigService).useValue(config).compile();app=module.createNestApplication({logger:false});app.useGlobalPipes(new ValidationPipe({whitelist:true,forbidNonWhitelisted:true,transform:true}));await app.listen(0,'127.0.0.1');
+  const auth=app.get(AuthService),retention=app.get(AccountRetentionService),base=await app.getUrl();await app.get(ChatService).onModuleDestroy();await app.get(NotificationsService).onModuleDestroy();await retention.onModuleDestroy();
+
+
+  const {TermsService}=await import('../dist/terms/terms.service.js'),{AdminGuard}=await import('../dist/admin/admin.guard.js');
+  const password='Synthetic8!',tokens={},users={};for(const login of ['terms_admin','terms_peer','terms_member']){await auth.signup(login,'사전검증',password);tokens[login]=(await auth.login(login,password)).token;users[login]=BigInt((await auth.session(tokens[login],false)).id);}
+  const token=tokens.terms_admin,role=await db.cmmnCd.findFirstOrThrow({where:{cd:'ADMIN',parent:{cd:'USER_ROLE'}}});for(const userId of [users.terms_admin,users.terms_peer])await db.userRole.create({data:{userId,roleCdId:role.id}});
+  const get=(path,t)=>fetch(base+path,{headers:t?{Authorization:'Bearer '+t}:{}}),post=(path,body,t=token)=>fetch(base+path,{method:'POST',headers:{...(t?{Authorization:'Bearer '+t}:{}),'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const seed={termName:'가상 검증 용어',aliases:['가상동의어','TEST_ALIAS'],definition:'합성 검증 자료의 정의입니다. 실제 법률 자료가 아닙니다.',explanation:'합성 검증을 위한 쉬운 풀이입니다.',sourceName:'합성 출처',sourceUrl:'https://www.law.go.kr/LSW/lsTrmScListP.do',sourceReference:'합성 자료 1차'};
+  const createBody={...seed,requestId:randomUUID()};
+  assert.equal((await get('/terms')).status,200);assert.equal((await get('/admin/terms')).status,401);assert.equal((await get('/admin/terms',tokens.terms_member)).status,403);assert.equal((await post('/admin/terms',createBody,tokens.terms_member)).status,403);
+  for(const patch of [{termName:' '},{aliases:['']},{aliases:Array(21).fill('동의어')},{sourceUrl:'javascript:alert(1)'},{sourceUrl:'http://www.law.go.kr'},{sourceUrl:'https://evil.example/definition'},{sourceUrl:'https://www.law.go.kr/DRF/lawService.do?OC=secret'},{sourceUrl:'https://user:password@www.law.go.kr/'},{sourceUrl:'https://www.law.go.kr/?token=secret'},{definition:'\u0000'},{definition:''},{actorUserId:'2'}])assert.equal((await post('/admin/terms',{...createBody,...patch,requestId:randomUUID()})).status,400);
+  const creationResponse=await post('/admin/terms',createBody);assert.equal(creationResponse.status,201);const first=await creationResponse.json(),id=first.id;assert.equal(first.revision,1);
+  assert.equal((await get('/terms/'+id)).status,404);assert.equal((await(await get('/terms')).json()).total,0);const admin=await(await get('/admin/terms/'+id,token)).json();assert.equal(admin.state,'DRAFT');assert.equal(admin.history.total,1);
+  assert.equal((await post('/admin/terms',createBody)).status,201);assert.equal(await db.legalTerm.count(),1);assert.equal(await db.legalTermHist.count(),1);
+  assert.equal((await post('/admin/terms',createBody,tokens.terms_peer)).status,409);assert.equal((await post('/admin/terms',{...createBody,requestId:randomUUID(),termName:'가 상 검 증 용 어'})).status,409);
+  assert.equal((await post('/admin/terms/'+id+'/publish',{requestId:randomUUID(),revision:1,confirmed:false})).status,400);assert.equal((await get('/terms/'+id)).status,404);
+  const publication={requestId:randomUUID(),revision:1,confirmed:true};const published=await post('/admin/terms/'+id+'/publish',publication);assert.equal(published.status,201);assert.equal((await published.json()).revision,2);assert.equal((await post('/admin/terms/'+id+'/publish',publication)).status,201);
+  const publicTerm=await(await get('/terms/'+id)).json();assert.equal(publicTerm.state,'PUBLISHED');assert.equal(publicTerm.revision,2);assert.equal(publicTerm.definition,seed.definition);assert.ok(!JSON.stringify(publicTerm).includes('actorUserId'));assert.ok(!Object.hasOwn(publicTerm,'history'));
+  for(const query of ['가상동의','test_alias','합성 검증 자료의 정의','쉬운 풀이'])assert.equal((await(await get('/terms?q='+encodeURIComponent(query))).json()).total,1);
+  for(const literal of ['%','_','\\'])assert.equal((await(await get('/terms?q='+encodeURIComponent(literal))).json()).total,literal==='_'?1:0);
+  for(const q of ['?state=DRAFT','?limit=7','?offset=-1','?sort=DROP_TABLE'])assert.equal((await get('/terms'+q)).status,400);
+  const staleUpdate={...seed,requestId:randomUUID(),revision:1,definition:'stale'};assert.equal((await post('/admin/terms/'+id,staleUpdate)).status,409);assert.equal((await(await get('/terms/'+id)).json()).revision,2);
+  const edit={...seed,requestId:randomUUID(),revision:2,definition:'수정한 합성 검증 정의입니다.'};const race=await Promise.all([post('/admin/terms/'+id,edit),post('/admin/terms/'+id,{...edit,requestId:randomUUID()},tokens.terms_peer)]);assert.deepEqual(race.map(r=>r.status).sort(),[201,409]);assert.equal((await get('/terms/'+id)).status,404);
+  const updated=await(await get('/admin/terms/'+id+'?historyRevision=2',token)).json();assert.equal(updated.revision,3);assert.equal(updated.history.total,3);assert.equal(updated.selectedHistory.after.definition,seed.definition);assert.equal(updated.selectedHistory.after.state,'PUBLISHED');assert.equal(updated.selectedHistory.before.state,'DRAFT');
+  const fail=new Proxy(db,{get(target,p){if(p!=='$transaction')return Reflect.get(target,p);return(work,options)=>db.$transaction(tx=>work(new Proxy(tx,{get(t,k){if(k!=='legalTermHist')return Reflect.get(t,k);return new Proxy(t.legalTermHist,{get(hist,op){return op==='create'?async()=>{throw new Error('synthetic term history failure');}:Reflect.get(hist,op);}});}})),options);}});
+  await assert.rejects(new TermsService(fail,app.get(AdminGuard)).save('PUBLISH',BigInt(id),{requestId:randomUUID(),revision:3},'Bearer '+token),/synthetic term history failure/);assert.equal((await get('/terms/'+id)).status,404);assert.equal((await(await get('/admin/terms/'+id,token)).json()).revision,3);
+  assert.equal((await post('/admin/terms/'+id+'/publish',{requestId:randomUUID(),revision:3,confirmed:true})).status,201);
+  let next=await post('/admin/terms',{...seed,termName:'정렬 검증 두번째',aliases:[],requestId:randomUUID()});const secondTerm=await next.json();assert.equal((await post('/admin/terms/'+secondTerm.id+'/publish',{requestId:randomUUID(),revision:1,confirmed:true})).status,201);
+  const old=await(await get('/terms?sort=oldest')).json(),recent=await(await get('/terms?sort=newest')).json();assert.deepEqual(old.items.map(t=>t.id),recent.items.map(t=>t.id).reverse());
+  const learningAudit=await auditPrivacyRetention({query:async(sql,args)=>({rows:await db.$queryRawUnsafe(sql,...args)})});assert.equal(learningAudit.purgeImplemented,false);
+  if(process.env.AURORE_WEB_SMOKE==='1'){
+   const webPort=await new Promise((resolve,reject)=>{const server=createServer();server.once('error',reject);server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(error=>error?reject(error):resolve(port));});});const webBase='http://127.0.0.1:'+webPort;
+   web=spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port',String(webPort)],{cwd:'C:/dev/easy-law-ai/frontend',env:{...process.env,BACKEND_URL:base},windowsHide:true,stdio:'ignore'});let ready=false;for(let n=0;n<120;n++){assert.equal(web.exitCode,null,'dictionary test server stopped before ready');try{if((await fetch(webBase+'/login')).ok){ready=true;break;}}catch{}await delay(250);}assert.ok(ready,'dictionary test server not ready');
+   for(const route of ['/terms','/terms/'+id,'/admin/terms','/admin/terms/new','/admin/terms/'+id+'?historyRevision=2']){const response=await fetch(webBase+route,{headers:{Cookie:'aurore_session='+token},redirect:'manual'});assert.equal(response.status,200,route);const html=await response.text();assert.ok(html.includes('법률용어사전'),route);if(route==='/terms/'+id){assert.ok(html.includes('출처의 정의'));assert.ok(html.includes('쉬운 풀이 · 운영자 작성'));assert.ok(html.includes('target="_blank"'));}if(route.includes('historyRevision'))assert.ok(html.includes('변경 전'));}
+   console.log('WEB_SMOKE_PASS public dictionary, detail, admin list/create/review/history');
+  }
+  await db.userRole.updateMany({where:{userId:users.terms_peer},data:{delYn:true,delDttm:new Date(),delId:users.terms_admin}});assert.equal((await post('/admin/terms/'+id,{...edit,revision:4,requestId:randomUUID()},tokens.terms_peer)).status,403);
+  const removal={requestId:randomUUID(),revision:4,confirmed:true};assert.equal((await post('/admin/terms/'+id+'/delete',removal)).status,201);assert.equal((await post('/admin/terms/'+id+'/delete',removal)).status,201);assert.equal((await get('/terms/'+id)).status,404);
+  const removed=await(await get('/admin/terms/'+id+'?limit=10&historyRevision=4',token)).json();assert.equal(removed.deleted,true);assert.equal(removed.history.total,5);assert.equal(removed.selectedHistory.after.definition,edit.definition);assert.equal(await db.legalTerm.count({where:{id:BigInt(id)}}),1);
+  const deletedList=await(await get('/admin/terms?state=DELETED',token)).json();assert.equal(deletedList.total,1);assert.equal(deletedList.items[0].id,id);assert.equal((await(await get('/terms')).json()).total,1);assert.equal((await post('/admin/terms',{...seed,requestId:randomUUID()})).status,201);
+  assert.equal((await get('/terms/9223372036854775808')).status,400);assert.equal((await get('/admin/terms/'+id+'?historyRevision=0',token)).status,400);
+  for(let i=0;i<12;i++){const row=await(await post('/admin/terms',{...seed,termName:'페이징 검증 용어 '+i,requestId:randomUUID()})).json();assert.equal((await post('/admin/terms/'+row.id+'/publish',{requestId:randomUUID(),revision:1,confirmed:true})).status,201);}
+  const p1=await(await get('/terms?limit=10')).json(),p2=await(await get('/terms?limit=10&offset=10')).json();assert.equal(p1.items.length,10);assert.equal(p1.total,13);assert.equal(p1.nextOffset,10);assert.equal(p2.items.length,3);assert.equal(new Set([...p1.items,...p2.items].map(x=>x.id)).size,13);
+  const historical=await(await post('/admin/terms',{...seed,termName:'이력 페이징 검증',requestId:randomUUID()})).json();for(let revNo=1;revNo<=12;revNo++){assert.equal((await post('/admin/terms/'+historical.id,{...seed,termName:'이력 페이징 검증',definition:'합성 정의 '+revNo,revision:revNo,requestId:randomUUID()})).status,201);}
+  const h1=await(await get('/admin/terms/'+historical.id+'?limit=10',token)).json(),h2=await(await get('/admin/terms/'+historical.id+'?limit=10&offset=10',token)).json();assert.equal(h1.history.total,13);assert.equal(h1.history.items.length,10);assert.equal(h2.history.items.length,3);assert.equal(new Set([...h1.history.items,...h2.history.items].map(x=>x.revision)).size,13);
+  // Multiple same-request creates must still produce exactly one row and one receipt.
+  const duplicate={...seed,termName:'동시 요청 검증',requestId:randomUUID()};const copies=await Promise.all([post('/admin/terms',duplicate),post('/admin/terms',duplicate)]);assert.ok(copies.every(r=>r.status===201));const receipts=await Promise.all(copies.map(r=>r.json()));assert.equal(receipts[0].id,receipts[1].id);assert.equal(await db.legalTermHist.count({where:{id:duplicate.requestId}}),1);
+  await db.userRole.create({data:{userId:users.terms_member,roleCdId:role.id}});const publicBefore=await(await get('/terms')).json();assert.equal((await post('/auth/withdrawal',{currentPassword:password,confirmed:true})).status,202);assert.equal((await get('/admin/terms',token)).status,401);assert.equal((await(await get('/terms')).json()).total,publicBefore.total);assert.equal((await get('/terms/'+secondTerm.id)).status,200);
+  const retiredAudit=await auditPrivacyRetention({query:async(sql,args)=>({rows:await db.$queryRawUnsafe(sql,...args)})});assert.equal(retiredAudit.counts.retainedTermActions,await db.legalTermHist.count({where:{actorUserId:users.terms_admin}}));assert.ok(retiredAudit.counts.retainedTermActions>0);
+ }finally{if(web){web.kill();if(web.exitCode===null)await new Promise(resolve=>web.once('exit',resolve));}await app?.close();await db?.$disconnect();if(created)run('docker',['exec','aurore-dev-check-postgres','dropdb','-U','aurore_dev_check',name]);}
+});

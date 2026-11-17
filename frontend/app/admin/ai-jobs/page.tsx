@@ -1,3 +1,5 @@
+import { SortSelect } from '../../_components/sort-select';
+import { ResetSearch } from '../../_components/page-actions';
 import Link from "next/link";
 import { requestAdmin, type AdminJobList } from "../../_admin/requests";
 import { date, number, states } from "../../_admin/format";
@@ -30,7 +32,9 @@ export default async function JobsPage({
     offset = /^\d{1,6}$/.test(rawOffset)
       ? Math.min(Number(rawOffset), 100000)
       : 0;
+  const sort=params.sort==='oldest'?'oldest':'newest';
   const query = new URLSearchParams({
+      sort,
       q,
       status,
       error,
@@ -47,9 +51,6 @@ export default async function JobsPage({
     value.set("offset", String(next));
     return "/admin/ai-jobs?" + value;
   };
-  const filtered = Boolean(
-    q || status !== "all" || result!=="all" || error !== "all" || from || to,
-  );
   return (
     <>
       <div className={styles.sectionTitle}>
@@ -59,9 +60,7 @@ export default async function JobsPage({
             처리 완료와 근거 확보를 구분해 확인합니다. 삭제·보관 만료된 대화의 작업은 제외합니다.
           </p>
         </div>
-        <Link href={pageUrl(offset)} className={styles.refresh}>
-          새로고침 ↻
-        </Link>
+
       </div>
       <form
         action="/admin/ai-jobs"
@@ -123,10 +122,8 @@ export default async function JobsPage({
         </label>
         <input type="hidden" name="limit" value={limit} />
         <div className={styles.activitySearchActions}>
-          <button type="submit">조회</button>
-          {filtered && (
-            <Link href={"/admin/ai-jobs?limit=" + limit}>조건 지우기</Link>
-          )}
+          <SortSelect value={sort} basis="변경일"/><button type="submit" data-primary>조회</button><ResetSearch/>
+
         </div>
       </form>
       {!data ? (

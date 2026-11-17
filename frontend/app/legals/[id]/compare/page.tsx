@@ -27,15 +27,15 @@ export default async function VersionComparison({params,searchParams}:{params:Pr
  const pinned=new URLSearchParams({beforeVersionId:beforeId,afterVersionId:afterId,pickerOffset:String(pickerOffset),limit:String(pageSize),view,...(data?{beforeRevisionId:data.before.revisionId,afterRevisionId:data.after.revisionId}:{})});
  const pageUrl=(next:number,key='offset')=>{const query=new URLSearchParams(pinned);query.set(key,String(next));if(key==='pickerOffset')query.set('offset','0');return path+'?'+query;};
  const correction=Boolean(data&&data.before.versionId===data.after.versionId&&data.before.revisionId!==data.after.revisionId);
- const source=(url:string|null)=>{const href=officialUrl(url);return href?<a href={href} target="_blank" rel="noopener noreferrer">법제처 원문 ↗</a>:null;};
+ const source=(url:string|null)=>{const href=officialUrl(url);return href?<a href={href} target="_blank" rel="noopener noreferrer" data-action-link>법제처 원문 </a>:null;};
  const names:Record<string,string>={added:'추가',removed:'삭제',modified:'변경',unchanged:'동일'};
  return <><SiteHeader active="legals"/><main className="shell"><section className="intro"><Link href={'/legals/'+id+'/versions'}>← 시행본 목록</Link><h1>{law?.legalNm??'법령'} · {correction?'정정 전후 비교':'시행본 비교'}</h1><p>저장된 조문과 부칙을 나란히 비교합니다. 추가·삭제·변경된 부분을 강조해 표시합니다.</p></section>
  <div className="pagination"><PageSizeSelect value={pageSize}/></div>
  {!law||!versionsResponse?.ok?<p role="status" className="empty">시행본을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>:<>
- {correction&&data?<div className={styles.correctionInfo}><p>같은 시행본의 정정 전 원문과 정정 후 원문을 비교하고 있습니다.</p><Link href={path}>다른 시행본 선택 ↗</Link></div>:<form action={path} className={styles.picker}>
+ {correction&&data?<div className={styles.correctionInfo}><p>같은 시행본의 정정 전 원문과 정정 후 원문을 비교하고 있습니다.</p><Link href={path} data-action-link>다른 시행본 선택 </Link></div>:<form action={path} className={styles.picker}>
  <label>비교 전 시행본<select name="beforeVersionId" defaultValue={beforeId}>{[...selected.values()].map(v=><option key={v.id} value={v.id}>{label(v.enfcDt)}</option>)}</select></label>
  <label>비교 후 시행본<select name="afterVersionId" defaultValue={afterId}>{[...selected.values()].map(v=><option key={v.id} value={v.id}>{label(v.enfcDt)}</option>)}</select></label>
- <label>표시 범위<select name="view" defaultValue={view}><option value="changed">변경된 항목만</option><option value="all">전체 항목</option></select></label><input type="hidden" name="limit" value={pageSize}/><input type="hidden" name="pickerOffset" value={pickerOffset}/><button type="submit">비교하기</button>
+ <label>표시 범위<select name="view" defaultValue={view}><option value="changed">변경된 항목만</option><option value="all">전체 항목</option></select></label><input type="hidden" name="limit" value={pageSize}/><input type="hidden" name="pickerOffset" value={pickerOffset}/><button type="submit" data-primary>비교하기</button>
  </form>}
  {!correction&&(pickerOffset>0||versions.length>pageSize)&&<nav className="pagination" aria-label="시행본 선택 페이지">{pickerOffset>0&&<Link href={pageUrl(Math.max(0,pickerOffset-pageSize),'pickerOffset')}>← 최신 시행본</Link>}<span className="page-status">선택 목록 {Math.floor(pickerOffset/pageSize)+1} 페이지</span>{versions.length>pageSize&&<Link href={pageUrl(pickerOffset+pageSize,'pickerOffset')}>이전 시행본 →</Link>}</nav>}
  {!data?<p role="status" className="empty">{versions.length===0?'저장된 시행본이 없습니다.':response?.status===404?'선택한 시행본의 저장 원문을 찾을 수 없습니다. 다른 시행본을 선택해 주세요.':'비교할 두 시행본을 선택해 주세요.'}</p>:<>

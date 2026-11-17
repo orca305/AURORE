@@ -8,7 +8,7 @@ export function PageSizeSelect({ value, disabled = false, onChange }: { value: n
     if (onChange) { onChange(size); return; }
     const url = new URL(window.location.href);
     url.searchParams.set("limit", String(size));
-    for (const key of ["offset", "pickerOffset", "historyOffset", "chatOffset", "cursor"]) url.searchParams.delete(key);
+    for (const key of ["offset", "pickerOffset", "historyOffset", "chatOffset", "cursor", "page"]) url.searchParams.delete(key);
     setNavigating(true);
     window.location.assign(url.pathname + url.search + url.hash);
   }}>{pageSizes.map(size => <option key={size} value={size}>{size}개</option>)}</select></label>;

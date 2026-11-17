@@ -137,6 +137,7 @@ def train(out_dir):
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     dump({"model": model, **metadata}, out_dir / "intent.joblib")
+    report["model_sha256"] = sha256((out_dir / "intent.joblib").read_bytes()).hexdigest()
     (out_dir / "evaluation.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
     )

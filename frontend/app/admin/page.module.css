@@ -120,3 +120,9 @@
 .jobFacts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:22px; border-top:1px solid var(--border); }.jobFacts > div { padding:16px 12px; border-bottom:1px solid var(--soft-border); }.jobFacts dt { color:var(--muted); font-size:11px; }.jobFacts dd { margin-top:6px; color:var(--foreground); font-size:13px; overflow-wrap:anywhere; }@media(max-width:900px) { .jobFacts { grid-template-columns:repeat(2,minmax(0,1fr)); } }@media(max-width:550px) { .jobFacts { grid-template-columns:1fr; } }
 
 .jobError + .jobError{margin-top:14px}.jobMetrics{grid-template-columns:repeat(6,minmax(0,1fr))}@media(max-width:1100px){.jobMetrics{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:600px){.jobMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.filters button,.filters input:not([type=hidden]):not([type=checkbox]),.filters select{height:var(--control-height);min-height:var(--control-height);line-height:1.4}.filters button:not([data-primary]){background:var(--background);color:var(--accent);border:1px solid var(--border)}
+
+.memberSearch input,.memberSearch select,.memberSearch button,.activitySearch input,.activitySearch select,.activitySearchActions button{height:var(--control-height);min-height:var(--control-height);line-height:1.4}.memberSearch :global(.ui-button),.activitySearchActions :global(.ui-button){background:var(--background);color:var(--accent);border-color:var(--border)}
+
+.activitySearchActions select{width:auto;height:var(--control-height)}

@@ -1,0 +1,4 @@
+export type Term={sourceKind?:'MANUAL'|'MOLEG_TERM';sourceId?:string|null;id:string;termName:string;aliases:string[];definition:string;explanation:string|null;sourceName:string;sourceUrl:string;sourceReference:string|null;state:'DRAFT'|'PUBLISHED';revision:number;publishedAt:string|null;deleted:boolean;createdAt:string;updatedAt:string};
+export type TermList={items:Term[];total:number;limit:number;offset:number;nextOffset:number|null};
+export type AdminTerm=Term&{history:{total:number;items:{revision:number;action:string;recordedAt:string}[];nextOffset:number|null};selectedHistory:{revision:number;action:string;before:Term|null;after:Term;recordedAt:string}|null};
+export const termActions:Record<string,string>={CREATE:'등록',UPDATE:'수정 · 임시 저장',PUBLISH:'검토 후 공개',DELETE:'삭제',IMPORT:'법제처 수집'};

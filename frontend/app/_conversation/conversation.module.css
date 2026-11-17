@@ -107,3 +107,5 @@
 .factImport{display:inline-block;margin-top:10px;font-size:11px;color:var(--accent);text-decoration:underline;text-underline-offset:3px;}
 
 .documentEvidence{margin-top:16px}.documentEvidence figcaption span{margin-left:14px;font-size:11px;color:var(--muted);}
+
+.composeActions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.composeActions button{height:var(--control-height);min-height:var(--control-height);margin:0}.attach{display:inline-flex;align-items:center;justify-content:center;padding:8px 14px;border:1px solid var(--strong-border);background:var(--background);color:var(--accent);font:inherit;font-size:12px;cursor:pointer}.reset,.newChat{display:inline-flex;align-items:center;justify-content:center;min-height:var(--control-height)}

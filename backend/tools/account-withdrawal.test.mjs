@@ -1,0 +1,79 @@
+import assert from 'node:assert/strict';
+import {randomBytes,randomUUID,createHash} from 'node:crypto';
+import {spawn,spawnSync} from 'node:child_process';
+import {createRequire} from 'node:module';
+import {mkdtemp} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
+import test from 'node:test';
+const require=createRequire(import.meta.url);let development;
+try{development=new URL(process.env.DATABASE_URL);if(development.hostname!=='127.0.0.1'||development.port!=='5433'||development.pathname!=='/aurore_dev_check')development=null;}catch{development=null;}
+test('withdrawal verifies the owner, closes sessions and jobs atomically, archives without deleting, and protects the last administrator',{skip:!development&&'Use --env-file=../local-dev/.env',timeout:180000},async()=>{
+ require('reflect-metadata');const {ConfigService}=require('@nestjs/config'),{Test}=require('@nestjs/testing'),{ValidationPipe}=require('@nestjs/common');
+ const {PrismaService}=await import('../dist/prisma/prisma.service.js'),{AppModule}=await import('../dist/app.module.js'),{AuthService}=await import('../dist/auth/auth.service.js'),{AccountRetentionService}=await import('../dist/auth/account-retention.service.js'),{ChatService}=await import('../dist/chat/chat.service.js'),{NotificationsService}=await import('../dist/notifications/notifications.service.js');
+ const {auditPrivacyRetention}=await import('./privacy-retention.mjs');
+ const name='aurore_withdraw_'+randomBytes(6).toString('hex'),url=new URL(development);url.pathname='/'+name;
+ const run=(cmd,args,options={})=>{const p=spawnSync(cmd,args,{encoding:'utf8',windowsHide:true,...options});assert.equal(p.status,0,p.stderr);};let db,app,web,created=false;
+ try{
+  run('docker',['exec','aurore-dev-check-postgres','createdb','-U','aurore_dev_check',name]);created=true;
+  run(process.execPath,['node_modules/prisma/build/index.js','migrate','deploy','--config','prisma7.config.ts'],{env:{...process.env,DATABASE_URL:url.href}});
+  db=new PrismaService(new ConfigService({DATABASE_URL:url.href}));await db.$connect();const temp=await mkdtemp(join(tmpdir(),'aurore-withdrawal-'));
+  const config=new ConfigService({DATABASE_URL:url.href,AURORE_COLLECTION_SCHEDULER_DIR:join(temp,'scheduler'),AURORE_LAW_REFRESH_JOURNAL:join(temp,'refresh'),AURORE_PRECEDENT_COLLECTION_ROOT:join(temp,'precedents'),MOLEG_OC:''});
+  const module=await Test.createTestingModule({imports:[AppModule]}).overrideProvider(PrismaService).useValue(db).overrideProvider(ConfigService).useValue(config).compile();app=module.createNestApplication({logger:false});app.useGlobalPipes(new ValidationPipe({whitelist:true,forbidNonWhitelisted:true,transform:true}));await app.listen(0,'127.0.0.1');
+  const auth=app.get(AuthService),retention=app.get(AccountRetentionService),base=await app.getUrl();await app.get(ChatService).onModuleDestroy();await app.get(NotificationsService).onModuleDestroy();await retention.onModuleDestroy();
+  const password='Synthetic8!',tokens={},ids={};
+  for(const login of ['close_user','keep_user','last_admin','next_admin']){await auth.signup(login,'탈퇴검증',password);tokens[login]=(await auth.login(login,password)).token;ids[login]=BigInt((await auth.session(tokens[login],false)).id);}
+  const token=tokens.close_user,uid=ids.close_user,second=(await auth.login('close_user',password)).token,owner=await auth.resolveOwner('Bearer '+token);
+  const request=(path,body,t=token,method=body?'POST':'GET')=>fetch(base+path,{method,headers:{...(t?{Authorization:'Bearer '+t}:{}),...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  const role=await db.cmmnCd.findFirstOrThrow({where:{cd:'ADMIN',parent:{cd:'USER_ROLE'}}});for(const userId of [uid,ids.last_admin])await db.userRole.create({data:{userId,roleCdId:role.id}});
+  const type=await db.cmmnCd.findFirstOrThrow({where:{cd:'LEASE',parent:{cd:'CASE_TYPE'}}}),factType=await db.cmmnCd.findFirstOrThrow({where:{cd:'STATEMENT',parent:{cd:'CASE_FACT_TYPE'}}}),learning=await db.cmmnCd.findFirstOrThrow({where:{cd:'LEARNING',parent:{cd:'USER_AGR'}}});
+  await db.userAgrYnHist.create({data:{userId:uid,agrCdId:learning.id,agrYn:true,polVer:'3.3'}});
+  const activeCase=await db.userCase.create({data:{id:randomUUID(),userId:uid,caseNm:'가상 보증금 사건',caseTypeCdId:type.id}}),oldCase=await db.userCase.create({data:{id:randomUUID(),userId:uid,caseNm:'가상 삭제 사건',caseTypeCdId:type.id,delYn:true,delDttm:new Date(),delId:uid}});
+  await db.caseHist.create({data:{id:randomUUID(),userCaseId:activeCase.id,userId:uid,revNo:1,actTypeCd:'CREATE_CASE',requestHash:'a'.repeat(64),afData:{title:activeCase.caseNm}}});
+  for(const c of [activeCase,oldCase])await db.caseFact.create({data:{userCaseId:c.id,factTypeCdId:factType.id,factVal:{title:'가상 사실',content:'원문 보존 검증 문장',occurredOn:null}}});
+  const room=await db.chatSess.create({data:{id:randomUUID(),userId:uid,sessNm:'가상 대화',userCaseId:activeCase.id}}),otherRoom=await db.chatSess.create({data:{id:randomUUID(),userId:ids.keep_user,sessNm:'타인 대화'}});
+  const input=await db.chatMsg.create({data:{id:randomUUID(),chatSessId:room.id,msgSeq:1,roleCd:'USER',msgCont:'원문 보존 검증 문장'}}),answer=await db.chatMsg.create({data:{id:randomUUID(),chatSessId:room.id,msgSeq:2,roleCd:'ASSISTANT',prntMsgId:input.id,msgCont:'가상 답변입니다.'}});
+  const doc=await db.attachDoc.create({data:{id:randomUUID(),userId:uid,chatSessId:room.id,docNm:'가상 자료',formatCd:'md',byteSize:100,srcSha:'a'.repeat(64),requestHash:'b'.repeat(64),mdCont:'원문 보존 검증 문장',partialYn:false}});
+  await db.docQuote.create({data:{chatSessId:room.id,msgId:answer.id,attachDocId:doc.id,quote:'원문 보존 검증 문장',mdHash:'a'.repeat(64)}});
+  const job=await db.aiJob.create({data:{id:randomUUID(),chatSessId:room.id,inputMsgId:input.id,requestHash:'c'.repeat(64),ownerAuthHash:owner.authHash,phaseCd:'start',statCd:'RUNNING',providerCd:'DEMO',attemptNo:1,leaseToken:randomUUID(),leaseDttm:new Date(Date.now()+90000),deadlineDttm:new Date(Date.now()+300000),caseContext:{caseId:activeCase.id,revision:1,factIds:[],asOf:'2026-11-17',hash:'d'.repeat(64)}}});
+  const law=await db.legal.create({data:{srcCd:'TEST',srcKey:'withdraw-law',legalNm:'가상 법령'}}),v=await db.legalVer.create({data:{legalId:law.id,verKey:'1'}}),snap=await db.srcSnapshot.create({data:{srcCd:'TEST',srcKey:'withdraw-snapshot',srcUrl:'https://www.law.go.kr',contType:'application/json',srcCont:'{}',contHash:createHash('sha256').update('{}').digest('hex')}}),rev=await db.legalVerRev.create({data:{legalVerId:v.id,srcSnapshotId:snap.id,revNo:1,currentYn:true}});
+  const event=await db.legalChgEvt.create({data:{evtKey:'EFFECTIVE:WITHDRAW_TEST',legalId:law.id,legalVerId:v.id,srcRevId:rev.id,evtTypeCd:'EFFECTIVE',scopeCd:'VERSION',baseDt:new Date('2026-11-17'),evtDttm:new Date(),evtTitle:'가상 알림',evtCont:'가상 시행 알림'}});
+  for(const userId of [uid,ids.keep_user]){await db.userBmark.create({data:{userId,legalId:law.id}});await db.userNtf.create({data:{userId,evtId:event.id}});}
+  const otherBefore=JSON.stringify(await db.appUser.findUnique({where:{id:ids.keep_user},include:{chats:true,bookmarks:true,notifications:true}}),(_,x)=>typeof x==='bigint'?String(x):x);
+  const statsBefore=await db.userStatHist.count({where:{userId:uid}}),credentials=await db.userAuth.findUnique({where:{userId:uid}});
+  const preview=await request('/auth/withdrawal');assert.equal(preview.status,200);assert.match(preview.headers.get('cache-control'),/no-store/);const previewData=await preview.json();assert.deepEqual(previewData.counts,{chats:1,cases:1,documents:1,bookmarks:1,notifications:1});assert.equal(previewData.purgeCompleted,false);assert.ok(!JSON.stringify(previewData).includes('가상'));
+  const close={currentPassword:password,confirmed:true};
+  assert.equal((await request('/auth/withdrawal',close,null)).status,401);
+  for(const body of [{...close,userId:String(ids.keep_user)},{...close,confirmed:false},{...close,confirmed:'true'},{...close,currentPassword:123},{...close,currentPassword:'WrongSecret8!'}])assert.equal((await request('/auth/withdrawal',body)).status,400);
+  assert.equal(await db.userStatHist.count({where:{userId:uid}}),statsBefore);assert.equal((await request('/auth/session')).status,200);
+  if(process.env.AURORE_WEB_SMOKE==='1'){
+   web=spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port','3002'],{cwd:'C:/dev/easy-law-ai/frontend',env:{...process.env,BACKEND_URL:base},windowsHide:true,stdio:'ignore'});
+   for(let n=0;n<80;n++){try{if((await fetch('http://127.0.0.1:3002/login')).ok)break;}catch{}await delay(250);}
+   for(const route of ['/account','/account/withdrawal','/admin/privacy-retention']){const response=await fetch('http://127.0.0.1:3002'+route,{headers:{Cookie:'aurore_session='+token},redirect:'manual'});assert.equal(response.status,200,route);const html=await response.text();assert.ok(html.includes(route.includes('privacy-retention')?'파기 검토 계획':'탈퇴'),route);}
+   console.log('WEB_SMOKE_PASS withdrawal/account/privacy plan');
+  }
+  const failingDb=new Proxy(db,{get(target,p){if(p!=='$transaction')return Reflect.get(target,p);return(work,options)=>db.$transaction(tx=>work(new Proxy(tx,{get(t,k){if(k!=='userStatHist')return Reflect.get(t,k);return new Proxy(t.userStatHist,{get(hist,op){return op==='create'?async()=>{throw new Error('synthetic history failure');}:Reflect.get(hist,op);}});}})),options);}});
+  await assert.rejects(new AuthService(failingDb).withdraw(token,password),/synthetic history failure/);assert.equal((await request('/auth/session')).status,200);assert.equal((await db.aiJob.findUnique({where:{id:job.id}})).statCd,'RUNNING');assert.equal((await db.appUser.findUnique({where:{id:uid}})).delYn,false);
+  assert.equal((await request('/auth/withdrawal',close)).status,202);assert.equal((await request('/auth/withdrawal',close)).status,401);assert.equal((await request('/auth/session',undefined,second)).status,401);assert.equal((await request('/auth/login',{loginId:'close_user',password},null)).status,401);
+  for(const path of ['/cases','/chat-sessions','/bookmarks','/notifications','/chat-sessions/'+room.id+'/documents','/admin/session'])assert.equal((await request(path)).status,401,path);
+  await app.get(ChatService).complete(room.id,job.id,job.leaseToken,{text:'저장되면 안 되는 가상 결과'});assert.equal(await db.chatMsg.count({where:{chatSessId:room.id}}),2);
+  assert.equal(await auth.ownerIsActive(uid,null,owner.authHash),false);assert.equal(await db.userStatHist.count({where:{userId:uid,reason:'SELF_WITHDRAWAL'}}),1);assert.equal((await db.aiJob.findUnique({where:{id:job.id}})).leaseToken,null);assert.equal((await db.aiJob.findUnique({where:{id:job.id}})).statCd,'CANCELLED');assert.equal((await db.userAgrYnHist.findFirst({where:{userId:uid},orderBy:{id:'desc'}})).agrYn,false);
+  assert.equal((await db.appUser.findUnique({where:{id:uid}})).withdrawArchDttm,null);assert.equal((await request('/auth/signup',{loginId:'close_user',nickname:'재가입',password},null)).status,409);
+  const archiveFailure=new Proxy(db,{get(target,p){if(p!=='$transaction')return Reflect.get(target,p);return(work,options)=>db.$transaction(tx=>work(new Proxy(tx,{get(t,k){if(k!=='appUser')return Reflect.get(t,k);return new Proxy(t.appUser,{get(users,op){return op==='update'?async()=>{throw new Error('synthetic archive marker failure');}:Reflect.get(users,op);}});}})),options);}});
+  await assert.rejects(new AccountRetentionService(archiveFailure).archiveAccount(uid),/synthetic archive marker failure/);assert.equal((await db.userCase.findUnique({where:{id:activeCase.id}})).revNo,1);assert.equal((await db.chatSess.findUnique({where:{id:room.id}})).delYn,false);assert.equal(await db.caseHist.count({where:{userId:uid}}),1);
+  let roomLocked,continueOld,userShared;const roomReady=new Promise(r=>roomLocked=r),allowOld=new Promise(r=>continueOld=r),archiveShared=new Promise(r=>userShared=r);
+  const oldCompletion=db.$transaction(async tx=>{await tx.$queryRaw`SELECT id FROM chat_sess WHERE id=${room.id}::uuid FOR UPDATE`;roomLocked();await allowOld;assert.equal(await auth.ownerIsActive(uid,null,owner.authHash,tx),false);},{timeout:15000});await roomReady;
+  const observedDb=new Proxy(db,{get(target,p){if(p!=='$transaction')return Reflect.get(target,p);return(work,options)=>db.$transaction(tx=>work(new Proxy(tx,{get(t,k){if(k!=='$queryRaw')return Reflect.get(t,k);return async(...args)=>{const result=await t.$queryRaw(...args);if(args[0]?.join?.('').includes('FROM app_user'))userShared();return result;};}})),options);}});
+  const archiving=new AccountRetentionService(observedDb).archiveAccount(uid);await archiveShared;continueOld();assert.equal((await Promise.all([oldCompletion,archiving]))[1],true);
+  for(const [table,where] of [[db.chatSess,{userId:uid}],[db.chatMsg,{chat:{userId:uid}}],[db.attachDoc,{userId:uid}],[db.userCase,{userId:uid}],[db.caseFact,{case:{userId:uid}}],[db.userBmark,{userId:uid}],[db.userNtf,{userId:uid}],[db.userRole,{userId:uid}]])assert.equal(await table.count({where:{...where,delYn:false}}),0);
+  assert.equal((await db.chatMsg.findUnique({where:{id:input.id}})).msgCont,'원문 보존 검증 문장');assert.equal((await db.attachDoc.findUnique({where:{id:doc.id}})).mdCont,'원문 보존 검증 문장');assert.equal(await db.docQuote.count({where:{attachDocId:doc.id}}),1);assert.deepEqual((await db.userAuth.findUnique({where:{userId:uid}})).pwHash,credentials.pwHash);
+  assert.equal(await db.caseHist.count({where:{userId:uid,actTypeCd:'DELETE_CASE'}}),1);assert.ok((await db.appUser.findUnique({where:{id:uid}})).withdrawArchDttm);assert.equal(await retention.archiveAccount(uid),false);assert.equal((await retention.sweep()).completed,0);assert.equal(await retention.archiveAccount(ids.keep_user),false);
+  const report=await auditPrivacyRetention({query:async(sql,args)=>({rows:await db.$queryRawUnsafe(sql,...args)})});assert.equal(report.counts.withdrawalArchiveCompleted,1);assert.equal(report.purgeReview.executionEnabled,false);assert.equal(report.counts.retainedBookmarks,1);assert.ok(!JSON.stringify(report).includes('원문 보존'));
+  assert.equal(JSON.stringify(await db.appUser.findUnique({where:{id:ids.keep_user},include:{chats:true,bookmarks:true,notifications:true}}),(_,x)=>typeof x==='bigint'?String(x):x),otherBefore);assert.equal((await request('/auth/session',undefined,tokens.keep_user)).status,200);assert.equal((await db.chatSess.findUnique({where:{id:otherRoom.id}})).delYn,false);
+  assert.equal((await request('/auth/withdrawal',close,tokens.last_admin)).status,409);assert.equal((await request('/auth/session',undefined,tokens.last_admin)).status,200);
+  await db.userRole.create({data:{userId:ids.next_admin,roleCdId:role.id}});const lastRace=await Promise.all([request('/auth/withdrawal',close,tokens.last_admin),request('/auth/withdrawal',close,tokens.next_admin)]);assert.deepEqual(lastRace.map(x=>x.status).sort(),[202,409]);
+  assert.equal(await db.appUser.count({where:{delYn:false,roles:{some:{roleCdId:role.id,delYn:false}}}}),1);
+  await auth.signup('login_racer','경합검증',password);const raceToken=(await auth.login('login_racer',password)).token;const credentialRace=await Promise.all([request('/auth/withdrawal',close,raceToken),request('/auth/login',{loginId:'login_racer',password},null)]);assert.equal(credentialRace[0].status,202);assert.ok([200,401].includes(credentialRace[1].status));if(credentialRace[1].status===200){const raced=(await credentialRace[1].json()).token;assert.equal((await request('/auth/session',undefined,raced)).status,401);}
+ }finally{if(web){web.kill();if(web.exitCode===null)await new Promise(resolve=>web.once('exit',resolve));}await app?.close();await db?.$disconnect();if(created)run('docker',['exec','aurore-dev-check-postgres','dropdb','-U','aurore_dev_check',name]);}
+});

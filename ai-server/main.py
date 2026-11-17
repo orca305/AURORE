@@ -8,9 +8,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, StringConstraints
 
 from document_answer import router as document_router
+from intent_api import router as intent_router
 
 app = FastAPI(title="AURORE AI", version="3.2.0")
 app.include_router(document_router)
+app.include_router(intent_router)
 
 
 @app.get("/")

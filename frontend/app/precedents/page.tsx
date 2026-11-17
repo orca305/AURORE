@@ -1,3 +1,9 @@
+import { ShortTitle } from '../_components/short-title';
+import { SortSelect } from '../_components/sort-select';
+import { ResetSearch } from '../_components/page-actions';
+import { BookmarkButton } from '../_bookmarks/bookmark-button';
+import { bookmarkStates } from '../_bookmarks/requests';
+import { currentMember } from '../_auth/session';
 import { parsePageSize } from "../_components/page-size";
 import { PageSizeSelect } from "../_components/page-size-select";
 import type { Metadata } from "next";
@@ -6,7 +12,7 @@ import { Suspense } from "react";
 
 export const metadata: Metadata = { title: "판례 검색 | AURORE" };
 
-type SearchParams = Promise<{ limit?: string | string[]; q?: string | string[]; offset?: string | string[] }>;
+type SearchParams = Promise<{ limit?: string | string[]; q?: string | string[]; sort?: string | string[]; offset?: string | string[] }>;
 type Reference = {
   refKey: string;
   statCd: "VERIFIED" | "UNVERIFIED" | "REVIEW_REQUIRED";
@@ -14,6 +20,7 @@ type Reference = {
   target: { effectiveDate: string | null; sourceUrl: string | null } | null;
 };
 type Precedent = {
+  id:string;
   sourceKey: string;
   caseNo: string;
   caseNm: string;
@@ -32,10 +39,10 @@ function officialUrl(value: string | null) {
     !url.port && !url.username && !url.password ? url.href : null;
 }
 
-async function fetchPrecedents(q: string, offset: number, pageSize: number): Promise<Precedent[] | null> {
+async function fetchPrecedents(q: string, offset: number, pageSize: number, sort: string): Promise<Precedent[] | null> {
   try {
     const url = new URL("/legals/precedents", process.env.BACKEND_URL || "http://127.0.0.1:3001");
-    url.search = new URLSearchParams({ q, offset: String(offset), limit: String(pageSize + 1) }).toString();
+    url.search = new URLSearchParams({ q, sort, offset: String(offset), limit: String(pageSize + 1) }).toString();
     const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(5000) });
     if (!response.ok) return null;
     const data: unknown = await response.json();
@@ -45,14 +52,15 @@ async function fetchPrecedents(q: string, offset: number, pageSize: number): Pro
   }
 }
 
-function PrecedentCard({ row }: { row: Precedent }) {
+function PrecedentCard({ row, member, saved }: { row: Precedent; member:boolean; saved:boolean|null }) {
   const source = officialUrl(row.sourceUrl);
 
   return <li id={`case-${row.sourceKey}`}>
-    <h3>{row.caseNm}</h3>
+    <div className="legal-title-row"><h3><ShortTitle text={row.caseNm}/></h3>{member&&<BookmarkButton key={row.id+':'+String(saved)} kind='PREC' id={row.id} saved={saved} title={row.caseNm} compact/>}</div>
     <p>{row.courtNm} · {row.decisionDate} 선고 · {row.caseNo}</p>
     {row.excerpt && <p className="case-excerpt">{row.excerpt}</p>}
     {source && <a className="mt-2 inline-block underline" href={source} target="_blank" rel="noopener noreferrer">판결문 원문</a>}
+
     <details className="mt-4">
       <summary className="cursor-pointer font-semibold">조문 대조 결과</summary>
       {row.references.length === 0 ? <p className="pt-3">표시할 조문 대조 결과가 없습니다.</p>
@@ -81,12 +89,15 @@ function PrecedentCard({ row }: { row: Precedent }) {
 
 async function PrecedentResults({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
+  const sort=params.sort==='oldest'?'oldest':'newest';
   const pageSize = parsePageSize(params.limit);
   const q = (typeof params.q === "string" ? params.q : "").trim().slice(0, 200);
   const rawOffset = typeof params.offset === "string" ? params.offset : "";
   const offset = /^\d{1,6}$/.test(rawOffset) ? Math.min(Number(rawOffset), maxOffset) : 0;
-  const rows = await fetchPrecedents(q, offset, pageSize);
-  const pageUrl = (offset: number) => `/precedents?${new URLSearchParams({ q, offset: String(offset), limit: String(pageSize) })}`;
+  const rows = await fetchPrecedents(q, offset, pageSize, sort);
+  const member=Boolean(await currentMember());
+  const saved=member?await bookmarkStates('PREC',(rows??[]).slice(0,pageSize).map(row=>row.id)):null;
+  const pageUrl = (offset: number) => `/precedents?${new URLSearchParams({ q, sort, offset: String(offset), limit: String(pageSize) })}`;
 
   return <>
     <form className="search" action="/precedents" role="search">
@@ -94,7 +105,7 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
       <input type="hidden" name="limit" value={pageSize} />
       <div className="search-row">
         <input id="case-query" name="q" defaultValue={q} maxLength={200} placeholder="예시 보증금 반환, 계약갱신요구권" />
-        <button type="submit">검색</button>
+        <SortSelect value={sort} basis="선고일"/><button type="submit" data-primary>검색</button><ResetSearch/>
       </div>
     </form>
     <section aria-labelledby="precedent-results" className="results">
@@ -106,7 +117,7 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
           {q ? "검색 결과가 없습니다. 제목이나 내용의 다른 키워드로 검색해 주세요." : "이 페이지에 표시할 판례가 없습니다."}
         </p>
         : <ul className="legal-list">
-          {rows.slice(0, pageSize).map(row => <PrecedentCard key={row.sourceUrl} row={row} />)}
+          {rows.slice(0, pageSize).map(row => <PrecedentCard key={row.sourceUrl} row={row} member={member} saved={saved?saved.has(row.id):null} />)}
         </ul>}
       {rows !== null && (rows.length > 0 || offset > 0) &&
         <nav aria-label="판례 검색 결과 페이지" className="pagination">

@@ -1,3 +1,12 @@
+import {MolegTermsClient} from './terms/moleg-terms.js';
+import {TermImportService} from './terms/term-import.service.js';
+import {TermsService} from './terms/terms.service.js';
+import {TermsController,AdminTermsController} from './terms/terms.controller.js';
+import { AccountRetentionService } from './auth/account-retention.service.js';
+import { NotificationsController } from './notifications/notifications.controller.js';
+import { NotificationsService } from './notifications/notifications.service.js';
+import { BookmarksController } from './bookmarks/bookmarks.controller.js';
+import { BookmarksService } from './bookmarks/bookmarks.service.js';
 import {
   DocumentsController,
   DocumentMemberGuard,
@@ -36,6 +45,9 @@ import { CommonCodeController } from './common-code/common-code.controller.js';
     LegalModule,
   ],
   controllers: [
+    TermsController,AdminTermsController,
+    NotificationsController,
+    BookmarksController,
     DocumentsController,
     CasesController,
     AdminController,
@@ -46,6 +58,11 @@ import { CommonCodeController } from './common-code/common-code.controller.js';
     JobsController,
   ],
   providers: [
+    MolegTermsClient,TermImportService,
+    TermsService,
+    AccountRetentionService,
+    NotificationsService,
+    BookmarksService,
     DocumentsService,
     DocumentMemberGuard,
     CasesService,

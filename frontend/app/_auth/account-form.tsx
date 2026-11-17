@@ -25,7 +25,7 @@ export function AccountForm({ mode }: { mode: "signup" | "login" }) {
         {signup && <small id="password-help">8~16자</small>}
       </label>
       {error && <p role="alert" className={styles.error}>{error}</p>}
-      <button type="submit" disabled={pending}>{pending ? "처리 중…" : signup ? "계정 만들기" : "로그인"}</button>
+      <button type="submit" disabled={pending} data-primary>{pending ? "처리 중…" : signup ? "계정 만들기" : "로그인"}</button>
     </form>
   );
 }
@@ -34,7 +34,7 @@ export function SignOutForm() {
   const [error, action, pending] = useActionState(signOut, null);
   return <form action={action} className={styles.form}>
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    <button type="submit" disabled={pending}>{pending ? "처리 중…" : "로그아웃"}</button>
+    <button type="submit" disabled={pending} data-primary>{pending ? "처리 중…" : "로그아웃"}</button>
   </form>;
 }
 
@@ -48,7 +48,7 @@ export function PasswordForm() {
     <label>새 비밀번호 확인<input name="confirmPassword" type="password" autoComplete="new-password" required /></label>
     <p className={styles.help}>변경하면 이 기기를 포함한 모든 기기에서 로그아웃됩니다.</p>
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    <button type="submit" disabled={pending}>{pending ? "변경 중…" : "비밀번호 변경"}</button>
+    <button type="submit" disabled={pending} data-primary>{pending ? "변경 중…" : "비밀번호 변경"}</button>
   </form>;
 }
 
@@ -57,6 +57,6 @@ export function SignOutAllForm() {
   return <form action={action} className={styles.form}>
     <p className={styles.help}>이 기기를 포함해 로그인된 모든 기기의 접속을 종료합니다.</p>
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    <button type="submit" className={styles.secondary} disabled={pending}>{pending ? "로그아웃 중…" : "모든 기기에서 로그아웃"}</button>
+    <button type="submit" className={styles.secondary} disabled={pending} data-primary>{pending ? "로그아웃 중…" : "모든 기기에서 로그아웃"}</button>
   </form>;
 }
