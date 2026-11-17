@@ -1,0 +1,9 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/ai-server/.venv/Scripts/python.exe",
+  "eslint.workingDirectories": ["./frontend"],
+  "[python]": {
+    "editor.tabSize": 4,
+    "editor.defaultFormatter": null,
+    "editor.formatOnSave": false
+  }
+}

@@ -1,0 +1,9 @@
+name: aurore-desktop
+
+services:
+  postgres:
+    container_name: aurore-desktop-postgres
+
+volumes:
+  pgdata:
+    name: aurore-desktop-e4b-pgdata
