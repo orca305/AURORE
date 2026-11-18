@@ -233,6 +233,7 @@ export class ChatAnswerService {
       question,
       context?.asOf,
       context?.text,
+      12,
     );
     if (!candidates.length) return missingEvidence('SOURCE_GAP', supplement);
     if (!(await this.documentsReady()))
@@ -243,25 +244,33 @@ export class ChatAnswerService {
         text: '저장된 법령·판례에서 검색어가 일치하는 원문 후보를 찾았습니다. 로컬 AI가 준비되지 않아 질문 관련성은 검토하지 못했습니다. 이 자료가 상황에 적용된다는 판단은 아닙니다.',
         citation: candidates[0].citation,
       };
-    const answer = await this.generateDocuments(
-      question,
-      candidates,
-      context?.text,
-    );
-    const quote = answer.documentQuotes?.[0];
-    if (!quote) return missingEvidence('RELEVANCE_GAP', supplement);
-    const candidate = candidates.find((row) => row.id === quote.documentId)!;
-    return {
-      phase: 'start',
-      providerCd: 'LOCAL_RAG',
-      resultCd: 'EVIDENCE_FOUND',
-      text: '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.',
-      citation: {
-        ...candidate.citation,
-        citeCont: quote.quote,
-        supportVerifyCd: 'MODEL_REVIEWED',
-      },
-    };
+    const started = Date.now();
+    // Check at most 12 bounded candidates in the existing three-document contract.
+    // Stop starting additional batches after 30s; an in-flight call keeps its existing timeout.
+    for (let offset = 0; offset < candidates.length; offset += 3) {
+      if (offset && Date.now() - started >= 30_000) break;
+      const batch = candidates.slice(offset, offset + 3);
+      const answer = await this.generateDocuments(
+        question,
+        batch,
+        context?.text,
+      );
+      const quote = answer.documentQuotes?.[0];
+      if (!quote) continue;
+      const candidate = batch.find((row) => row.id === quote.documentId)!;
+      return {
+        phase: 'start',
+        providerCd: 'LOCAL_RAG',
+        resultCd: 'EVIDENCE_FOUND',
+        text: '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.',
+        citation: {
+          ...candidate.citation,
+          citeCont: quote.quote,
+          supportVerifyCd: 'MODEL_REVIEWED',
+        },
+      };
+    }
+    return missingEvidence('RELEVANCE_GAP', supplement);
   }
 
   private async prepareCitation(

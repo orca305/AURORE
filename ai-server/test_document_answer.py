@@ -15,6 +15,9 @@ class AnswerTests(unittest.TestCase):
             self.assertEqual(result["quotes"][0]["quote"], TEXT)
             self.assertTrue(result["supportChecked"])
             self.assertEqual(model.call_count, 2)
+            self.assertFalse(model.call_args_list[0].kwargs["think"])
+            self.assertIn("quotes", model.call_args_list[0].kwargs["schema"]["properties"])
+            self.assertIn("approved", model.call_args_list[1].kwargs["schema"]["properties"])
         with patch("document_answer.local_json", side_effect=[{"quotes": [{"documentId": ID, "quote": TEXT}]}, {"approved": []}]):
             self.assertEqual(answer_documents(self.payload())["quotes"], [])
     def test_invented_quote_rejected_before_review(self):

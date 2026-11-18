@@ -128,7 +128,14 @@ export async function retrieveStoredEvidence(
   question: string,
   asOf = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }),
   contextText = '',
+  candidateLimit = 3,
 ): Promise<StoredEvidence[]> {
+  if (
+    !Number.isInteger(candidateLimit) ||
+    candidateLimit < 1 ||
+    candidateLimit > 12
+  )
+    throw new Error('Invalid evidence candidate limit');
   const selectors = searchSelectors(question);
   const terms = searchTerms(question + ' ' + contextText);
   if (!terms.length && !selectors.article && !selectors.caseNumber) return [];
@@ -290,9 +297,9 @@ export async function retrieveStoredEvidence(
           supportVerifyCd: 'UNREVIEWED',
         },
       });
-      if (result.length === 3) break;
+      if (result.length === candidateLimit) break;
     }
-    if (result.length === 3) break;
+    if (result.length === candidateLimit) break;
   }
   return result;
 }
