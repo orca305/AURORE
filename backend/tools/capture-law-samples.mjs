@@ -19,7 +19,8 @@ export function identifySample(sample, payload) {
   if (sample.target === "eflaw") {
     const law = payload?.법령;
     const info = law?.기본정보;
-    const units = law?.조문?.조문단위;
+    const rawUnits = law?.조문?.조문단위;
+    const units = Array.isArray(rawUnits) ? rawUnits : rawUnits ? [rawUnits] : [];
     if (String(info?.법령ID) !== sample.lawId || String(info?.시행일자) !== sample.efYd ||
         !hasText(info?.법령명_한글) || !Array.isArray(units) ||
         !units.some((unit) => hasText(unit?.조문내용))) {

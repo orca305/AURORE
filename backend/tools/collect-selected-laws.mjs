@@ -51,6 +51,32 @@ async function findLaw(title, oc) {
   return selectCurrentLaw(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))), title);
 }
 
+export async function collectLaw(sample, title, oc, directory, db = null) {
+  const { bytes, payload, identity } = await readOfficialSample(sample, oc);
+  if (identity.title !== title) throw new Error('DETAIL_TITLE_MISMATCH');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const chunks = collectEvidence(payload, hash);
+  if (!chunks.length) throw new Error('EMPTY_PROVISIONS');
+  await storeSnapshot(join(resolve(directory), 'law', sample.lawId, `${sample.MST}-${sample.efYd}`), bytes);
+  let result;
+  if (db) {
+    const info = payload.법령.기본정보;
+    const date = value => {
+      const str = String(value);
+      const iso = str.slice(0, 4) + '-' + str.slice(4, 6) + '-' + str.slice(6);
+      if (!/^\d{8}$/.test(str) || !Number.isFinite(new Date(iso).valueOf()) || new Date(iso).toISOString().slice(0,10) !== iso) throw new Error('DATE_INVALID');
+      return iso;
+    };
+    await db.query('BEGIN');
+    try {
+      await db.query("SELECT pg_advisory_xact_lock(hashtext('aurore-dev-check-sample-import'))");
+      result = await importEdition(db, { date: date(sample.efYd), promulgated: date(info.공포일자), sourceKey: sample.lawId, versionKey: payload.법령.법령키, title, url: `https://www.law.go.kr/LSW/lsInfoP.do?efYd=${sample.efYd}&lsiSeq=${sample.MST}`, hash, raw: bytes.toString('utf8'), chunks });
+      await db.query('COMMIT');
+    } catch (error) { await db.query('ROLLBACK'); throw error; }
+  }
+  return { title, sourceKey: sample.lawId, hash, status: db ? result.status : 'STAGED', ...(result ? { provisions: result.provisions } : {}) };
+}
+
 async function main() {
   const [directory, flag, ...extra] = process.argv.slice(2);
   if (!directory || extra.length || (flag !== undefined && flag !== '--apply')) throw new Error('OPTIONS_INVALID');
@@ -64,29 +90,7 @@ async function main() {
     for (const title of titles) {
       const sample = await findLaw(title, oc);
       await delay(1000);
-      const { bytes, payload, identity } = await readOfficialSample(sample, oc);
-      if (identity.title !== title) throw new Error('DETAIL_TITLE_MISMATCH');
-      const hash = createHash('sha256').update(bytes).digest('hex');
-      const chunks = collectEvidence(payload, hash);
-      if (!chunks.length) throw new Error('EMPTY_PROVISIONS');
-      await storeSnapshot(join(resolve(directory), 'law', sample.lawId, `${sample.MST}-${sample.efYd}`), bytes);
-      let result;
-      if (db) {
-        const info = payload.법령.기본정보;
-        const date = value => {
-          const str = String(value);
-          const iso = str.slice(0, 4) + '-' + str.slice(4, 6) + '-' + str.slice(6);
-          if (!/^\d{8}$/.test(str) || !Number.isFinite(new Date(iso).valueOf()) || new Date(iso).toISOString().slice(0,10) !== iso) throw new Error('DATE_INVALID');
-          return iso;
-        };
-        await db.query('BEGIN');
-        try {
-          await db.query("SELECT pg_advisory_xact_lock(hashtext('aurore-dev-check-sample-import'))");
-          result = await importEdition(db, { date: date(sample.efYd), promulgated: date(info.공포일자), sourceKey: sample.lawId, versionKey: payload.법령.법령키, title, url: `https://www.law.go.kr/LSW/lsInfoP.do?efYd=${sample.efYd}&lsiSeq=${sample.MST}`, hash, raw: bytes.toString('utf8'), chunks });
-          await db.query('COMMIT');
-        } catch (error) { await db.query('ROLLBACK'); throw error; }
-      }
-      console.log(JSON.stringify({ title, sourceKey: sample.lawId, hash, status: db ? result.status : 'STAGED', ...(result ? { provisions: result.provisions } : {}) }));
+      console.log(JSON.stringify(await collectLaw(sample, title, oc, directory, db)));
       await delay(1000);
     }
   } finally { if (db) await db.end(); }
