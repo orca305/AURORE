@@ -12,6 +12,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 const require = createRequire(new URL('../package.json', import.meta.url));
 const root = fileURLToPath(new URL('../', import.meta.url));
+const postgresContainer = process.env.AURORE_PG_CONTAINER ?? 'aurore-dev-check-postgres';
 let development;
 try {
   development = new URL(process.env.DATABASE_URL);
@@ -58,7 +59,7 @@ test(
     try {
       run('docker', [
         'exec',
-        'aurore-dev-check-postgres',
+        postgresContainer,
         'createdb',
         '-U',
         'aurore_dev_check',
@@ -850,7 +851,7 @@ test(
       if (created && /^aurore_evidence_test_[0-9a-f]{12}$/.test(name))
         run('docker', [
           'exec',
-          'aurore-dev-check-postgres',
+          postgresContainer,
           'dropdb',
           '--force',
           '-U',

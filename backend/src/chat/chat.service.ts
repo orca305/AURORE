@@ -1,6 +1,7 @@
 import { generationErrorCode } from './job-diagnostics.js';
 import { isUncertainSupplement } from './clarification.js';
 import { redactDocument } from '../documents/document-text.js';
+import { validateQuestion } from './input-filter.js';
 import {
   loadCaseContext,
   cleanedFact,
@@ -557,14 +558,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     caseSelection?: CaseSelection,
     clarifyReplyTo?: string,
   ) {
-    const text = question.trim();
-    if (
-      !text ||
-      Array.from(text).length > 1000 ||
-      /\p{Surrogate}/u.test(text)
-    ) {
-      throw new BadRequestException('질문을 1~1,000자로 입력해 주세요.');
-    }
+    const text = validateQuestion(question);
     if (
       !Array.isArray(documentIds) ||
       documentIds.length > 3 ||

@@ -73,6 +73,8 @@ export function searchTerms(question: string) {
     '어떤',
   ]);
   const aliases: Record<string, string> = {
+    월급: '임금',
+    급여: '임금',
     집주인: '임대인',
     세입자: '임차인',
     전세금: '보증금',
@@ -214,7 +216,13 @@ export async function retrieveStoredEvidence(
           row.kind === 'LEGAL' ? selectors.article : selectors.caseNumber,
         ),
       ) + terms.filter((term) => row.title.toLowerCase().includes(term)).length;
-    const ranked = matching
+    // Some sources put only the article heading in 조문내용; the actual rule is in 항내용.
+    // Keep quotations within one original source field rather than inventing joined text.
+    const bodyFields = matching.filter(
+      (chunk) =>
+        !/^제\s*\d+\s*조(?:의\s*\d+)?\s*\([^)]*\)\s*$/u.test(chunk.text.trim()),
+    );
+    const ranked = (bodyFields.length ? bodyFields : matching)
       .map((chunk) => ({
         chunk,
         score: terms.reduce(
@@ -224,64 +232,66 @@ export async function retrieveStoredEvidence(
       }))
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score);
-    const chunk = ranked[0]?.chunk;
-    if (!chunk) continue;
-    const identity = snapshot.id + ':' + JSON.stringify(chunk.path);
-    if (seen.has(identity)) continue;
-    seen.add(identity);
-    const markdown = evidenceWindow(chunk.text, terms);
-    if (markdown.trim().length < 8) continue;
-    const hex = createHash('sha256').update(identity).digest('hex');
-    const id =
-      hex.slice(0, 8) +
-      '-' +
-      hex.slice(8, 12) +
-      '-4' +
-      hex.slice(13, 16) +
-      '-8' +
-      hex.slice(17, 20) +
-      '-' +
-      hex.slice(20, 32);
-    const date = row.date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
-    result.push({
-      id,
-      name: row.title.slice(0, 80),
-      markdown,
-      mdHash: createHash('sha256').update(markdown).digest('hex'),
-      citation: {
-        srcSnapshotId: snapshot.id,
-        legalVerId: row.kind === 'LEGAL' ? row.targetId : null,
-        legalPrecId: row.kind === 'PREC' ? row.targetId : null,
-        citeTypeCd: row.kind,
-        citeCont: markdown,
-        label:
-          row.title +
-          (row.kind === 'LEGAL'
-            ? ' · ' + date + ' 시행본'
-            : ' · ' + date + ' 선고'),
-        srcUrl: snapshot.srcUrl,
-        viewHref:
-          row.kind === 'LEGAL'
-            ? '/legals/' +
-              row.legalId +
-              '/versions/' +
-              row.targetId +
-              '?' +
-              new URLSearchParams({
-                q:
-                  '제' +
-                  row.article?.replace('의', '조의') +
-                  (row.article?.includes('의') ? '' : '조'),
-                asOf: date,
-              })
-            : '/precedents?' +
-              new URLSearchParams({ q: row.edition }) +
-              '#case-' +
-              row.sourceKey,
-        quoteVerifyCd: 'MATCHED',
-        supportVerifyCd: 'UNREVIEWED',
-      },
-    });
+    // ponytail: at most three original fields for an explicit article; full text stays in its source link.
+    for (const { chunk } of ranked.slice(0, selectors.article ? 3 : 1)) {
+      const identity = snapshot.id + ':' + JSON.stringify(chunk.path);
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      const markdown = evidenceWindow(chunk.text, terms);
+      if (markdown.trim().length < 8) continue;
+      const hex = createHash('sha256').update(identity).digest('hex');
+      const id =
+        hex.slice(0, 8) +
+        '-' +
+        hex.slice(8, 12) +
+        '-4' +
+        hex.slice(13, 16) +
+        '-8' +
+        hex.slice(17, 20) +
+        '-' +
+        hex.slice(20, 32);
+      const date = row.date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+      result.push({
+        id,
+        name: row.title.slice(0, 80),
+        markdown,
+        mdHash: createHash('sha256').update(markdown).digest('hex'),
+        citation: {
+          srcSnapshotId: snapshot.id,
+          legalVerId: row.kind === 'LEGAL' ? row.targetId : null,
+          legalPrecId: row.kind === 'PREC' ? row.targetId : null,
+          citeTypeCd: row.kind,
+          citeCont: markdown,
+          label:
+            row.title +
+            (row.kind === 'LEGAL'
+              ? ' · ' + date + ' 시행본'
+              : ' · ' + date + ' 선고'),
+          srcUrl: snapshot.srcUrl,
+          viewHref:
+            row.kind === 'LEGAL'
+              ? '/legals/' +
+                row.legalId +
+                '/versions/' +
+                row.targetId +
+                '?' +
+                new URLSearchParams({
+                  q:
+                    '제' +
+                    row.article?.replace('의', '조의') +
+                    (row.article?.includes('의') ? '' : '조'),
+                  asOf: date,
+                })
+              : '/precedents?' +
+                new URLSearchParams({ q: row.edition }) +
+                '#case-' +
+                row.sourceKey,
+          quoteVerifyCd: 'MATCHED',
+          supportVerifyCd: 'UNREVIEWED',
+        },
+      });
+      if (result.length === 3) break;
+    }
     if (result.length === 3) break;
   }
   return result;

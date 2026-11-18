@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const postgresContainer = process.env.AURORE_PG_CONTAINER ?? 'aurore-dev-check-postgres';
 const require = createRequire(new URL('../package.json', import.meta.url));
 let developmentUrl;
 try {
@@ -51,7 +52,7 @@ test('chat storage preserves ownership, retries, leases, deletion, expiry and pa
     return { resolve: () => resolve(answer), get started() { return started; }, generate: () => { started = true; return promise; } };
   }
   try {
-    run('docker', ['exec', 'aurore-dev-check-postgres', 'createdb', '-U', 'aurore_dev_check', name]);
+    run('docker', ['exec', postgresContainer, 'createdb', '-U', 'aurore_dev_check', name]);
     created = true;
     run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy', '--config', 'prisma7.config.ts'], {
       cwd: root, env: { ...process.env, DATABASE_URL: url.href },
@@ -231,7 +232,7 @@ test('chat storage preserves ownership, retries, leases, deletion, expiry and pa
     await chat?.onModuleDestroy();
     await db?.$disconnect();
     if (created && /^aurore_chat_test_[0-9a-f]{12}$/.test(name)) {
-      run('docker', ['exec', 'aurore-dev-check-postgres', 'dropdb', '--force', '-U', 'aurore_dev_check', name]);
+      run('docker', ['exec', postgresContainer, 'dropdb', '--force', '-U', 'aurore_dev_check', name]);
     }
   }
 });

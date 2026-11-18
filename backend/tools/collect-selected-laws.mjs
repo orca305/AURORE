@@ -6,7 +6,17 @@ import { readOfficialSample, storeSnapshot } from './capture-law-samples.mjs';
 import { collectEvidence } from './law-evidence.mjs';
 import { importEdition } from './import-law-samples.mjs';
 
-export const titles = ['민법', '형법', '상법', '근로기준법', '개인정보 보호법', '도로교통법', '건축법', '소비자기본법'];
+export const titles = [
+  '민법', '형법', '상법', '근로기준법', '개인정보 보호법', '도로교통법', '건축법', '소비자기본법',
+  '주택임대차보호법', '상가건물 임대차보호법', '근로자퇴직급여 보장법', '최저임금법',
+  '민사소송법', '민사집행법', '형사소송법', '행정소송법', '행정절차법',
+  '가족관계의 등록 등에 관한 법률', '집합건물의 소유 및 관리에 관한 법률',
+  '전자상거래 등에서의 소비자보호에 관한 법률', '공인중개사법', '부동산등기법',
+  '주택임대차보호법 시행령', '상가건물 임대차보호법 시행령', '근로기준법 시행령',
+  '근로자퇴직급여 보장법 시행령', '최저임금법 시행령', '개인정보 보호법 시행령',
+  '도로교통법 시행령', '도로교통법 시행규칙', '건축법 시행령', '건축법 시행규칙',
+  '소비자기본법 시행령', '공인중개사법 시행령',
+];
 export function selectCurrentLaw(payload, title) {
   const root = payload?.LawSearch;
   const count = Number(root?.totalCnt);

@@ -42,13 +42,16 @@ class Review(BaseModel):
     approved: list[StrictInt] = Field(max_length=3)
 
 
-def local_json(system, data):
+def local_json(system, data, *, schema=None, timeout=60, num_predict=1400, think=None):
     model = os.getenv("AURORE_OLLAMA_MODEL", "").strip()
     if not model:
         raise HTTPException(status_code=503, detail="Local document model is not configured")
-    body = json.dumps({"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(data, ensure_ascii=False)}], "format": "json", "stream": False, "options": {"temperature": 0, "num_predict": 1400}})
+    request = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(data, ensure_ascii=False)}], "format": schema or "json", "stream": False, "options": {"temperature": 0, "num_predict": num_predict}}
+    if think is not None:
+        request["think"] = think
+    body = json.dumps(request)
     try:
-        with closing(HTTPConnection("127.0.0.1", 11434, timeout=60)) as connection:
+        with closing(HTTPConnection("127.0.0.1", 11434, timeout=timeout)) as connection:
             connection.request("POST", "/api/chat", body.encode("utf-8"), {"Content-Type": "application/json"})
             response = connection.getresponse()
             raw = response.read(128001)
