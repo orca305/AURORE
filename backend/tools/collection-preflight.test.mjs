@@ -4,7 +4,7 @@ import { datasets, probeDataset } from './collection-preflight.mjs';
 
 test('bounded list probes use correct scope and never expose reflected credentials', async () => {
   const oc = 'SYNTHETIC_SECRET';
-  const roots = { eflaw: ['LawSearch','law','법령일련번호'], admrul: ['AdmRulSearch','admrul','행정규칙일련번호'], ordin: ['OrdinSearch','ordin','자치법규일련번호'], prec: ['PrecSearch','prec','판례일련번호'] };
+  const roots = { eflaw: ['LawSearch','law','법령일련번호'], admrul: ['AdmRulSearch','admrul','행정규칙일련번호'], ordin: ['OrdinSearch','law','자치법규일련번호'], prec: ['PrecSearch','prec','판례일련번호'] };
   for (const dataset of datasets) {
     const result = await probeDataset(dataset, oc, async (url, options) => {
       assert.equal(url.origin, 'https://www.law.go.kr');

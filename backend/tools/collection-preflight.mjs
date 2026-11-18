@@ -36,7 +36,7 @@ export async function probeDataset(dataset, oc, fetchImpl = fetch) {
     const count = String(root?.totalCnt ?? '');
     if (!/^\d+$/.test(count) || !Number.isSafeInteger(Number(count)) || String(root.page) !== '1') throw new Error('shape');
     const total = Number(count);
-    const field = { eflaw: 'law', admrul: 'admrul', ordin: 'ordin', prec: 'prec' }[dataset.target];
+    const field = { eflaw: 'law', admrul: 'admrul', ordin: 'law', prec: 'prec' }[dataset.target];
     const rows = Array.isArray(root[field]) ? root[field] : root[field] ? [root[field]] : [];
     const idField = { eflaw: '법령일련번호', admrul: '행정규칙일련번호', ordin: '자치법규일련번호', prec: '판례일련번호' }[dataset.target];
     if (rows.length !== Math.min(total, 1) || (total && !/^\d+$/.test(String(rows[0]?.[idField] ?? '')))) throw new Error('shape');
