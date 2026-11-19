@@ -121,6 +121,7 @@ export default async function CasePage({
         <DeleteCase
           key={"delete:" + parent.revision}
           label="사건 삭제"
+          targetTitle={parent.title}
           command={{
             operation: "delete",
             caseId: id,
@@ -166,6 +167,7 @@ export default async function CasePage({
                         revision: parent.revision,
                       }}
                       label={row.title + " 사실관계 삭제"}
+                      targetTitle={row.title}
                     />
                   </div>
                 </header>

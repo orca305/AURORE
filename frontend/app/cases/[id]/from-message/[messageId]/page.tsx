@@ -14,6 +14,6 @@ export default async function FactDraftPage({params}:{params:Promise<{id:string;
   return <>
     <section className="intro"><Link href={'/?chat='+data.source.chatId}>← 가져온 대화</Link><h1>사실관계 초안 확인</h1><p>{data.case.title}에 저장할 내용을 확인해 주세요.</p></section>
     <p className={styles.notice}>선택한 내 메시지를 가져왔습니다. 확인된 사실만 남기고 이름 등 불필요한 개인정보를 지운 뒤 저장하세요. 저장 전에는 초안을 보관하지 않습니다. 저장한 사실관계는 원본 대화와 별도로 보관됩니다.</p>
-    <CaseForm command={{operation:'createFact',caseId:id,revision:data.case.revision,srcMsgId:messageId}} initial={{title:data.title,content:data.content}}/>
+    <CaseForm key={data.case.revision} command={{operation:'createFact',caseId:id,revision:data.case.revision,srcMsgId:messageId}} initial={{title:data.title,content:data.content}}/>
   </>;
 }

@@ -1,3 +1,4 @@
+import {positiveId} from '../_components/list-response';
 import { currentToken } from '../_auth/session';
 export type BookmarkKind = 'LEGAL' | 'PREC';
 export type BookmarkItem = { id:string; kind:BookmarkKind; targetId:string; title:string; subtitle:string; savedAt:string; href:string };
@@ -11,6 +12,7 @@ export async function bookmarkStates(kind:BookmarkKind,ids:string[]) {
   if(!ids.length)return new Set<string>();
   const response=await requestBookmarks('/state?'+new URLSearchParams({kind,ids:ids.join(',')}));
   if(!response?.ok)return null;
-  const data=await response.json() as {savedIds:string[]};
-  return new Set(data.savedIds);
+  const data=await response.json().catch(()=>null) as {savedIds?:unknown}|null;
+  if(!data||!Array.isArray(data.savedIds)||data.savedIds.some(value=>!positiveId(value)||!ids.includes(value)))return null;
+  return new Set(data.savedIds as string[]);
 }

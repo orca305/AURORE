@@ -9,3 +9,5 @@
 .caseTools a,.caseTools button,.factTools a,.factTools button{min-height:var(--control-height);display:inline-flex;align-items:center;justify-content:center}
 
 .form .fieldCaption{display:flex;align-items:center;gap:6px;color:var(--secondary);font-size:12px;line-height:1.8}.fieldCaption small{color:var(--muted);font-size:11px;font-weight:400}
+
+.savePreview{grid-column:1/-1;padding:14px 16px;border:1px solid var(--border);background:var(--background);font-size:12px;overflow-wrap:anywhere}.savePreview strong{font-size:13px;font-weight:500}.savePreview p{margin-top:8px;color:var(--secondary)}.savePreview small{display:block;margin-top:8px;line-height:1.8;color:var(--muted)}.formHint{grid-column:1/-1;font-size:12px;color:var(--muted);margin:0}.form .notice{grid-column:1/-1;margin:0}.form button:disabled{cursor:not-allowed}

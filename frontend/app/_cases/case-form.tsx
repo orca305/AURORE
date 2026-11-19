@@ -1,5 +1,6 @@
 "use client";
 import { useActionState, useRef, useState } from "react";
+import {caseFormProblem} from './form-policy';
 import { saveCase, type CaseActionState } from "./actions";
 import type { CaseCommand, CaseType } from "./types";
 import styles from "../cases/page.module.css";
@@ -57,6 +58,8 @@ export function CaseForm({
     },
     null,
   );
+  const locked=Boolean(state&&!state.terminal);
+  const problem=caseFormProblem(command.operation,{title,typeCode,content,date,confirmed})??(!deleting&&!fact&&!types.some(item=>item.code===typeCode)?'사용할 사건 분류를 선택해 주세요.':null);
   const label =
     command.operation === "create"
       ? "사건 저장"
@@ -70,11 +73,11 @@ export function CaseForm({
       {!deleting && (
         <>
           <label>
-            제목
+            <span className={styles.fieldCaption}>제목 <small>{title.length}/80자</small></span>
             <input
               name="title"
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(event) => {setTitle(event.target.value);setConfirmed(false);}}
               required
               maxLength={80}
               disabled={pending || Boolean(state && !state.terminal)}
@@ -89,7 +92,7 @@ export function CaseForm({
               <select
                 name="typeCode"
                 value={typeCode}
-                onChange={(event) => setType(event.target.value)}
+                onChange={(event) => {setType(event.target.value);setConfirmed(false);}}
                 required
                 disabled={pending || Boolean(state && !state.terminal)}
               >
@@ -112,19 +115,19 @@ export function CaseForm({
                 <input
                   type="date"
                   name="occurredOn"
-                  defaultValue={date}
-                  onChange={(event) => setDate(event.target.value)}
+                  value={date}
+                  onChange={(event) => {setDate(event.target.value);setConfirmed(false);}}
                   min="0001-01-01"
                   max="9999-12-31"
                   disabled={pending || Boolean(state && !state.terminal)}
                 />
               </label>
               <label className={styles.wide}>
-                사실관계 내용
+                <span className={styles.fieldCaption}>사실관계 내용 <small>{content.length.toLocaleString('ko-KR')}/4,000자</small></span>
                 <textarea
                   name="content"
                   value={content}
-                  onChange={(event) => setContent(event.target.value)}
+                  onChange={(event) => {setContent(event.target.value);setConfirmed(false);}}
                   required
                   maxLength={4000}
                   rows={5}
@@ -136,6 +139,8 @@ export function CaseForm({
           )}
         </>
       )}
+      <div className={styles.savePreview} aria-label={deleting?'삭제 대상 확인':'저장할 내용 확인'}><strong>{deleting?'삭제 대상':'저장할 내용'} · {title.trim()||'제목 미입력'}</strong><p>{deleting?(command.operation==='delete'?'사건과 포함된 사실관계':'선택한 사실관계'):fact?`사실관계 ${content.length.toLocaleString('ko-KR')}자 · 관련 날짜 ${date||'미입력'}`:types.find(item=>item.code===typeCode)?.label??'분류 선택 필요'}</p>{!deleting&&<small>{fact?'확인된 사실만 남기고 불필요한 개인정보를 지워 주세요. 저장 후 대화에서 별도로 선택해 사용합니다.':'사건을 저장한 다음 사실관계를 추가하고 대화에 연결할 수 있습니다.'}</small>}</div>
+      {locked&&<p className={styles.notice} role="status">처리 결과가 불확실해 입력을 보존했습니다. 내용을 바꾸지 않고 같은 요청으로 결과를 다시 확인해 주세요.</p>}
       {deleting && (
         <p className={styles.wide}>
           {command.operation === "delete"
@@ -161,17 +166,18 @@ export function CaseForm({
         <p role="alert" className={styles.error}>
           {state.error}{" "}
           {state.terminal && command.caseId && (
-            <a href={"/cases/" + command.caseId} data-action-link>최신 내용 확인 </a>
+            <a href={"/cases/" + command.caseId} target="_blank" rel="noopener noreferrer" data-action-link>최신 내용 확인 </a>
           )}
         </p>
       )}
+      {problem&&!pending&&<p className={styles.formHint} role="status">{problem}</p>}
       <div className={styles.formActions}>
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending||Boolean(problem)}
           data-danger={deleting || undefined}
          data-primary>
-          {pending ? "처리 중…" : label}
+          {pending ? "처리 중…" : locked?"같은 요청으로 결과 확인":label}
         </button>
       </div>
     </form>
@@ -180,9 +186,11 @@ export function CaseForm({
 export function DeleteCase({
   command,
   label,
+  targetTitle,
 }: {
   command: CaseCommand;
   label: string;
+  targetTitle?:string;
 }) {
   return (
     <details className={styles.delete}>
@@ -201,7 +209,7 @@ export function DeleteCase({
           <path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6m4-6v6" />
         </svg>
       </summary>
-      <CaseForm command={command} />
+      <CaseForm key={command.revision} command={command} initial={{title:targetTitle??label}} />
     </details>
   );
 }

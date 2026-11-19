@@ -1,3 +1,4 @@
+import {unreadValue} from './list-response';
 import { NotificationBell } from "./notification-bell";
 import { requestNotifications } from '../_notifications/requests';
 import { HeaderAccount } from "./header-account";
@@ -27,7 +28,7 @@ export async function SiteHeader({ signedIn, active, adminAccess }: {
   const member = await currentMember();
   const hasAccount = signedIn ?? Boolean(member);
   const unreadResponse=member?await requestNotifications('/unread'):null;
-  const unread=unreadResponse?.ok?Number((await unreadResponse.json()).count):0;
+  const unread=unreadResponse?.ok?unreadValue(await unreadResponse.json().catch(()=>null)):null;
   const isAdmin = adminAccess ?? (hasAccount && Boolean((await requestAdmin("session"))?.ok));
   return <>
     <aside className={styles.sidebar} aria-label="서비스 탐색">

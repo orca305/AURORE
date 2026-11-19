@@ -1,28 +1,19 @@
+import {PageRefresh} from '../_components/page-actions';
+import {isConsentPage,readAccountPayload} from './form-policy';
 import Link from "next/link";
 import { authRequest, currentToken } from "./session";
 import { LearningConsentForm } from "./learning-consent-form";
 import { PageSizeSelect } from "../_components/page-size-select";
 import { date } from "../_admin/format";
 import styles from "./account.module.css";
-type Consent = {
-  agreed: boolean;
-  revision: string;
-  policyVersion: string;
-  total: number;
-  nextOffset: number | null;
-  history: {
-    id: string;
-    agreed: boolean;
-    policyVersion: string;
-    recordedAt: string;
-  }[];
-};
 export async function LearningConsentPanel({
   limit,
   offset,
+  saved,
 }: {
   limit: number;
   offset: number;
+  saved?:string;
 }) {
   const token = await currentToken();
   const response = token
@@ -32,7 +23,8 @@ export async function LearningConsentPanel({
         { headers: { Authorization: "Bearer " + token } },
       )
     : null;
-  const data = response?.ok ? ((await response.json()) as Consent) : null;
+  const payload=response?.ok?await readAccountPayload(response):null;
+  const data=isConsentPage(payload,limit,offset)?payload:null;
   const url = (n: number) =>
     "/account?" +
     new URLSearchParams({ limit: String(limit), offset: String(n) }) +
@@ -41,7 +33,7 @@ export async function LearningConsentPanel({
     <section id="learning-consent" className={styles.consentSection}>
       <div className={styles.accountGrid}>
         <section className={styles.accountCard}>
-          <h2>학습 활용 동의 · 선택</h2>
+<div className="section-heading"><h2>학습 활용 동의 · 선택</h2><PageRefresh/></div>
           <p className={styles.help}>
             대화·사건·검토한 첨부자료를 오로르 개선을 위한 학습에 활용할지
             선택합니다. 동의하지 않아도 서비스를 이용할 수 있습니다.
@@ -54,10 +46,12 @@ export async function LearningConsentPanel({
           </p>
           {data ? (
             <>
+              {((saved==='agreed'&&data.agreed)||(saved==='withdrawn'&&!data.agreed))&&<p className={styles.notice} role="status">{data.agreed?'학습 활용 동의를 저장했습니다.':'학습 활용 미동의·철회를 저장했습니다.'} 현재 선택과 아래 변경 이력을 확인해 주세요.</p>}
               <p className={styles.consentStatus}>
                 현재 선택{" "}
                 <strong>{data.agreed ? "동의함" : "동의하지 않음"}</strong>
               </p>
+<p className={styles.help}>적용 정책 {data.policyVersion}</p>
               <LearningConsentForm
                 key={data.revision}
                 agreed={data.agreed}
@@ -99,7 +93,8 @@ export async function LearningConsentPanel({
               </div>
               {!data.history.length && (
                 <p className={styles.help}>
-                  이력이 없으면 기본 미동의로 처리합니다.
+                  {data.total===0?'변경 이력이 없으면 기본 미동의로 처리합니다.':'이 페이지에 표시할 변경 이력이 없습니다.'}
+                  {offset>0&&<> <Link href={url(0)}>최근 이력부터 보기</Link></>}
                 </p>
               )}
               <nav className="pagination" aria-label="동의 변경 이력 페이지">

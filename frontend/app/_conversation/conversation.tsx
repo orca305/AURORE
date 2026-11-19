@@ -1,5 +1,7 @@
 "use client";
 
+import {documentSelectionProblem,type DocumentSelection} from './context-selection';
+import {TermLookupPanel} from '../_terms/lookup-panel';
 import {DocumentsPanel} from "./documents-panel";
 import {CaseContextPanel} from "./case-context-panel";
 import { CaseConnection } from "./case-connection";
@@ -36,7 +38,11 @@ export function Conversation({ ask, initialChat, member = false }: {
   const [submitting, setSubmitting] = useState(false);
   const [documentBusy,setDocumentBusy]=useState(false);
   const [documentsOpen,setDocumentsOpen]=useState(false);
-  const [selectedDocuments,setSelectedDocuments]=useState<{id:string;name:string}[]>([]);
+  const [termsOpen,setTermsOpen]=useState(false);
+  const termsButton=useRef<HTMLButtonElement>(null);
+  const termHistory=useRef<HTMLElement>(null);
+  const [termQuery,setTermQuery]=useState('');
+  const [selectedDocuments,setSelectedDocuments]=useState<DocumentSelection[]>([]);
   const [documentEpoch,setDocumentEpoch]=useState(0);
   const [caseSelection,setCaseSelection]=useState<import("./types").CaseSelection|null>(null);
   const [caseEpoch,setCaseEpoch]=useState(0);
@@ -128,6 +134,8 @@ export function Conversation({ ask, initialChat, member = false }: {
     event.preventDefault();
     const question = input.trim();
     if (!question || inFlight.current || pending) return;
+    const selectionProblem=documentSelectionProblem(selectedDocuments);
+    if(selectionProblem){setNotice(selectionProblem);return;}
     inFlight.current = true;
     setSubmitting(true);
     setNotice(null);
@@ -247,7 +255,7 @@ export function Conversation({ ask, initialChat, member = false }: {
       {loadingEarlier ? "이전 대화 불러오는 중…" : "이전 대화 더 보기"}
     </button>}
     {(hasMessages || pending) && <div className={styles.record}>
-      <section aria-label="대화 내용" aria-live="polite" className={styles.history}>
+      <section ref={termHistory} aria-label="대화 내용" aria-live="polite" className={styles.history}>
         <ol className={styles.messages}>
           {messages.map((message, index) => <li key={message.id ?? index}
             className={message.role === "user" ? styles.userMessage : styles.assistantMessage}>
@@ -297,7 +305,7 @@ export function Conversation({ ask, initialChat, member = false }: {
 
     {clarifyTarget&&<div className={styles.caseHint} role="status">이전 질문에 덧붙일 내용을 작성합니다. 첨부자료·사건 정보는 필요한 경우 다시 선택해 주세요. <button type="button" className={styles.reset} disabled={pending||documentBusy} onClick={()=>{setClarifyTarget(null);retryRequest.current=null;}}>새 질문으로 작성</button></div>}
     <form onSubmit={send} className={`${styles.composer} ${!hasMessages ? styles.initialComposer : ""}`}>
-      {selectedDocuments.length>0&&<p className={styles.sourceNote}>이번 질문에 사용할 자료: {selectedDocuments.map(doc=>doc.name).join(' · ')}<button type="button" className={styles.reset} disabled={pending||documentBusy} onClick={()=>setSelectedDocuments([])}>선택 해제</button></p>}
+      {(selectedDocuments.length>0||caseSelection)&&<div className={styles.contextSummary} aria-label="이번 질문에 사용할 정보"><strong>이번 질문에 사용할 정보</strong>{caseSelection&&<p>사실관계 {caseSelection.factIds.length}개 · 법령 조회 기준일 {caseSelection.asOf}<button type="button" className={styles.reset} disabled={pending||documentBusy} onClick={()=>{setCaseSelection(null);setCaseEpoch(value=>value+1);}}>사건 정보 사용 해제</button></p>}{selectedDocuments.length>0&&<><p>첨부자료 {selectedDocuments.length}/3개 · {selectedDocuments.reduce((sum,row)=>sum+row.characterCount,0).toLocaleString('ko-KR')} / 12,000자</p><ul>{selectedDocuments.map(doc=><li key={doc.id}><span>{doc.name}</span><button type="button" className={styles.reset} disabled={pending||documentBusy} aria-label={doc.name+' 이번 질문에서 제외'} onClick={()=>setSelectedDocuments(rows=>rows.filter(row=>row.id!==doc.id))}>선택 해제</button></li>)}</ul></>}<small>확인한 정보만 이번 질문에 사용하며, 다음 질문에는 다시 선택합니다.</small></div>}
       <label htmlFor="conversation-input">{hasMessages ? "이어서 이야기하기" : "나의 상황"}</label>
       <textarea ref={inputField} id="conversation-input" name="question" value={input}
         onChange={event => setInput(event.target.value)}
@@ -310,7 +318,7 @@ export function Conversation({ ask, initialChat, member = false }: {
         required maxLength={1000} placeholder="상황이나 궁금한 점을 편하게 적어 주세요." />
       <div className={styles.composeFooter}>
         <p>Enter 전송 · Shift + Enter 줄바꿈</p>
-        <div className={styles.composeActions}>{saved&&member&&<button type="button" className={styles.attach} aria-expanded={documentsOpen} disabled={documentBusy||pending} onClick={()=>setDocumentsOpen(value=>!value)}>첨부파일</button>}
+        <div className={styles.composeActions}><button ref={termsButton} type="button" className={styles.attach} aria-expanded={termsOpen} aria-controls="conversation-terms" onClick={()=>{const selection=window.getSelection();const selected=selection?.anchorNode&&selection.focusNode&&termHistory.current?.contains(selection.anchorNode)&&termHistory.current.contains(selection.focusNode)?selection.toString().trim():'';if(selected&&selected.length<=100){setTermQuery(selected);setTermsOpen(true);}else{setTermQuery('');setTermsOpen(value=>!value);}setDocumentsOpen(false);}}>용어 찾기</button>{saved&&member&&<button type="button" className={styles.attach} aria-expanded={documentsOpen} disabled={documentBusy||pending} onClick={()=>{setDocumentsOpen(value=>!value);setTermsOpen(false);}}>첨부파일</button>}
         <button type="submit" disabled={documentBusy || pending || !input.trim()} className={styles.send} data-primary>
           {pending ? "확인 중…" : "보내기"}
         </button></div>
@@ -323,6 +331,7 @@ export function Conversation({ ask, initialChat, member = false }: {
         </button>)}
       </div>}
     </form>
+    {termsOpen&&<TermLookupPanel key={termQuery} initialQuery={termQuery} onClose={()=>{setTermsOpen(false);termsButton.current?.focus();}}/>}
     {saved&&member&&<DocumentsPanel open={documentsOpen} onClose={()=>setDocumentsOpen(false)} key={documentEpoch} chatId={roomId??null} disabled={pending||documentBusy} onBusy={value=>{inFlight.current=value;setDocumentBusy(value);}} selected={selectedDocuments} onSelect={setSelectedDocuments} onRemoved={id=>setMessages(previous=>previous.map(message=>({...message,documentQuotes:message.documentQuotes?.filter(quote=>quote.documentId!==id)})))} onSaved={data=>{applyChat(data);window.history.replaceState(null,"","/?chat="+data.id);window.dispatchEvent(new Event('aurore:chat-history'));}}/>}
     {!hasMessages && !pending && <p className={styles.sourceNote}>답변은 법령·판례의 원문과 함께 확인할 수 있습니다. <Link href="/legals" data-action-link>법규 검색 </Link></p>}
   </section>;

@@ -9,7 +9,7 @@ import styles from "../_auth/account.module.css";
 
 export const metadata = {title: "마이페이지 | AURORE"};
 
-export default async function Account({searchParams}:{searchParams:Promise<{limit?:string;offset?:string}>}) {
+export default async function Account({searchParams}:{searchParams:Promise<{limit?:string;offset?:string;consentSaved?:string}>}) {
   const params=await searchParams,limit=parsePageSize(params.limit),offset=/^\d{1,6}$/.test(params.offset??'')?Math.min(Number(params.offset),100000):0;
   const member = await currentMember();
   if (!member) redirect("/login");
@@ -43,7 +43,7 @@ export default async function Account({searchParams}:{searchParams:Promise<{limi
           <PasswordForm />
         </section>
       </div>
-      <LearningConsentPanel limit={limit} offset={offset}/>
+      <LearningConsentPanel limit={limit} offset={offset} saved={params.consentSaved}/>
     </main>
   </div>;
 }

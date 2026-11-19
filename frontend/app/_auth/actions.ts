@@ -1,5 +1,6 @@
 "use server";
 
+import {passwordChangeProblem,validConsentRevision,consentResultMatches,readAccountPayload} from './form-policy';
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { authRequest, currentToken, sessionCookie, tokenPattern, trustedOrigin } from "./session";
@@ -26,7 +27,7 @@ export async function submitAccount(
   });
   if (!response?.ok) {
     if (response?.status === 400) {
-      const { message } = await response.json() as { message?: unknown };
+      const { message } = await readAccountPayload(response) as { message?: unknown };
       return typeof message === "string" ? message : "입력 형식과 글자 수를 확인해 주세요.";
     }
     if (response?.status === 401) return "아이디 또는 비밀번호를 확인해 주세요.";
@@ -37,7 +38,7 @@ export async function submitAccount(
 
   if (mode === "signup") redirect("/login?registered=1");
 
-  const { token } = await response.json() as { token?: unknown };
+  const { token } = await readAccountPayload(response) as { token?: unknown };
   if (typeof token !== "string" || !tokenPattern.test(token)) return "로그인에 실패했습니다. 다시 시도해 주세요.";
   (await cookies()).set(sessionCookie, token, {
     httpOnly: true, sameSite: "lax", secure: origin.protocol === "https:",
@@ -77,14 +78,15 @@ export async function secureAccount(mode: "password" | "logout-all", _previous: 
     const confirmation = form.get("confirmPassword");
     if (typeof confirmation !== "string" || newPassword.normalize("NFC") !== confirmation.normalize("NFC"))
       return "새 비밀번호 확인이 일치하지 않습니다.";
-  }
+    const problem=passwordChangeProblem(currentPassword,newPassword,confirmation);if(problem)return problem;
+  }else if(form.get('confirmed')!=='on')return '모든 기기의 로그아웃 안내를 확인해 주세요.';
   const response = await authRequest(mode, {
     method: "POST",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     ...(mode === "password" ? { body: JSON.stringify({ currentPassword, newPassword }) } : {}),
   });
   if (response?.status === 400) {
-    const { message } = await response.json() as { message?: unknown };
+    const { message } = await readAccountPayload(response) as { message?: unknown };
     return typeof message === "string" ? message : "비밀번호 입력을 확인해 주세요.";
   }
   if (response?.status === 429) return "요청이 많습니다. 잠시 후 다시 시도해 주세요.";
@@ -104,26 +106,30 @@ export async function withdrawAccount(_previous: string | null, form: FormData) 
   if (typeof currentPassword!=='string' || form.get('confirmed')!=='on') return '현재 비밀번호와 탈퇴 안내 확인을 입력해 주세요.';
   const response=await authRequest('withdrawal',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({currentPassword,confirmed:true})});
   if (response?.status===400 || response?.status===409) {
-    const data=await response.json() as {message?:unknown};
+    const data=await readAccountPayload(response) as {message?:unknown};
     return typeof data.message==='string'?data.message:'입력 내용과 계정 상태를 확인해 주세요.';
   }
   if (response?.status===429) return '요청이 많습니다. 잠시 후 다시 시도해 주세요.';
   if (response?.status===401) return '로그인이 만료되었거나 이미 탈퇴한 계정입니다. 다시 로그인해 계정 상태를 확인해 주세요.';
   if (response?.status!==202) return '탈퇴 결과를 확인하지 못했습니다. 다시 시도하거나 로그인 상태를 확인해 주세요.';
-  const result=await response.json() as {withdrawn?:boolean};
+  const result=await readAccountPayload(response) as {withdrawn?:boolean};
   if (result.withdrawn!==true) return '탈퇴 결과를 확인하지 못했습니다. 다시 로그인해 계정 상태를 확인해 주세요.';
   (await cookies()).set(sessionCookie,'',{httpOnly:true,sameSite:'lax',secure:origin.protocol==='https:',path:'/',maxAge:0});
   redirect('/login?withdrawn=1');
 }
 
-export async function saveLearningConsent(revision:string,_previous:string|null,form:FormData){
- if(!(await trustedOrigin()))return '요청을 확인할 수 없습니다. 페이지를 다시 열어 주세요.';
- const token=await currentToken();if(!token)return '다시 로그인해 주세요.';
+export type LearningConsentState={error:string;mustRefresh:boolean;loginRequired?:boolean}|null;
+export async function saveLearningConsent(revision:string,_previous:LearningConsentState,form:FormData):Promise<LearningConsentState>{
+ if(!(await trustedOrigin()))return {error:'요청을 확인할 수 없습니다. 페이지를 다시 열어 주세요.',mustRefresh:true};
+ const token=await currentToken();if(!token)return {error:'다시 로그인해 주세요.',mustRefresh:true,loginRequired:true};
  const choice=form.get('agreed');
- if(!/^(0|[1-9]\d{0,18})$/.test(revision)||!['yes','no'].includes(String(choice))||form.get('confirmed')!=='on')return '학습 활용 선택과 안내 확인을 입력해 주세요.';
- const response=await authRequest('learning-consent',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({agreed:choice==='yes',revision,confirmed:true})});
- if(response?.status===400||response?.status===409){const data=await response.json() as {message?:unknown};return typeof data.message==='string'?data.message:'선택 내용을 확인해 주세요.';}
- if(response?.status===401)return '로그인이 만료됐습니다. 다시 로그인해 주세요.';
- if(!response?.ok)return '저장 결과를 확인하지 못했습니다. 새로고침 후 선택 상태를 확인해 주세요.';
- const {revalidatePath}=await import('next/cache');revalidatePath('/account');revalidatePath('/admin/privacy-retention');return null;
+ if(!validConsentRevision(revision)||!['yes','no'].includes(String(choice))||form.get('confirmed')!=='on')return {error:'학습 활용 선택과 안내 확인을 입력해 주세요.',mustRefresh:false};
+ const agreed=choice==='yes',response=await authRequest('learning-consent',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({agreed,revision,confirmed:true})});
+ if(response?.status===400||response?.status===409){const data=await readAccountPayload(response) as {message?:unknown};return {error:typeof data.message==='string'?data.message:'선택 내용을 확인해 주세요.',mustRefresh:response.status===409};}
+ if(response?.status===401)return {error:'로그인이 만료됐습니다. 다시 로그인해 현재 선택을 확인해 주세요.',mustRefresh:true,loginRequired:true};
+ if(!response?.ok)return {error:'저장 결과를 확인하지 못했습니다. 현재 저장된 선택을 다시 확인한 뒤 변경해 주세요.',mustRefresh:true};
+ const result=await readAccountPayload(response);
+ if(!consentResultMatches(result,agreed))return {error:'저장 결과를 확인하지 못했습니다. 현재 선택을 다시 확인해 주세요.',mustRefresh:true};
+ const {revalidatePath}=await import('next/cache');revalidatePath('/account');revalidatePath('/admin/privacy-retention');
+ redirect('/account?consentSaved='+(agreed?'agreed':'withdrawn')+'#learning-consent');
 }

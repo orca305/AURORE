@@ -1,4 +1,5 @@
 "use server";
+import {validCaseDate} from './form-policy';
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { trustedOrigin, currentToken } from "../_auth/session";
@@ -69,7 +70,7 @@ export async function saveCase(
       !content.trim() ||
       content.length > 4000 ||
       typeof date !== "string" ||
-      (date && !/^\d{4}-\d{2}-\d{2}$/.test(date))
+      !validCaseDate(date)
     )
       return { error: "사실관계 내용과 날짜를 확인해 주세요.", terminal: true };
     body.content = content;
@@ -107,7 +108,8 @@ export async function saveCase(
     }
     return { error, terminal: [400, 403, 404, 409].includes(response.status) };
   }
-  const result = (await response.json()) as { id: string; deleted: boolean };
+  const result = await response.json().catch(()=>null) as {id?:unknown;deleted?:unknown}|null;
+  if(!result||typeof result.id!=='string'||!caseIdPattern.test(result.id)||typeof result.deleted!=='boolean'||(!creating&&result.id!==command.caseId))return {error:'저장 결과를 확인하지 못했습니다. 내용을 바꾸지 않고 같은 요청으로 다시 확인해 주세요.',terminal:false};
   revalidatePath("/cases");
   revalidatePath("/cases/" + result.id);
   revalidatePath("/cases/" + result.id + "/timeline");

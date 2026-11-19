@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState,useState,type FormEvent } from "react";
+import {passwordChangeProblem,passwordLength} from './form-policy';
 import { secureAccount, signOut, submitAccount } from "./actions";
 import styles from "./account.module.css";
 
@@ -40,23 +41,28 @@ export function SignOutForm() {
 
 export function PasswordForm() {
   const [error, action, pending] = useActionState(secureAccount.bind(null, "password"), null);
-  return <form action={action} className={styles.form}>
-    <label>현재 비밀번호<input name="currentPassword" type="password" autoComplete="current-password" required /></label>
-    <label>새 비밀번호<input name="newPassword" type="password" autoComplete="new-password" required aria-describedby="new-password-help" />
-      <small id="new-password-help">8~16자 · 현재와 다른 비밀번호를 입력해 주세요.</small>
+  const [problem,setProblem]=useState<string|null>(null),[length,setLength]=useState(0);
+  function check(event:FormEvent<HTMLFormElement>){const fields=event.currentTarget.elements;const current=(fields.namedItem('currentPassword') as HTMLInputElement).value,next=(fields.namedItem('newPassword') as HTMLInputElement).value,confirmation=(fields.namedItem('confirmPassword') as HTMLInputElement).value;setLength(passwordLength(next));setProblem(passwordChangeProblem(current,next,confirmation));}
+  return <form action={action} className={styles.form} onInput={check}>
+    <label>현재 비밀번호<input name="currentPassword" type="password" autoComplete="current-password" required disabled={pending}/></label>
+    <label>새 비밀번호<input name="newPassword" type="password" autoComplete="new-password" required disabled={pending} aria-describedby="new-password-help"/>
+      <small id="new-password-help">{length}/16자 · 8~16자, 현재와 다른 비밀번호</small>
     </label>
-    <label>새 비밀번호 확인<input name="confirmPassword" type="password" autoComplete="new-password" required /></label>
+    <label>새 비밀번호 확인<input name="confirmPassword" type="password" autoComplete="new-password" required disabled={pending}/></label>
     <p className={styles.help}>변경하면 이 기기를 포함한 모든 기기에서 로그아웃됩니다.</p>
+    {problem&&<p className={styles.help} role="status">{problem}</p>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    <button type="submit" disabled={pending} data-primary>{pending ? "변경 중…" : "비밀번호 변경"}</button>
+    <button type="submit" disabled={pending||Boolean(problem)} data-primary>{pending ? "변경 중…" : "비밀번호 변경"}</button>
   </form>;
 }
 
 export function SignOutAllForm() {
+  const [confirmed,setConfirmed]=useState(false);
   const [error, action, pending] = useActionState(secureAccount.bind(null, "logout-all"), null);
   return <form action={action} className={styles.form}>
     <p className={styles.help}>이 기기를 포함해 로그인된 모든 기기의 접속을 종료합니다.</p>
+    <label className={styles.consentChoice}><input type="checkbox" name="confirmed" required checked={confirmed} disabled={pending} onChange={event=>setConfirmed(event.target.checked)}/>모든 기기에서 다시 로그인해야 함을 확인했습니다.</label>
     {error && <p role="alert" className={styles.error}>{error}</p>}
-    <button type="submit" className={styles.secondary} disabled={pending} data-primary>{pending ? "로그아웃 중…" : "모든 기기에서 로그아웃"}</button>
+    <button type="submit" className={styles.secondary} disabled={pending||!confirmed} data-primary>{pending ? "로그아웃 중…" : "모든 기기에서 로그아웃"}</button>
   </form>;
 }
