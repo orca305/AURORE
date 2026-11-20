@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ChatAnswerService } from './answer.service.js';
+import { ChatAnswerService, formatExplanation } from './answer.service.js';
 import {
   retrieveStoredEvidence,
   type StoredEvidence,
@@ -40,6 +40,7 @@ function fixture(count: number) {
   vi.mocked(retrieveStoredEvidence).mockResolvedValue(candidates);
   const service = new ChatAnswerService({} as PrismaService);
   vi.spyOn(service, 'documentsReady').mockResolvedValue(true);
+  vi.spyOn(service, 'explainEvidence').mockResolvedValue(undefined);
   return { service, candidates };
 }
 
@@ -93,5 +94,112 @@ describe('bounded source relevance search', () => {
       'RELEVANCE_GAP',
     );
     expect(model).toHaveBeenCalledTimes(1);
+  });
+});
+
+const QUOTE =
+  '임대차가 끝난 후 보증금이 반환되지 아니한 경우 임차인은 임차권등기명령을 신청할 수 있다.';
+const EXPLAINED = {
+  verified: true,
+  summary: '보증금을 못 받았다면 임차권등기명령을 신청할 수 있습니다.',
+  summaryBasis: '임차권등기명령을 신청할 수 있다',
+  points: [
+    {
+      kind: 'CONDITION',
+      text: '임대차가 끝난 뒤여야 합니다.',
+      basis: '임대차가 끝난 후',
+    },
+  ],
+  checkFacts: ['계약 기간이 끝났나요?'],
+  needsExpert: true,
+};
+
+describe('plain-language explanation of a verified quote', () => {
+  it('uses the verified explanation text while keeping the original quote as citation', async () => {
+    const { service, candidates } = fixture(1);
+    vi.mocked(service.explainEvidence).mockResolvedValue('쉬운 설명');
+    vi.spyOn(service, 'generateDocuments').mockResolvedValue({
+      phase: 'start',
+      text: '',
+      documentQuotes: [
+        {
+          documentId: candidates[0].id,
+          quote: candidates[0].markdown,
+          mdHash: candidates[0].mdHash,
+        },
+      ],
+    });
+    const result = await service.generateStored('보증금 반환', {
+      text: '이전 질문',
+    });
+    expect(result.providerCd).toBe('LOCAL_EXPLAIN');
+    expect(result.text).toBe('쉬운 설명');
+    expect(result.citation?.citeCont).toBe(candidates[0].markdown);
+    expect(service.explainEvidence).toHaveBeenCalledWith(
+      '보증금 반환',
+      '이전 질문',
+      '합성법',
+      candidates[0].markdown,
+      expect.any(Number),
+    );
+  });
+  it('falls back to the fixed safe text when explanation is unavailable', async () => {
+    const { service, candidates } = fixture(1);
+    vi.spyOn(service, 'generateDocuments').mockResolvedValue({
+      phase: 'start',
+      text: '',
+      documentQuotes: [
+        {
+          documentId: candidates[0].id,
+          quote: candidates[0].markdown,
+          mdHash: candidates[0].mdHash,
+        },
+      ],
+    });
+    const result = await service.generateStored('보증금 반환');
+    expect(result.providerCd).toBe('LOCAL_RAG');
+    expect(result.text).toContain('원문을 찾았습니다');
+  });
+  it('formats only explanations whose basis spans are in the quote', () => {
+    const text = formatExplanation(EXPLAINED, QUOTE)!;
+    expect(text).toContain('[조건] 임대차가 끝난 뒤여야 합니다.');
+    expect(text).toContain('· 계약 기간이 끝났나요?');
+    expect(text).toContain('전문가 상담');
+    expect(
+      formatExplanation({ ...EXPLAINED, summaryBasis: '즉시 반환' }, QUOTE),
+    ).toBeUndefined();
+    expect(
+      formatExplanation(
+        {
+          ...EXPLAINED,
+          points: [{ kind: 'RULE', text: '설명', basis: '원문에 없음' }],
+        },
+        QUOTE,
+      ),
+    ).toBeUndefined();
+    expect(
+      formatExplanation({ ...EXPLAINED, verified: false }, QUOTE),
+    ).toBeUndefined();
+  });
+  it('skips the model call when too little time remains', async () => {
+    const service = new ChatAnswerService({} as PrismaService);
+    const fetcher = vi.spyOn(globalThis, 'fetch');
+    expect(await service.explainEvidence('q', '', 'l', QUOTE, 5_000)).toBe(
+      undefined,
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('follow-up detection', () => {
+  it('flags referential and short questions only', async () => {
+    const { isFollowUpQuestion } = await import('./clarification.js');
+    expect(isFollowUpQuestion('그럼 내용증명은 어떻게 보내?')).toBe(true);
+    expect(isFollowUpQuestion('어떻게 해?')).toBe(true);
+    expect(
+      isFollowUpQuestion(
+        '임대인이 계약 종료 후에도 보증금을 돌려주지 않는데 임차권등기명령은 어느 법원에 신청하나요',
+      ),
+    ).toBe(false);
   });
 });

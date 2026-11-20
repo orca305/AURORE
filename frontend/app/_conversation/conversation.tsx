@@ -263,6 +263,7 @@ export function Conversation({ ask, initialChat, member = false }: {
             <div className={styles.speech}>
               {message.caseContext&&<p className={styles.sourceNote}>사건 사실관계 {message.caseContext.factCount}개 · 사건 버전 {message.caseContext.revision} · 법령 조회 기준일 {message.caseContext.asOf}{message.caseContext.current===false&&<span> · 이후 사건 정보나 연결이 변경되었습니다. 현재 사실관계로 다시 질문해 주세요.</span>}</p>}
               {message.clarifyReplyTo&&<p className={styles.sourceNote}>이전 질문에 보완한 내용</p>}
+              {message.explained&&<p className={styles.citationLabel}>AI 쉬운 해설 · 참고용 (공식 원문이 아닙니다)</p>}
               <p className={styles.messageText}>{message.text}</p>
               {saved&&message.clarification&&message.id===messages.at(-1)?.id&&!pending&&<div className={styles.followups} aria-label="근거 보완 안내"><button type="button" disabled={documentBusy} onClick={()=>{setClarifyTarget(message.id!);inputField.current?.focus();}}>내용 보완하기 </button></div>}
               {saved && member && detail?.linkedCase && message.role === "user" && message.id && <Link className={styles.factImport} href={'/cases/'+detail.linkedCase.id+'/from-message/'+message.id} data-action-link>사실관계로 가져오기 </Link>}

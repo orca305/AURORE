@@ -22,3 +22,11 @@ export function isUncertainSupplement(text: string) {
     text.replace(/\s/gu, ''),
   );
 }
+/** Referential follow-ups that need the earlier question to be searchable. */
+export function isFollowUpQuestion(text: string) {
+  const value = text.normalize('NFKC').trim();
+  if (value.length <= 20) return true;
+  return /^(?:그럼|그러면|그렇다면|그런데|근데|그래서|그리고|또|추가로)|그\s*경우|이\s*경우|그거|이거|그것|이것|그때|거기|위\s*상황|앞에서|방금|아까/u.test(
+    value,
+  );
+}

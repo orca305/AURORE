@@ -1,4 +1,4 @@
-export const jobProviders:Record<string,string>={DEMO:'검증 예제',LOCAL_DOC:'로컬 AI · 첨부자료',LOCAL_RAG:'로컬 AI · 법령근거',STORED_SEARCH:'저장 원문 검색',OTHER:'기타 처리'};
+export const jobProviders:Record<string,string>={DEMO:'검증 예제',LOCAL_DOC:'로컬 AI · 첨부자료',LOCAL_RAG:'로컬 AI · 법령근거',LOCAL_EXPLAIN:'로컬 AI · 근거 해설',STORED_SEARCH:'저장 원문 검색',OTHER:'기타 처리'};
 export const jobErrors:Record<string,{label:string;detail:string}>={
  ACCOUNT_WITHDRAWN:{label:'회원 탈퇴',detail:'계정 탈퇴로 답변 작업을 취소했습니다.'},
  CASE_CONTEXT_CHANGED:{label:'사건 정보 변경',detail:'선택한 사실관계 또는 사건 연결이 변경되어 답변 저장을 취소했습니다.'},

@@ -11,7 +11,7 @@ export const safeJobError = (value: string | null) =>
       ? value
       : 'OTHER';
 export const safeJobProvider = (value: string) =>
-  ['DEMO', 'LOCAL_DOC', 'LOCAL_RAG', 'STORED_SEARCH'].includes(value)
+  ['DEMO', 'LOCAL_DOC', 'LOCAL_RAG', 'LOCAL_EXPLAIN', 'STORED_SEARCH'].includes(value)
     ? value
     : 'OTHER';
 export const safeJobResult = (value: string | null) =>
@@ -33,7 +33,7 @@ export type JobsQuery = {
 };
 // Select operational metadata only. These visibility rules match the dashboard counts.
 const visibleJobs = Prisma.sql`WITH visible_jobs AS (
- SELECT j.id, j.stat_cd AS status, CASE WHEN j.provider_cd IN ('DEMO','LOCAL_DOC','LOCAL_RAG','STORED_SEARCH') THEN j.provider_cd ELSE 'OTHER' END AS provider,
+ SELECT j.id, j.stat_cd AS status, CASE WHEN j.provider_cd IN ('DEMO','LOCAL_DOC','LOCAL_RAG','LOCAL_EXPLAIN','STORED_SEARCH') THEN j.provider_cd ELSE 'OTHER' END AS provider,
    CASE WHEN j.error_cd IS NULL THEN NULL WHEN j.error_cd IN (${Prisma.join(knownErrors)}) THEN j.error_cd ELSE 'OTHER' END AS error_code,
    CASE WHEN j.result_cd IS NULL THEN NULL WHEN j.result_cd IN (${Prisma.join(JOB_RESULT_CODES)}) THEN j.result_cd ELSE 'OTHER' END AS result_code,
    j.attempt_no AS attempts, j.rgst_dttm AS created_at, j.upt_dttm AS updated_at,

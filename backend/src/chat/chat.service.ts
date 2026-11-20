@@ -1,5 +1,5 @@
 import { generationErrorCode } from './job-diagnostics.js';
-import { isUncertainSupplement } from './clarification.js';
+import { isFollowUpQuestion, isUncertainSupplement } from './clarification.js';
 import { redactDocument } from '../documents/document-text.js';
 import { validateQuestion } from './input-filter.js';
 import {
@@ -360,6 +360,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
               }
             : {}),
           documentAnswer: message.answerJobs[0]?.providerCd === 'LOCAL_DOC',
+          explained: message.answerJobs[0]?.providerCd === 'LOCAL_EXPLAIN',
           documentQuotes: message.documentQuotes.map((quote) => ({
             id: quote.id.toString(),
             documentId: quote.attachDocId,
@@ -1250,7 +1251,9 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       orderBy: [{ rgstDttm: 'asc' }, { id: 'asc' }],
       include: {
         chat: true,
-        input: { select: { msgCont: true, clarifyReplyTo: true } },
+        input: {
+          select: { msgCont: true, clarifyReplyTo: true, msgSeq: true },
+        },
       },
     });
     if (!job) return null;
@@ -1357,6 +1360,38 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     return redactDocument(row.parent.msgCont);
   }
 
+  /**
+   * Earlier user questions in the same chat, passed only as transient,
+   * unconfirmed context for a referential follow-up ("그럼 …", short replies).
+   * Nothing is stored or treated as a confirmed fact.
+   */
+  private async followUpContext(
+    chatId: string,
+    beforeSeq: number,
+    question: string,
+  ) {
+    if (!isFollowUpQuestion(question)) return undefined;
+    const rows = await this.db.chatMsg.findMany({
+      where: {
+        chatSessId: chatId,
+        roleCd: 'USER',
+        delYn: false,
+        msgSeq: { lt: beforeSeq },
+      },
+      orderBy: { msgSeq: 'desc' },
+      take: 2,
+      select: { msgCont: true },
+    });
+    if (!rows.length) return undefined;
+    return (
+      '이전 질문(사용자 설명, 확인되지 않은 사실): ' +
+      rows
+        .reverse()
+        .map((row) => redactDocument(row.msgCont).slice(0, 300))
+        .join(' / ')
+    );
+  }
+
   async drain() {
     if (this.working) return;
     this.working = true;
@@ -1401,6 +1436,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
           } else {
             const context = await this.jobCaseContext(job, room.userId);
             const documentQuestion = job.input.msgCont;
+            const phaseCd = job.phaseCd;
             const previous = job.input.clarifyReplyTo
               ? await this.supplementQuestion(
                   job.chatSessId,
@@ -1435,7 +1471,17 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
                         },
                         Boolean(previous),
                       )
-                    : this.answers.generate(documentQuestion, job.phaseCd),
+                    : this.followUpContext(
+                        job.chatSessId,
+                        job.input.msgSeq,
+                        documentQuestion,
+                      ).then((history) =>
+                        this.answers.generate(
+                          documentQuestion,
+                          phaseCd,
+                          history,
+                        ),
+                      ),
               new Promise<never>((_, reject) => {
                 deadline = setTimeout(
                   () => reject(new Error('GenerationTimeout')),

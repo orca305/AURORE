@@ -50,12 +50,82 @@ export type DocumentEvidence = {
 export type PreparedAnswer = {
   resultCd?: JobResultCode;
   clarifyCd?: ClarifyCode;
-  providerCd?: 'LOCAL_RAG' | 'STORED_SEARCH';
+  providerCd?: 'LOCAL_RAG' | 'LOCAL_EXPLAIN' | 'STORED_SEARCH';
   documentQuotes?: DocumentEvidence[];
   phase: Phase;
   text: string;
   citation?: PreparedCitation;
 };
+
+const EXPLAIN_KINDS: Record<string, string> = {
+  RULE: '내용',
+  CONDITION: '조건',
+  EXCEPTION: '예외',
+};
+/** Re-checks the AI server's contract (basis spans are verbatim) before display. */
+export function formatExplanation(
+  value: unknown,
+  quote: string,
+): string | undefined {
+  const row = value as {
+    verified?: unknown;
+    summary?: unknown;
+    summaryBasis?: unknown;
+    points?: unknown;
+    checkFacts?: unknown;
+    needsExpert?: unknown;
+  };
+  const text = (v: unknown, max: number) =>
+    typeof v === 'string' && v.trim().length > 0 && v.length <= max;
+  if (
+    !row ||
+    row.verified !== true ||
+    !text(row.summary, 300) ||
+    !text(row.summaryBasis, 600) ||
+    !quote.includes(row.summaryBasis as string) ||
+    !Array.isArray(row.points) ||
+    row.points.length < 1 ||
+    row.points.length > 4 ||
+    !Array.isArray(row.checkFacts) ||
+    row.checkFacts.length > 3 ||
+    typeof row.needsExpert !== 'boolean'
+  )
+    return;
+  const points: string[] = [];
+  for (const point of row.points as {
+    kind?: unknown;
+    text?: unknown;
+    basis?: unknown;
+  }[]) {
+    if (
+      !point ||
+      typeof point.kind !== 'string' ||
+      !EXPLAIN_KINDS[point.kind] ||
+      !text(point.text, 300) ||
+      !text(point.basis, 600) ||
+      !quote.includes(point.basis as string)
+    )
+      return;
+    points.push(
+      '· [' + EXPLAIN_KINDS[point.kind] + '] ' + (point.text as string).trim(),
+    );
+  }
+  if (!row.checkFacts.every((fact) => text(fact, 160))) return;
+  const lines = [(row.summary as string).trim(), '', ...points];
+  if (row.checkFacts.length)
+    lines.push(
+      '',
+      '이 조문이 적용되는지 확인할 점',
+      ...(row.checkFacts as string[]).map((fact) => '· ' + fact.trim()),
+    );
+  lines.push(
+    '',
+    row.needsExpert
+      ? '실제 분쟁이나 절차 진행이 걸린 문제라면 변호사·법률구조공단 등 전문가 상담을 함께 받아 보세요.'
+      : '개별 사정에 따라 결론이 달라질 수 있으니 아래 원문과 시행일을 함께 확인해 주세요.',
+  );
+  return lines.join('\n');
+}
 
 @Injectable()
 export class ChatAnswerService {
@@ -163,7 +233,11 @@ export class ChatAnswerService {
     };
   }
 
-  async generate(question: string, phase: string): Promise<PreparedAnswer> {
+  async generate(
+    question: string,
+    phase: string,
+    history?: string,
+  ): Promise<PreparedAnswer> {
     const tools = (await import(
       new URL('../../tools/demo-conversation.mjs', import.meta.url).href
     )) as {
@@ -205,7 +279,17 @@ export class ChatAnswerService {
           resultCd: 'FACTS_UNCONFIRMED',
           text: '어떤 상황인지 조금 더 설명해 주시겠어요? 법률 문제라면 궁금한 점과 관련된 사실을 함께 알려 주세요.',
         };
-      return this.generateStored(question);
+      // 의도 분석은 검색어 힌트로만 쓴다. 차단·분기·인용 근거로는 쓰지 않는다.
+      // 후속 질문은 이전 질문과 함께 분석해야 "법원에 뭘 신청해?" 같은 흔한 단어에 검색이 끌려가지 않는다.
+      const hints = await this.searchHints(
+        history
+          ? (history.replace(/^[^:]*:\s*/u, '').slice(-600) + ' ' + question).slice(-900)
+          : question,
+      );
+      const text = [history, hints.length ? '검색어 힌트: ' + hints.join(' ') : '']
+        .filter(Boolean)
+        .join('\n');
+      return this.generateStored(question, text ? { text } : undefined);
     }
     if (!reply.source)
       return {
@@ -258,11 +342,21 @@ export class ChatAnswerService {
       const quote = answer.documentQuotes?.[0];
       if (!quote) continue;
       const candidate = batch.find((row) => row.id === quote.documentId)!;
+      const explanation = await this.explainEvidence(
+        question,
+        context?.text ?? '',
+        candidate.citation.label,
+        quote.quote,
+        // Stay well inside the 180s per-attempt race; fall back instead of timing out.
+        Math.min(110_000, 150_000 - (Date.now() - started)),
+      );
       return {
         phase: 'start',
-        providerCd: 'LOCAL_RAG',
+        providerCd: explanation ? 'LOCAL_EXPLAIN' : 'LOCAL_RAG',
         resultCd: 'EVIDENCE_FOUND',
-        text: '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.',
+        text:
+          explanation ??
+          '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.',
         citation: {
           ...candidate.citation,
           citeCont: quote.quote,
@@ -271,6 +365,76 @@ export class ChatAnswerService {
       };
     }
     return missingEvidence('RELEVANCE_GAP', supplement);
+  }
+
+  /**
+   * 로컬 모델이 뽑은 최대 5개의 한국어 검색 키워드. 일상 표현("월급을 안 줘요")을
+   * 법령 용어로 이어 주는 용도이며, 실패하거나 비활성화되면 빈 목록이다.
+   */
+  async searchHints(question: string): Promise<string[]> {
+    if (process.env.AURORE_SEARCH_HINTS === '0') return [];
+    try {
+      const response = await fetch(this.documentUrl('/intent/analyze'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+        signal: AbortSignal.timeout(15_000),
+        redirect: 'error',
+      });
+      if (!response.ok) return [];
+      const body = await response.text();
+      if (body.length > 4000) return [];
+      const value = JSON.parse(body) as {
+        available?: boolean;
+        keywords?: unknown;
+      };
+      if (value.available !== true || !Array.isArray(value.keywords)) return [];
+      return value.keywords
+        .filter(
+          (word): word is string =>
+            typeof word === 'string' &&
+            word.length >= 1 &&
+            word.length <= 40 &&
+            /^[가-힣a-zA-Z0-9 ]+$/u.test(word),
+        )
+        .slice(0, 5);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Plain-language explanation of one verified quote. Returns undefined on any
+   * failure so the caller keeps its fixed safe text; the quote itself is stored
+   * separately as the citation and is never replaced by model output.
+   */
+  async explainEvidence(
+    question: string,
+    context: string,
+    label: string,
+    quote: string,
+    budgetMs = 110_000,
+  ): Promise<string | undefined> {
+    if (process.env.AURORE_EXPLAIN === '0' || budgetMs < 20_000) return;
+    try {
+      const response = await fetch(this.documentUrl('/legal/explain'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question,
+          context: context.slice(0, 2000),
+          evidence: { label: label.slice(0, 200), quote },
+        }),
+        signal: AbortSignal.timeout(budgetMs),
+        redirect: 'error',
+      });
+      if (!response.ok) return;
+      const body = await response.text();
+      if (body.length > 20000) return;
+      return formatExplanation(JSON.parse(body), quote);
+    } catch {
+      return;
+    }
   }
 
   private async prepareCitation(
