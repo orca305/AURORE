@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
@@ -87,10 +88,17 @@ async function main() {
   const db = flag ? new pg.Client({ connectionString: url.href, connectionTimeoutMillis: 10000 }) : null;
   if (db) await db.connect();
   try {
-    for (const title of titles) {
-      const sample = await findLaw(title, oc);
-      await delay(1000);
-      console.log(JSON.stringify(await collectLaw(sample, title, oc, directory, db)));
+    // LAW_TITLES_FILE(줄 단위 법령명)이 있으면 그 목록만 수집하고, 한 법령이 실패해도 나머지를 계속한다.
+    const custom = process.env.LAW_TITLES_FILE ? (await readFile(process.env.LAW_TITLES_FILE, 'utf8')).split(/\r?\n/u).map(line => line.trim()).filter(line => line && !line.startsWith('#')) : null;
+    for (const title of custom ?? titles) {
+      try {
+        const sample = await findLaw(title, oc);
+        await delay(1000);
+        console.log(JSON.stringify(await collectLaw(sample, title, oc, directory, db)));
+      } catch (error) {
+        if (!custom) throw error;
+        console.log(JSON.stringify({ title, status: 'SKIPPED', reason: String(error?.message ?? error).slice(0, 60) }));
+      }
       await delay(1000);
     }
   } finally { if (db) await db.end(); }

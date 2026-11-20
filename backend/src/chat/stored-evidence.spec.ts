@@ -1,7 +1,30 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { retrieveStoredEvidence, searchTerms } from './stored-evidence.js';
+import {
+  retrieveStoredEvidence,
+  searchTerms,
+  weightedTerms,
+} from './stored-evidence.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
+
+describe('search term weighting', () => {
+  it('ranks hint terms above plain terms and generic court words lowest', () => {
+    const { terms, weight } = weightedTerms(
+      '그럼 법원에 뭘 신청할 수 있어?',
+      '이전 질문(사용자 설명, 확인되지 않은 사실): 전세 계약\n검색어 힌트: 보증금 법원 신청',
+    );
+    expect(weight('보증금')).toBe(4);
+    expect(weight('법원')).toBe(1);
+    expect(weight('뭘')).toBe(2);
+    // 힌트 단어는 16개 제한에서 밀리지 않는다.
+    expect(terms.slice(0, 2)).toEqual(['보증금', '법원']);
+  });
+  it('keeps plain weighting without hints and never grants weight to context text alone', () => {
+    const { weight } = weightedTerms('보증금 반환', '이전 질문: 전세');
+    expect(weight('보증금')).toBe(2);
+    expect(weight('전세')).toBe(2);
+  });
+});
 
 describe('official source field selection', () => {
   it('searches official wage terminology for everyday salary expressions', () => {

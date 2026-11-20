@@ -181,6 +181,24 @@ describe('plain-language explanation of a verified quote', () => {
       formatExplanation({ ...EXPLAINED, verified: false }, QUOTE),
     ).toBeUndefined();
   });
+  it('masks personal patterns before the question leaves for the explainer', async () => {
+    const service = new ChatAnswerService({} as PrismaService);
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}', { status: 200 }));
+    await service.explainEvidence(
+      '제 번호는 010-1234-5678 이고 test@example.com 입니다. 보증금을 못 받았어요',
+      '주민등록번호: 900101-1234567\n이전 질문 내용',
+      '주택임대차보호법 제3조의3',
+      QUOTE,
+      60_000,
+    );
+    const sent = String(fetcher.mock.calls[0][1]?.body);
+    expect(sent).not.toMatch(/010-1234-5678|test@example\.com|1234567/u);
+    expect(sent).toContain('[연락처 제외]');
+    expect(sent).toContain('보증금을 못 받았어요');
+    fetcher.mockRestore();
+  });
   it('skips the model call when too little time remains', async () => {
     const service = new ChatAnswerService({} as PrismaService);
     const fetcher = vi.spyOn(globalThis, 'fetch');

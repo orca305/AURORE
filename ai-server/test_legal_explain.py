@@ -88,6 +88,12 @@ class ExplainTests(unittest.TestCase):
                 self.assertTrue(explain(request())["verified"])
             self.assertEqual(external.call_count, 2)
 
+    def test_basis_tolerates_whitespace_only(self):
+        spaced = draft(summaryBasis="임대차가  끝난 후\n보증금이 반환되지 아니한 경우")
+        with patch("legal_explain.local_json", side_effect=[spaced, OK]):
+            self.assertTrue(explain(request())["verified"])
+        self.assertIn("BASIS_NOT_IN_QUOTE", self.assertRejected(draft(summaryBasis="임대차가 끝난 뒤 보증금이 반환되지 아니한 경우")))
+
     def test_invalid_model_json(self):
         self.assertIn("EXPLANATION_INVALID", self.assertRejected({"summary": "x"}))
 

@@ -5,6 +5,7 @@ import { retrieveStoredEvidence } from './stored-evidence.js';
 import { Injectable } from '@nestjs/common';
 import { isAbsolute } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { redactDocument } from '../documents/document-text.js';
 
 export type Phase = 'start' | 'lease-end' | 'renewal-delivery';
 type DemoSource = {
@@ -62,6 +63,11 @@ const EXPLAIN_KINDS: Record<string, string> = {
   CONDITION: '조건',
   EXCEPTION: '예외',
 };
+// 공백·줄바꿈 차이만 허용하고 글자는 원문과 같아야 한다(AI 서버 검증과 동일).
+const inQuote = (quote: string, span: string) => {
+  const flat = span.replace(/\s+/gu, '');
+  return flat.length >= 4 && quote.replace(/\s+/gu, '').includes(flat);
+};
 /** Re-checks the AI server's contract (basis spans are verbatim) before display. */
 export function formatExplanation(
   value: unknown,
@@ -82,7 +88,7 @@ export function formatExplanation(
     row.verified !== true ||
     !text(row.summary, 300) ||
     !text(row.summaryBasis, 600) ||
-    !quote.includes(row.summaryBasis as string) ||
+    !inQuote(quote, row.summaryBasis as string) ||
     !Array.isArray(row.points) ||
     row.points.length < 1 ||
     row.points.length > 4 ||
@@ -103,7 +109,7 @@ export function formatExplanation(
       !EXPLAIN_KINDS[point.kind] ||
       !text(point.text, 300) ||
       !text(point.basis, 600) ||
-      !quote.includes(point.basis as string)
+      !inQuote(quote, point.basis as string)
     )
       return;
     points.push(
@@ -132,10 +138,13 @@ export class ChatAnswerService {
   constructor(private readonly db: PrismaService) {}
 
   private documentUrl(path: string) {
-    const url = new URL(
-      path,
-      process.env.AURORE_AI_URL || 'http://127.0.0.1:8000',
-    );
+    // 해설만 별도 서버(예: 외부 모델을 붙인 AI 서버)로 보낼 수 있다. 어느 쪽이든 루프백만 허용한다.
+    const base =
+      (path === '/legal/explain' && process.env.AURORE_EXPLAIN_URL) ||
+      (path === '/documents/answer' && process.env.AURORE_REVIEW_URL) ||
+      process.env.AURORE_AI_URL ||
+      'http://127.0.0.1:8000';
+    const url = new URL(path, base);
     if (
       !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
       !['http:', 'https:'].includes(url.protocol)
@@ -165,8 +174,9 @@ export class ChatAnswerService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        question,
-        ...(context ? { context } : {}),
+        // 관련성 검토 모델(외부 모델일 수 있음)로 나가는 사용자 문장은 항상 패턴 마스킹을 거친다.
+        question: redactDocument(question).slice(0, 1000) || '질문',
+        ...(context ? { context: redactDocument(context).slice(0, 8000) } : {}),
         documents: documents.map(({ id, name, markdown }) => ({
           id,
           name,
@@ -420,9 +430,11 @@ export class ChatAnswerService {
       const response = await fetch(this.documentUrl('/legal/explain'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // 해설 모델(외부 모델일 수 있음)로 나가는 사용자 문장은 항상 패턴 마스킹을 거친다.
+        // 서술 속 이름·주소까지 완전히 가리지는 못하므로 정책·동의 문구와 함께 판단한다.
         body: JSON.stringify({
-          question,
-          context: context.slice(0, 2000),
+          question: redactDocument(question).slice(0, 1000) || '질문',
+          context: redactDocument(context).slice(0, 2000),
           evidence: { label: label.slice(0, 200), quote },
         }),
         signal: AbortSignal.timeout(budgetMs),

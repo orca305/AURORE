@@ -108,6 +108,18 @@ export function searchTerms(question: string) {
   return [...new Set(terms)].slice(0, 16);
 }
 const GENERIC_TERMS = new Set(['법원', '청구', '소송', '재판', '절차', '사건']);
+// 의도 분석 힌트 단어는 우선순위를 높이고, 어느 법에나 나오는 법원 관련 단어는 낮춘다(개수만 세면 흔한 단어가 순위를 밀어낸다).
+export function weightedTerms(question: string, contextText = '') {
+  const priority = new Set(
+    searchTerms(contextText.match(/검색어 힌트:[^\n]*/u)?.[0] ?? ''),
+  );
+  const terms = [
+    ...new Set([...priority, ...searchTerms(question + ' ' + contextText)]),
+  ].slice(0, 16);
+  const weight = (term: string) =>
+    GENERIC_TERMS.has(term) ? 1 : priority.has(term) ? 4 : 2;
+  return { terms, weight };
+}
 export function evidenceWindow(text: string, terms: string[], limit = 1200) {
   const lower = text.toLowerCase(),
     starts = new Set([0]);
@@ -148,15 +160,7 @@ export async function retrieveStoredEvidence(
   )
     throw new Error('Invalid evidence candidate limit');
   const selectors = searchSelectors(question);
-  // 의도 분석 힌트 단어는 우선순위를 높이고, 어느 법에나 나오는 법원 관련 단어는 낮춘다(개수만 세면 흔한 단어가 순위를 밀어낸다).
-  const priority = new Set(
-    searchTerms(contextText.match(/검색어 힌트:[^\n]*/u)?.[0] ?? ''),
-  );
-  const terms = [
-    ...new Set([...priority, ...searchTerms(question + ' ' + contextText)]),
-  ].slice(0, 16);
-  const weight = (term: string) =>
-    GENERIC_TERMS.has(term) ? 1 : priority.has(term) ? 4 : 2;
+  const { terms, weight } = weightedTerms(question, contextText);
   if (!terms.length && !selectors.article && !selectors.caseNumber) return [];
   const rank = (text: Prisma.Sql) =>
     terms.length
