@@ -41,6 +41,12 @@ function fixture(count: number) {
   const service = new ChatAnswerService({} as PrismaService);
   vi.spyOn(service, 'documentsReady').mockResolvedValue(true);
   vi.spyOn(service, 'explainEvidence').mockResolvedValue(undefined);
+  // 질의 분석은 로컬 AI를 호출하므로 검색 단위 시험에서는 빈 결과로 고정한다.
+  vi.spyOn(service, 'analyzeQuery').mockResolvedValue({
+    keywords: [],
+    terms: [],
+    laws: [],
+  });
   return { service, candidates };
 }
 
@@ -72,7 +78,17 @@ describe('bounded source relevance search', () => {
       undefined,
       undefined,
       12,
+      [],
+      expect.objectContaining({ pool: 36 }),
     );
+  });
+  it('reviews two batches at once but prefers the earlier batch', async () => {
+    const { service, candidates } = fixture(6);
+    const quote = (index: number) => ({ phase: 'start' as const, text: '', documentQuotes: [{ documentId: candidates[index].id, quote: candidates[index].markdown, mdHash: candidates[index].mdHash }] });
+    const model = vi.spyOn(service, 'generateDocuments').mockResolvedValueOnce(quote(1)).mockResolvedValueOnce(quote(4));
+    const result = await service.generateStored('보증금 반환');
+    expect(model).toHaveBeenCalledTimes(2);
+    expect(result.citation?.srcSnapshotId).toBe(2n);
   });
   it('exhausts at most four batches without inventing a citation', async () => {
     const { service } = fixture(12);
@@ -84,7 +100,54 @@ describe('bounded source relevance search', () => {
     expect(result.citation).toBeUndefined();
     expect(model).toHaveBeenCalledTimes(4);
   });
+  it('shows the closest candidate as unreviewed when the AI named its law but the review rejected everything', async () => {
+    const { service, candidates } = fixture(4);
+    candidates.forEach((row, index) => {
+      row.citation.label = `합성법 제${index + 1}조 · 2026-01-01 시행본`;
+    });
+    vi.spyOn(service, 'analyzeQuery').mockResolvedValue({
+      keywords: [],
+      terms: [],
+      laws: ['합성법'],
+    });
+    vi.spyOn(service, 'generateDocuments').mockResolvedValue({
+      phase: 'start',
+      text: '',
+      documentQuotes: [],
+    });
+    const result = await service.generateStored('근거가 애매한 질문');
+    expect(result.resultCd).toBe('RELEVANCE_GAP');
+    expect(result.providerCd).toBe('STORED_SEARCH');
+    expect(result.citation?.supportVerifyCd).toBe('UNREVIEWED');
+    expect(result.citation?.label).toContain('합성법 제1조');
+    expect(result.text).toContain('참고용');
+    // 후보 표시는 끌 수 있고, 끄면 근거 없이 보류한다.
+    vi.stubEnv('AURORE_GAP_CANDIDATE', '0');
+    const off = await service.generateStored('근거가 애매한 질문');
+    expect(off.citation).toBeUndefined();
+    vi.unstubAllEnvs();
+  });
+  it('does not show a candidate when its law was not named by the AI', async () => {
+    const { service, candidates } = fixture(4);
+    candidates.forEach((row, index) => {
+      row.citation.label = `다른법 제${index + 1}조 · 2026-01-01 시행본`;
+    });
+    vi.spyOn(service, 'analyzeQuery').mockResolvedValue({
+      keywords: [],
+      terms: [],
+      laws: ['합성법'],
+    });
+    vi.spyOn(service, 'generateDocuments').mockResolvedValue({
+      phase: 'start',
+      text: '',
+      documentQuotes: [],
+    });
+    const result = await service.generateStored('무관한 질문');
+    expect(result.resultCd).toBe('RELEVANCE_GAP');
+    expect(result.citation).toBeUndefined();
+  });
   it('stops launching more batches after its search budget', async () => {
+    process.env.AURORE_REVIEW_PARALLEL = '1';
     const { service } = fixture(12);
     vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(35_000);
     const model = vi
@@ -94,6 +157,7 @@ describe('bounded source relevance search', () => {
       'RELEVANCE_GAP',
     );
     expect(model).toHaveBeenCalledTimes(1);
+    delete process.env.AURORE_REVIEW_PARALLEL;
   });
 });
 

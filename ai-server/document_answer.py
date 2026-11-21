@@ -78,7 +78,7 @@ def local_json(system, data, *, schema=None, timeout=60, num_predict=1400, think
     model = os.getenv("AURORE_OLLAMA_MODEL", "").strip()
     if not model:
         raise HTTPException(status_code=503, detail="Local document model is not configured")
-    request = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(data, ensure_ascii=False)}], "format": schema or "json", "stream": False, "options": {"temperature": 0, "num_predict": num_predict}}
+    request = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(data, ensure_ascii=False)}], "format": schema or "json", "stream": False, "keep_alive": os.getenv("AURORE_OLLAMA_KEEP_ALIVE", "30m"), "options": {"temperature": 0, "num_predict": num_predict}}
     if think is not None:
         request["think"] = think
     body = json.dumps(request)

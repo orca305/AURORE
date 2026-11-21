@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  rerankRows,
   retrieveStoredEvidence,
   searchTerms,
   weightedTerms,
@@ -97,5 +98,22 @@ describe('official source field selection', () => {
     expect(result[0].markdown).not.toBe('제43조(임금 지급)');
     expect(result[0].citation.citeCont).toBe(result[0].markdown);
     expect(result[0].citation.quoteVerifyCd).toBe('MATCHED');
+  });
+});
+
+describe('deterministic rerank', () => {
+  const row = (sourceKey: string, proviNm: string, score: number) => ({ kind: 'LEGAL', sourceKey, title: sourceKey, proviNm, score });
+  it('promotes articles whose heading contains a legal term from the analysis', () => {
+    const rows = [row('a', '임대차 기간', 10), row('b', '술에 취한 상태에서의 운전 금지', 8)];
+    expect(rerankRows(rows, { legalTerms: ['운전 금지'], limit: 2 }).map((r) => r.sourceKey)).toEqual(['b', 'a']);
+  });
+  it('keeps the original order without legal terms and caps articles per law', () => {
+    const rows = [1, 2, 3, 4, 5].map((n) => row('same', '제목' + n, 10 - n)).concat([row('other', '다른 법', 1)]);
+    const result = rerankRows(rows, { legalTerms: [], limit: 6, perLawCap: 4 });
+    expect(result.map((r) => r.sourceKey)).toEqual(['same', 'same', 'same', 'same', 'other']);
+  });
+  it('never boosts case rulings', () => {
+    const rows = [{ kind: 'PREC', sourceKey: 'p', title: 'p', proviNm: '운전 금지', score: 1 }, row('a', '무관', 2)];
+    expect(rerankRows(rows, { legalTerms: ['운전 금지'], limit: 2 }).map((r) => r.sourceKey)).toEqual(['a', 'p']);
   });
 });

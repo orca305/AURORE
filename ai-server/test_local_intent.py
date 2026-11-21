@@ -32,3 +32,26 @@ class LocalIntentTests(unittest.TestCase):
                 self.assertFalse(actual["available"])
         with patch("local_intent.local_json", side_effect=TimeoutError):
             self.assertTrue(analyze_intent(IntentQuestion(question="질문"))["requires_retrieval"])
+
+
+class LegalTermHintTests(unittest.TestCase):
+    def test_legal_terms_and_law_names_are_returned_and_bounded(self):
+        result = {"intent": "LEGAL", "domain": "traffic", "keywords": ["음주운전"], "requires_retrieval": True,
+                  "legal_terms": ["술에 취한 상태", "혈중알코올농도"], "law_names": ["도로교통법"]}
+        with patch("local_intent.local_json", return_value=result):
+            actual = analyze_intent(IntentQuestion(question="술 마시고 운전하면 단속 기준이 뭐예요"))
+        self.assertTrue(actual["available"])
+        self.assertEqual(actual["legal_terms"], ["술에 취한 상태", "혈중알코올농도"])
+        self.assertEqual(actual["law_names"], ["도로교통법"])
+        for bad in ({"legal_terms": ["a"] * 6}, {"law_names": ["법"] * 4}):
+            with patch("local_intent.local_json", return_value={**result, **bad}):
+                bounded = analyze_intent(IntentQuestion(question="질문"))
+            self.assertFalse(bounded["available"])
+            self.assertEqual(bounded["law_names"], [])
+
+    def test_older_model_output_without_new_fields_stays_valid(self):
+        result = {"intent": "LEGAL", "domain": "labor", "keywords": ["임금"], "requires_retrieval": True}
+        with patch("local_intent.local_json", return_value=result):
+            actual = analyze_intent(IntentQuestion(question="임금을 안 줘요"))
+        self.assertTrue(actual["available"])
+        self.assertEqual(actual["legal_terms"], [])

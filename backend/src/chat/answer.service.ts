@@ -1,7 +1,7 @@
 import { classifyQuestion } from './intent-routing.js';
 import type { JobResultCode } from './job-diagnostics.js';
 import { missingEvidence, type ClarifyCode } from './clarification.js';
-import { retrieveStoredEvidence } from './stored-evidence.js';
+import { retrieveStoredEvidence, type StoredEvidence } from './stored-evidence.js';
 import { Injectable } from '@nestjs/common';
 import { isAbsolute } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -322,12 +322,20 @@ export class ChatAnswerService {
     context?: { text: string; asOf?: string },
     supplement = false,
   ): Promise<PreparedAnswer> {
+    const analysis = await this.analyzeQuery(question);
     const candidates = await retrieveStoredEvidence(
       this.db,
       question,
       context?.asOf,
       context?.text,
       12,
+      analysis.laws,
+      {
+        pool: Number(process.env.AURORE_RETRIEVAL_POOL ?? 36) || 12,
+        legalTerms: analysis.terms,
+        vectorQuery: [question, ...analysis.terms].join(' '),
+        termQuery: [...analysis.terms, ...analysis.laws].join(' '),
+      },
     );
     if (!candidates.length) return missingEvidence('SOURCE_GAP', supplement);
     if (!(await this.documentsReady()))
@@ -339,42 +347,76 @@ export class ChatAnswerService {
         citation: candidates[0].citation,
       };
     const started = Date.now();
-    // Check at most 12 bounded candidates in the existing three-document contract.
-    // Stop starting additional batches after 30s; an in-flight call keeps its existing timeout.
-    for (let offset = 0; offset < candidates.length; offset += 3) {
-      if (offset && Date.now() - started >= 30_000) break;
-      const batch = candidates.slice(offset, offset + 3);
-      const answer = await this.generateDocuments(
-        question,
-        batch,
-        context?.text,
+    // 후보 최대 12개를 3개씩 묶어 검토한다. 묶음 2개를 동시에 검토하되 결과는 항상 앞 묶음을 우선한다.
+    // 30초가 지나면 새 묶음을 시작하지 않는다(진행 중 호출은 기존 제한 시간을 따른다).
+    const batches: StoredEvidence[][] = [];
+    for (let offset = 0; offset < candidates.length; offset += 3)
+      batches.push(candidates.slice(offset, offset + 3));
+    let reviewed = false;
+    let firstFailure: unknown;
+    const wave = Math.max(1, Number(process.env.AURORE_REVIEW_PARALLEL ?? 2) || 1);
+    for (let at = 0; at < batches.length; at += wave) {
+      if (at && Date.now() - started >= 30_000) break;
+      const reviews = await Promise.allSettled(
+        batches
+          .slice(at, at + wave)
+          .map((batch) => this.generateDocuments(question, batch, context?.text)),
       );
-      const quote = answer.documentQuotes?.[0];
-      if (!quote) continue;
-      const candidate = batch.find((row) => row.id === quote.documentId)!;
-      const explanation = await this.explainEvidence(
-        question,
-        context?.text ?? '',
-        candidate.citation.label,
-        quote.quote,
-        // Stay well inside the 180s per-attempt race; fall back instead of timing out.
-        Math.min(110_000, 150_000 - (Date.now() - started)),
-      );
-      return {
-        phase: 'start',
-        providerCd: explanation ? 'LOCAL_EXPLAIN' : 'LOCAL_RAG',
-        resultCd: 'EVIDENCE_FOUND',
-        text:
-          explanation ??
-          '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.',
-        citation: {
-          ...candidate.citation,
-          citeCont: quote.quote,
-          supportVerifyCd: 'MODEL_REVIEWED',
-        },
-      };
+      for (const [index, review] of reviews.entries()) {
+        if (review.status === 'rejected') {
+          firstFailure ??= review.reason;
+          continue;
+        }
+        reviewed = true;
+        const batch = batches[at + index];
+        const quote = review.value.documentQuotes?.[0];
+        if (!quote) continue;
+        const candidate = batch.find((row) => row.id === quote.documentId)!;
+        const explanation = await this.explainEvidence(
+          question,
+          context?.text ?? '',
+          candidate.citation.label,
+          quote.quote,
+          // Stay well inside the 180s per-attempt race; fall back instead of timing out.
+          Math.min(110_000, 150_000 - (Date.now() - started)),
+        );
+        return {
+          phase: 'start',
+          providerCd: explanation ? 'LOCAL_EXPLAIN' : 'LOCAL_RAG',
+          resultCd: 'EVIDENCE_FOUND',
+          text:
+            explanation ??
+            '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.',
+          citation: {
+            ...candidate.citation,
+            citeCont: quote.quote,
+            supportVerifyCd: 'MODEL_REVIEWED',
+          },
+        };
+      }
     }
-    return missingEvidence('RELEVANCE_GAP', supplement);
+    // 모든 묶음이 검토 자체에 실패했다면(거절이 아니라 오류) 호출자가 알 수 있게 전달한다.
+    if (!reviewed && firstFailure) throw firstFailure;
+    const gap = missingEvidence('RELEVANCE_GAP', supplement);
+    // AI 검토가 거절했더라도, AI가 짚은 법령의 조문이 상위 후보에 있으면 "질문 관련성 미검증" 후보로 함께 보여 준다.
+    // 근거로 단정하지 않으며(인용은 UNREVIEWED), AI가 법령을 짚지 못한 질문(날씨·복권 등)에는 보여 주지 않는다.
+    // AURORE_GAP_CANDIDATE=0 으로 끈다.
+    if (process.env.AURORE_GAP_CANDIDATE !== '0') {
+      const named = new Set(analysis.laws);
+      const top = candidates
+        .slice(0, 6)
+        .find((row) => named.has(/^(.+?) 제\d/u.exec(row.citation.label)?.[1] ?? ''));
+      if (top)
+        return {
+          ...gap,
+          providerCd: 'STORED_SEARCH',
+          text:
+            '가장 가까운 검색 후보를 참고용으로 함께 보여 드립니다. 이 조문이 질문에 직접 해당하는지는 AI 검토에서 확인되지 않았습니다. ' +
+            gap.text,
+          citation: { ...top.citation, supportVerifyCd: 'UNREVIEWED' },
+        };
+    }
+    return gap;
   }
 
   /**
@@ -382,7 +424,26 @@ export class ChatAnswerService {
    * 법령 용어로 이어 주는 용도이며, 실패하거나 비활성화되면 빈 목록이다.
    */
   async searchHints(question: string): Promise<string[]> {
-    if (process.env.AURORE_SEARCH_HINTS === '0') return [];
+    const analysis = await this.analyzeQuery(question);
+    return [...analysis.keywords, ...analysis.terms].slice(0, 8);
+  }
+
+  private readonly analysisCache = new Map<
+    string,
+    { keywords: string[]; terms: string[]; laws: string[] }
+  >();
+
+  /**
+   * 의도 분석 한 번으로 일상어 키워드, 법률용어, 해당 법령 후보를 얻는다. 모두 검색 순위용 힌트일 뿐이다.
+   * 법령 후보는 DB에 실제 있는 법령명과 일치할 때만 가점이 되며 인용 근거로 쓰이지 않는다.
+   */
+  async analyzeQuery(
+    question: string,
+  ): Promise<{ keywords: string[]; terms: string[]; laws: string[] }> {
+    const empty = { keywords: [], terms: [], laws: [] };
+    if (process.env.AURORE_SEARCH_HINTS === '0') return empty;
+    const cached = this.analysisCache.get(question);
+    if (cached) return cached;
     try {
       const response = await fetch(this.documentUrl('/intent/analyze'), {
         method: 'POST',
@@ -391,25 +452,41 @@ export class ChatAnswerService {
         signal: AbortSignal.timeout(15_000),
         redirect: 'error',
       });
-      if (!response.ok) return [];
+      if (!response.ok) return empty;
       const body = await response.text();
-      if (body.length > 4000) return [];
+      if (body.length > 4000) return empty;
       const value = JSON.parse(body) as {
         available?: boolean;
         keywords?: unknown;
+        legal_terms?: unknown;
+        law_names?: unknown;
       };
-      if (value.available !== true || !Array.isArray(value.keywords)) return [];
-      return value.keywords
-        .filter(
-          (word): word is string =>
-            typeof word === 'string' &&
-            word.length >= 1 &&
-            word.length <= 40 &&
-            /^[가-힣a-zA-Z0-9 ]+$/u.test(word),
-        )
-        .slice(0, 5);
+      if (value.available !== true || !Array.isArray(value.keywords))
+        return empty;
+      const clean = (list: unknown, max: number, size: number) =>
+        Array.isArray(list)
+          ? list
+              .filter(
+                (word): word is string =>
+                  typeof word === 'string' &&
+                  word.length >= 1 &&
+                  word.length <= size &&
+                  /^[가-힣a-zA-Z0-9ㆍ·\s]+$/u.test(word),
+              )
+              .map((word) => word.trim())
+              .slice(0, max)
+          : [];
+      const result = {
+        keywords: clean(value.keywords, 5, 40),
+        terms: clean(value.legal_terms, 5, 40),
+        laws: clean(value.law_names, 3, 60),
+      };
+      if (this.analysisCache.size >= 100)
+        this.analysisCache.delete(this.analysisCache.keys().next().value!);
+      this.analysisCache.set(question, result);
+      return result;
     } catch {
-      return [];
+      return empty;
     }
   }
 

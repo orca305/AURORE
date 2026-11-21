@@ -17,6 +17,9 @@ Short legal concepts are LEGAL. Absence of formal legal vocabulary does not make
 NON_LEGAL: clearly unrelated ordinary conversation or other requests with no plausible legal issue.
 UNCERTAIN: insufficient meaning/context, ambiguous words, or meaningless input. Never reject a possible legal issue as NON_LEGAL.
 Use domain only as a search hint. Use up to five short Korean keywords; do not invent user facts.
+legal_terms: up to five Korean legal terms in formal statute wording that would appear in the title or text of the article answering the situation
+(for example for "음주운전 단속기준" use "술에 취한 상태", "혈중알코올농도"; for "월급을 안 줘요" use "임금", "체불"). Do not repeat the user's casual wording.
+law_names: up to three exact Korean statute names that most likely govern the situation, or an empty list when unsure. Never include article numbers or case numbers.
 requires_retrieval must be true for LEGAL or UNCERTAIN, false for NON_LEGAL. No confidence score is requested."""
 
 
@@ -26,6 +29,8 @@ class IntentAnalysis(BaseModel):
     domain: Literal["labor", "housing", "family", "civil", "criminal", "consumer", "privacy", "traffic", "administrative", "other"]
     keywords: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]] = Field(max_length=5)
     requires_retrieval: StrictBool
+    legal_terms: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]] = Field(default_factory=list, max_length=5)
+    law_names: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
     def retrieval_policy(self):
@@ -40,10 +45,10 @@ def analyze_intent(payload: IntentQuestion):
     try:
         result = IntentAnalysis.model_validate(local_json(
             SYSTEM, {"question": payload.question}, schema=IntentAnalysis.model_json_schema(),
-            timeout=12, num_predict=256, think=False,
+            timeout=12, num_predict=384, think=False,
         ))
         return {**result.model_dump(), "available": True, "model": model, "routingEnabled": False}
     except Exception:
         # Model failure or invalid output retains retrieval rather than rejecting a legal question.
-        return {"intent": "UNCERTAIN", "domain": "other", "keywords": [],
+        return {"intent": "UNCERTAIN", "domain": "other", "keywords": [], "legal_terms": [], "law_names": [],
                 "requires_retrieval": True, "available": False, "model": model, "routingEnabled": False}
