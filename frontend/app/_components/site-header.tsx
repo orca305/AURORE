@@ -33,7 +33,7 @@ export async function SiteHeader({ signedIn, active, adminAccess }: {
   return <>
     <aside className={styles.sidebar} aria-label="서비스 탐색">
       <div className={styles.brandRow}><Link href="/" className={styles.brand} aria-label="AURORE 홈">
-        <Image src="/aurore-mark.png" alt="" width={40} height={40} className={styles.mark} />
+        <Image src="/brand/aurore-icon.svg" alt="" width={40} height={40} className={styles.mark} unoptimized />
         <span>AURORE</span>
       </Link><PreferenceToggle kind="sidebar" /></div>
       <nav id="site-menu" aria-label="주 메뉴" className={styles.nav}>

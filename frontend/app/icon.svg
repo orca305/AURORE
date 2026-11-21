@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="t d">
+  <title id="t">AURORE</title>
+  <desc id="d">빛이 나는 펼쳐진 법전 위의 저울</desc>
+  <circle cx="64" cy="48" r="33" fill="#f3c24b"/>
+  <circle cx="64" cy="48" r="45" fill="none" stroke="#f3c24b" stroke-width="2.5" opacity=".5"/>
+  <g stroke="#1f4d43" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M64 32 V90" stroke-width="3.5"/>
+    <path d="M34 40 H94" stroke-width="3.5"/>
+    <path d="M34 40 L24 64 M34 40 L44 64 M94 40 L84 64 M94 40 L104 64" stroke-width="1.8"/>
+  </g>
+  <path d="M22 64 A12 12 0 0 0 46 64 Z M82 64 A12 12 0 0 0 106 64 Z" fill="#1f4d43"/>
+  <path d="M64 88 C46 80 28 80 12 86 V108 C28 102 46 102 64 110 C82 102 100 102 116 108 V86 C100 80 82 80 64 88 Z" fill="#1f4d43"/>
+</svg>

@@ -6,18 +6,23 @@
 
 :root {
   --site-sidebar-width: 272px; --content-gutter: clamp(1.25rem, 2.6vw, 3.5rem); --content-top-space: clamp(3rem, 7svh, 6rem); color-scheme: light;
-  --background: #ffffff; --foreground: #233836; --accent: #285e53; --muted: #6b7a77; --secondary: #455851;
-  --border: #d6ded7; --soft-border: #edf0ec; --strong-border: #91aa99;
-  --user-message: #e4ece6; --sidebar: #eef2eb; --surface: #f0f4ee; --subtle: #fcfdfa; --composer: #f0f4ec; --hover: #e4ebe1; --selected: #e1e9df;
-  --button-bg: #285e53; --button-hover: #1d4c42; --on-accent: #ffffff;
-  --danger: #982b2b; --danger-surface: #f8ede6; --danger-border: #e3c9be; --shadow: #23383614;
+  /* 웜 크림: 배경 #fbfaf6, 글자 #1f2a28, 버튼 먹색, 포인트 초록 #285e53 */
+  --background: #fbfaf6; --foreground: #1f2a28; --accent: #285e53; --muted: #6f7a75; --secondary: #4d5a56;
+  --border: #e3dccb; --soft-border: #ece4d0; --strong-border: #c8bfa6;
+  --user-message: #ece4d0; --sidebar: #f1ece0; --surface: #f4f0e5; --subtle: #fdfcf8; --composer: #f4f0e5; --hover: #ece4d0; --selected: #e4dcc6;
+  --button-bg: #1f2a28; --button-hover: #33403d; --on-accent: #ffffff; --card-white: #ffffff;
+  --card-1: #e8efe6; --card-1-text: #285e53; --card-2: #f3ead8; --card-2-text: #8a5a14; --card-3: #e3ecf3; --card-3-text: #25567a; --card-4: #efe4e6; --card-4-text: #8a3a4a;
+  --mark-yellow: #f3dd9a; --mark-green: #cfe3d4;
+  --danger: #982b2b; --danger-surface: #f8ede6; --danger-border: #e3c9be; --shadow: #1f2a2814;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #171e1c; --foreground: #e0e8e3; --accent: #a0cfbc; --muted: #a3b3a9; --secondary: #c1d0c6;
-  --border: #3b4a42; --soft-border: #2a3730; --strong-border: #6b947f;
-  --user-message: #101a14; --sidebar: #202c25; --surface: #25332b; --subtle: #1c2620; --composer: #293a30; --hover: #304237; --selected: #354c3e;
-  --button-bg: #346e5e; --button-hover: #407f6d; --on-accent: #ffffff;
+  --background: #1c1b17; --foreground: #ece7da; --accent: #a0cfbc; --muted: #a8a395; --secondary: #cdc8b8;
+  --border: #3a372e; --soft-border: #2b2922; --strong-border: #6b7a6d;
+  --user-message: #25231c; --sidebar: #23211b; --surface: #2a2822; --subtle: #201f1a; --composer: #2a2822; --hover: #35322a; --selected: #3d3a30;
+  --button-bg: #346e5e; --button-hover: #407f6d; --on-accent: #ffffff; --card-white: #2a2822;
+  --card-1: #26332c; --card-1-text: #a0cfbc; --card-2: #3a3224; --card-2-text: #e2bf86; --card-3: #25323c; --card-3-text: #9fc4e0; --card-4: #3b2b30; --card-4-text: #e0a6b2;
+  --mark-yellow: #6b5a22; --mark-green: #2f4a3a;
   --danger: #efab97; --danger-surface: #3c2d28; --danger-border: #795347; --shadow: #00000040;
 }
 :root[data-sidebar="collapsed"] { --site-sidebar-width: 68px; }

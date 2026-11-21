@@ -2,6 +2,7 @@
 
 import {documentSelectionProblem,type DocumentSelection} from './context-selection';
 import {TermLookupPanel} from '../_terms/lookup-panel';
+import {HighlightedText} from './term-highlight';
 import {DocumentsPanel} from "./documents-panel";
 import {CaseContextPanel} from "./case-context-panel";
 import { CaseConnection } from "./case-connection";
@@ -13,10 +14,13 @@ import { isPendingJob, type ChatDetail, type Message, type Phase, type Reply } f
 import styles from "./conversation.module.css";
 export type { Reply } from "./types";
 
+// 첫 화면 "상황으로 시작하기" 카드. 누르면 입력창에 채워 줄 뿐 바로 보내지 않는다.
 const examples = [
-  { topic: "임대차 보증금", question: "보증금을 돌려받지 못했어요" },
-  { topic: "계약 갱신", question: "계약을 갱신해 달라는 통지가 도달하면 언제 갱신되나요?" },
-];
+  { topic: "집 · 임대차", question: "보증금을 돌려받지 못했어요", tone: "tone1" },
+  { topic: "일 · 근로", question: "월급이나 퇴직금이 안 나와요", tone: "tone2" },
+  { topic: "소비 · 계약", question: "약관이 불공정한 것 같아요", tone: "tone3" },
+  { topic: "돈 · 채무", question: "빚이 많아서 회생을 알아봐요", tone: "tone4" },
+] as const;
 const followups = {
   start: [],
   "lease-end": ["네, 계약이 끝났어요", "아직 안 끝났어요"],
@@ -240,12 +244,15 @@ export function Conversation({ ask, initialChat, member = false }: {
     finally { setLoadingEarlier(false); }
   }
 
-  return <section aria-label="오로르 대화">
+  // 첫 질문 화면: 대화도 사건 연결도 없는 새 대화일 때만 큰 입력창 구조를 쓴다.
+  const fresh = !hasMessages && !detail && !pending;
+  return <section aria-label="오로르 대화" className={fresh ? styles.fresh : undefined}>
+    {fresh && <p className={styles.heroPill}>공식 법령 원문을 근거로 설명해요</p>}
     <div className={styles.context}>
       <div>
-        <div className={styles.titleRow}><h1>{detail?.title ?? (messages.length ? "나의 법률 대화" : "무슨 일이 있었나요?")}</h1>
+        <div className={styles.titleRow}><h1>{detail?.title ?? (messages.length ? "나의 법률 대화" : <>어떤 일이 생겼는지<br />편하게 말해 주세요</>)}</h1>
         {(messages.length > 0 || detail) && <button type="button" disabled={documentBusy || submitting || (pending && !pollError)} className={styles.newChat} onClick={reset}>새 대화 </button>}</div>
-        <p>나의 상황을 이야기하고, 필요한 사실을 함께 확인합니다.</p>
+        <p>{fresh ? "법률 용어를 몰라도 괜찮아요. 관련 법 조문을 찾아 쉬운 말로 풀어 드리고, 원문은 그대로 보여 드려요." : "나의 상황을 이야기하고, 필요한 사실을 함께 확인합니다."}</p>
       </div>
     </div>
     {saved && member && (detail ? <CaseConnection key={detail.id} chat={detail} pending={pending||documentBusy} onSave={async id=>{const error=await connectCase(id);if(!error){setCaseSelection(null);setCaseEpoch(value=>value+1);}return error;}}/> : <p className={styles.caseHint}>대화를 시작하면 나의 사건을 연결할 수 있습니다.</p>)}
@@ -264,7 +271,7 @@ export function Conversation({ ask, initialChat, member = false }: {
               {message.caseContext&&<p className={styles.sourceNote}>사건 사실관계 {message.caseContext.factCount}개 · 사건 버전 {message.caseContext.revision} · 법령 조회 기준일 {message.caseContext.asOf}{message.caseContext.current===false&&<span> · 이후 사건 정보나 연결이 변경되었습니다. 현재 사실관계로 다시 질문해 주세요.</span>}</p>}
               {message.clarifyReplyTo&&<p className={styles.sourceNote}>이전 질문에 보완한 내용</p>}
               {message.explained&&<p className={styles.citationLabel}>AI 쉬운 해설 · 참고용 (공식 원문이 아닙니다)</p>}
-              <p className={styles.messageText}>{message.text}</p>
+              <p className={styles.messageText}>{message.role==="user"?message.text:<HighlightedText text={message.text}/>}</p>
               {saved&&message.clarification&&message.id===messages.at(-1)?.id&&!pending&&<div className={styles.followups} aria-label="근거 보완 안내"><button type="button" disabled={documentBusy} onClick={()=>{setClarifyTarget(message.id!);inputField.current?.focus();}}>내용 보완하기 </button></div>}
               {saved && member && detail?.linkedCase && message.role === "user" && message.id && <Link className={styles.factImport} href={'/cases/'+detail.linkedCase.id+'/from-message/'+message.id} data-action-link>사실관계로 가져오기 </Link>}
 
@@ -324,14 +331,16 @@ export function Conversation({ ask, initialChat, member = false }: {
           {pending ? "확인 중…" : "보내기"}
         </button></div>
       </div>
-      {!hasMessages && <div className={styles.examples} aria-label="예시 질문">
-        <span>예시로 시작</span>
-        {examples.map(({ topic, question }) => <button key={topic} type="button" className={styles.example}
-          title={question} onClick={() => { setInput(question); inputField.current?.focus(); }}>
-          <strong>{topic} </strong><small>{question}</small>
-        </button>)}
-      </div>}
     </form>
+    {fresh && <div className={styles.situations} aria-label="상황으로 시작하기">
+      <p>상황으로 시작하기</p>
+      <div className={styles.cards}>
+        {examples.map(({ topic, question, tone }) => <button key={topic} type="button" className={`${styles.card} ${styles[tone]}`}
+          onClick={() => { setInput(question); inputField.current?.focus(); }}>
+          <small>{topic}</small><strong>{question}</strong>
+        </button>)}
+      </div>
+    </div>}
     {termsOpen&&<TermLookupPanel key={termQuery} initialQuery={termQuery} onClose={()=>{setTermsOpen(false);termsButton.current?.focus();}}/>}
     {saved&&member&&<DocumentsPanel open={documentsOpen} onClose={()=>setDocumentsOpen(false)} key={documentEpoch} chatId={roomId??null} disabled={pending||documentBusy} onBusy={value=>{inFlight.current=value;setDocumentBusy(value);}} selected={selectedDocuments} onSelect={setSelectedDocuments} onRemoved={id=>setMessages(previous=>previous.map(message=>({...message,documentQuotes:message.documentQuotes?.filter(quote=>quote.documentId!==id)})))} onSaved={data=>{applyChat(data);window.history.replaceState(null,"","/?chat="+data.id);window.dispatchEvent(new Event('aurore:chat-history'));}}/>}
     {!hasMessages && !pending && <p className={styles.sourceNote}>답변은 법령·판례의 원문과 함께 확인할 수 있습니다. <Link href="/legals" data-action-link>법규 검색 </Link></p>}

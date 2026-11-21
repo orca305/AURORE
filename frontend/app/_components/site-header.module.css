@@ -37,7 +37,7 @@
 .preferences { margin-top: auto; padding: 12px 14px; border-top: 1px solid var(--border); }
 .themeToggle { width: 100%; justify-content: flex-start; font-size: 12px; }
 .themeToggle svg { flex: none; }
-:global(html[data-theme="dark"]) .mark { filter: brightness(1.8) saturate(.65); }
+:global(html[data-theme="dark"]) .mark { filter: none; }
 :global(html[data-sidebar="collapsed"]) .brandRow { flex-direction: column; padding: 0 0 8px; }
 :global(html[data-sidebar="collapsed"]) .brand { justify-content: center; padding: 15px 6px 5px; min-height: 58px; }
 :global(html[data-sidebar="collapsed"]) .brand span,
