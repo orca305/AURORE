@@ -165,10 +165,53 @@ export class ChatAnswerService {
       return false;
     }
   }
+  // 후보 조문(최대 3개)마다 질문과의 관련 등급을 한 번에 받는다. 인용 선택은 호출자가 검색 순위와 함께 한다.
+  async gradeDocuments(
+    question: string,
+    documents: DocumentInput[],
+    context?: string,
+    // 'verify': 선택된 후보 하나를 더 엄격한 기준으로 다시 확인한다.
+    mode: 'law' | 'verify' = 'law',
+  ): Promise<('direct' | 'related' | 'none')[]> {
+    const response = await fetch(this.documentUrl('/documents/grade'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: redactDocument(question).slice(0, 1000) || '질문',
+        ...(context ? { context: redactDocument(context).slice(0, 8000) } : {}),
+        source: mode,
+        documents: documents.map(({ id, name, markdown }) => ({
+          id,
+          name,
+          markdown,
+        })),
+      }),
+      signal: AbortSignal.timeout(150000),
+      redirect: 'error',
+    }).catch(() => {
+      throw new Error('DocumentAiUnavailable');
+    });
+    if (!response.ok) throw new Error('DocumentAiUpstreamFailure');
+    const value = (await response.json().catch(() => null)) as {
+      grades?: unknown;
+      supportChecked?: boolean;
+    } | null;
+    if (
+      !value ||
+      value.supportChecked !== true ||
+      !Array.isArray(value.grades) ||
+      value.grades.length !== documents.length ||
+      !value.grades.every((g) => g === 'direct' || g === 'related' || g === 'none')
+    )
+      throw new Error('DocumentEvidenceInvalid');
+    return value.grades as ('direct' | 'related' | 'none')[];
+  }
   async generateDocuments(
     question: string,
     documents: DocumentInput[],
     context?: string,
+    // 'law': 저장된 법령 조문 후보 검토(법령 전용 기준). 생략하면 사용자 첨부자료 기준.
+    source?: 'law',
   ): Promise<PreparedAnswer> {
     const response = await fetch(this.documentUrl('/documents/answer'), {
       method: 'POST',
@@ -177,6 +220,7 @@ export class ChatAnswerService {
         // 관련성 검토 모델(외부 모델일 수 있음)로 나가는 사용자 문장은 항상 패턴 마스킹을 거친다.
         question: redactDocument(question).slice(0, 1000) || '질문',
         ...(context ? { context: redactDocument(context).slice(0, 8000) } : {}),
+        ...(source ? { source } : {}),
         documents: documents.map(({ id, name, markdown }) => ({
           id,
           name,
@@ -352,15 +396,90 @@ export class ChatAnswerService {
     const batches: StoredEvidence[][] = [];
     for (let offset = 0; offset < candidates.length; offset += 3)
       batches.push(candidates.slice(offset, offset + 3));
+    const finish = async (candidate: StoredEvidence, quoteText: string) => {
+      const explanation = await this.explainEvidence(
+        question,
+        context?.text ?? '',
+        candidate.citation.label,
+        quoteText,
+        // Stay well inside the 180s per-attempt race; fall back instead of timing out.
+        Math.min(110_000, 150_000 - (Date.now() - started)),
+      );
+      return {
+        phase: 'start' as const,
+        providerCd: (explanation ? 'LOCAL_EXPLAIN' : 'LOCAL_RAG') as 'LOCAL_EXPLAIN' | 'LOCAL_RAG',
+        resultCd: 'EVIDENCE_FOUND' as const,
+        text:
+          explanation ??
+          '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.',
+        citation: {
+          ...candidate.citation,
+          citeCont: quoteText,
+          supportVerifyCd: 'MODEL_REVIEWED' as const,
+        },
+      };
+    };
     let reviewed = false;
     let firstFailure: unknown;
     const wave = Math.max(1, Number(process.env.AURORE_REVIEW_PARALLEL ?? 2) || 1);
+    // 등급 방식(기본, AURORE_REVIEW_MODE=classic 이면 예전 추출·검토 방식): 묶음마다 후보를 direct/related/none 으로 분류하고,
+    // "direct" 후보 중 검색 순위가 가장 높은 것을 인용한다. 추출·검토를 하나로 합쳐 호출 수도 줄어든다.
+    if (process.env.AURORE_REVIEW_MODE !== 'classic') {
+      for (let at = 0; at < batches.length; at += wave) {
+        if (at && Date.now() - started >= 30_000) break;
+        const graded = await Promise.allSettled(
+          batches
+            .slice(at, at + wave)
+            .map((batch) => this.gradeDocuments(question, batch, context?.text)),
+        );
+        const directs: { candidate: StoredEvidence; rank: number }[] = [];
+        for (const [index, result] of graded.entries()) {
+          if (result.status === 'rejected') {
+            firstFailure ??= result.reason;
+            continue;
+          }
+          reviewed = true;
+          const batch = batches[at + index];
+          for (const [position, grade] of result.value.entries()) {
+            const rank = (at + index) * 3 + position;
+            if (grade === 'direct') directs.push({ candidate: batch[position], rank });
+          }
+        }
+        // 검색 순위가 높은 "direct" 후보부터 하나씩 엄격하게 다시 확인하고, 통과한 첫 후보를 인용한다(최대 2개 확인).
+        directs.sort((x, y) => x.rank - y.rank);
+        let pick: { candidate: StoredEvidence; rank: number } | undefined;
+        for (const direct of directs.slice(0, 2)) {
+          const verdict = await this.gradeDocuments(
+            question,
+            [direct.candidate],
+            context?.text,
+            'verify',
+          ).catch((error) => {
+            firstFailure ??= error;
+            return undefined;
+          });
+          if (verdict?.[0] === 'direct') {
+            pick = direct;
+            break;
+          }
+        }
+        if (pick) {
+          const body = pick.candidate.markdown.trim();
+          // 인용은 원문 그대로여야 하므로 길면 문장 끝에서 잘라 원문의 앞부분을 쓴다.
+          const quoteText =
+            body.length <= 1200
+              ? body
+              : body.slice(0, 1200).replace(/[^.。다]*$/u, '') || body.slice(0, 1200);
+          return finish(pick.candidate, quoteText);
+        }
+      }
+    } else
     for (let at = 0; at < batches.length; at += wave) {
       if (at && Date.now() - started >= 30_000) break;
       const reviews = await Promise.allSettled(
         batches
           .slice(at, at + wave)
-          .map((batch) => this.generateDocuments(question, batch, context?.text)),
+          .map((batch) => this.generateDocuments(question, batch, context?.text, 'law')),
       );
       for (const [index, review] of reviews.entries()) {
         if (review.status === 'rejected') {
@@ -369,7 +488,12 @@ export class ChatAnswerService {
         }
         reviewed = true;
         const batch = batches[at + index];
-        const quote = review.value.documentQuotes?.[0];
+        // 승인된 인용이 여럿이면 모델이 나열한 순서가 아니라 검색 순위(법령 우선순위·의미 검색 반영)가 높은 후보를 쓴다.
+        const quote = [...(review.value.documentQuotes ?? [])].sort(
+          (x, y) =>
+            batch.findIndex((row) => row.id === x.documentId) -
+            batch.findIndex((row) => row.id === y.documentId),
+        )[0];
         if (!quote) continue;
         const candidate = batch.find((row) => row.id === quote.documentId)!;
         const explanation = await this.explainEvidence(
@@ -382,7 +506,7 @@ export class ChatAnswerService {
         );
         return {
           phase: 'start',
-          providerCd: explanation ? 'LOCAL_EXPLAIN' : 'LOCAL_RAG',
+          providerCd: (explanation ? 'LOCAL_EXPLAIN' : 'LOCAL_RAG') as 'LOCAL_EXPLAIN' | 'LOCAL_RAG',
           resultCd: 'EVIDENCE_FOUND',
           text:
             explanation ??

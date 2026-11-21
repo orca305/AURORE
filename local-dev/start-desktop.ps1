@@ -37,7 +37,9 @@ if ($LASTEXITCODE -ne 0) { throw 'AURORE database is not ready.' }
 
 $env:OLLAMA_HOST = '127.0.0.1:11434'
 $env:AURORE_AI_MOCK = '0'
-$env:AURORE_OLLAMA_MODEL = 'aurore-local:e4b'
+# 모델은 local-dev/model-profile.txt(fast|quality)로 고른다. 바꾸려면 local-dev/switch-model.ps1 을 쓴다.
+. (Join-Path $PSScriptRoot 'model-profiles.ps1')
+$env:AURORE_OLLAMA_MODEL = Get-AuroreModel
 $env:AURORE_INTENT_CLASSIFY = '0'
 $env:AURORE_INTENT_ENABLE_ROUTING = '0'
 $env:AURORE_AI_URL = 'http://127.0.0.1:8001'

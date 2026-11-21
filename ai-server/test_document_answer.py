@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 from fastapi import HTTPException
-from document_answer import Question, answer_documents, document_health, local_json
+from document_answer import Question, answer_documents, document_health, grade_documents, local_json
 
 ID = "00000000-0000-4000-8000-000000000001"
 TEXT = "계약 종료일은 2026년 11월 8일입니다."
@@ -41,4 +41,18 @@ class AnswerTests(unittest.TestCase):
     def test_context_limits(self):
         with self.assertRaises(ValueError): Question(question="질문", documents=[{"id": ID,"name":"x","markdown":"x"*12001}])
         with self.assertRaises(ValueError): Question(question="질문", documents=[{"id": ID,"name":"x","markdown":TEXT}]*2)
+class GradeTests(unittest.TestCase):
+    def payload(self, source="law"):
+        return Question(question="계약 종료일은 언제인가요?", source=source, documents=[{"id": ID, "name": "a", "markdown": TEXT}])
+    def test_grades_one_per_document_and_verify_mode(self):
+        with patch("document_answer.local_json", return_value={"grades": ["direct"]}) as model:
+            self.assertEqual(grade_documents(self.payload())["grades"], ["direct"])
+            self.assertNotIn("source", model.call_args.args[1])
+        with patch("document_answer.local_json", return_value={"grades": ["none"]}) as model:
+            self.assertEqual(grade_documents(self.payload("verify"))["grades"], ["none"])
+            self.assertIn("second reviewer", model.call_args.args[0])
+    def test_wrong_count_or_value_is_rejected(self):
+        for bad in ({"grades": ["direct", "none"]}, {"grades": ["maybe"]}, {"grades": []}):
+            with patch("document_answer.local_json", return_value=bad):
+                with self.assertRaises(HTTPException): grade_documents(self.payload())
 if __name__=="__main__":unittest.main()

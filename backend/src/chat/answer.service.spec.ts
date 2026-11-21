@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatAnswerService, formatExplanation } from './answer.service.js';
 import {
   retrieveStoredEvidence,
@@ -7,9 +7,14 @@ import {
 import type { PrismaService } from '../prisma/prisma.service.js';
 
 vi.mock('./stored-evidence.js', () => ({ retrieveStoredEvidence: vi.fn() }));
+// 기존 시험은 추출·검토 방식(classic)을 전제로 한다. 기본값인 등급 방식은 아래 별도 시험에서 확인한다.
+beforeEach(() => {
+  process.env.AURORE_REVIEW_MODE = 'classic';
+});
 afterEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  delete process.env.AURORE_REVIEW_MODE;
 });
 
 function fixture(count: number) {
@@ -283,5 +288,48 @@ describe('follow-up detection', () => {
         '임대인이 계약 종료 후에도 보증금을 돌려주지 않는데 임차권등기명령은 어느 법원에 신청하나요',
       ),
     ).toBe(false);
+  });
+});
+
+describe('grade-based review (default)', () => {
+  beforeEach(() => {
+    delete process.env.AURORE_REVIEW_MODE;
+  });
+  it('quotes the highest-ranked direct candidate after the strict re-check', async () => {
+    const { service, candidates } = fixture(6);
+    const grade = vi
+      .spyOn(service, 'gradeDocuments')
+      .mockResolvedValueOnce(['none', 'direct', 'direct']) // 묶음 1: 순위 2·3번이 direct
+      .mockResolvedValueOnce(['direct', 'none', 'none']) // 묶음 2
+      .mockResolvedValueOnce(['direct']); // 엄격 재확인: 2번째 후보 통과
+    const result = await service.generateStored('보증금 반환');
+    expect(result.resultCd).toBe('EVIDENCE_FOUND');
+    expect(result.citation?.srcSnapshotId).toBe(candidates[1].citation.srcSnapshotId);
+    expect(result.citation?.citeCont).toBe(candidates[1].markdown);
+    expect(result.citation?.supportVerifyCd).toBe('MODEL_REVIEWED');
+    expect(grade.mock.calls.at(-1)?.[3]).toBe('verify');
+  });
+  it('falls through to the next direct candidate when the re-check rejects the first', async () => {
+    const { service, candidates } = fixture(3);
+    vi.spyOn(service, 'gradeDocuments')
+      .mockResolvedValueOnce(['direct', 'direct', 'none'])
+      .mockResolvedValueOnce(['none'])
+      .mockResolvedValueOnce(['direct']);
+    const result = await service.generateStored('보증금 반환');
+    expect(result.citation?.srcSnapshotId).toBe(candidates[1].citation.srcSnapshotId);
+  });
+  it('reports a relevance gap and never cites when nothing is direct or the re-check rejects', async () => {
+    const { service } = fixture(3);
+    vi.spyOn(service, 'gradeDocuments')
+      .mockResolvedValueOnce(['related', 'none', 'direct'])
+      .mockResolvedValueOnce(['none']);
+    const result = await service.generateStored('날씨');
+    expect(result.resultCd).toBe('RELEVANCE_GAP');
+    expect(result.citation).toBeUndefined();
+  });
+  it('surfaces a model failure instead of reporting a false gap', async () => {
+    const { service } = fixture(3);
+    vi.spyOn(service, 'gradeDocuments').mockRejectedValue(new Error('DocumentAiUpstreamFailure'));
+    await expect(service.generateStored('보증금')).rejects.toThrow('DocumentAiUpstreamFailure');
   });
 });
