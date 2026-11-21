@@ -74,6 +74,76 @@ class ExplainTests(unittest.TestCase):
         self.assertEqual(result["reviewDropped"], 1)
         self.assertEqual(len(result["points"]), 1)
 
+    def test_example_may_use_hypothetical_figures_but_summary_may_not(self):
+        sample = "예를 들어 계약이 끝나고 두 달이 지나도 보증금 1억 원을 못 받았다면 임차권등기명령을 신청할 수 있어요."
+        with patch("legal_explain.local_json", side_effect=[draft(example=sample), OK]) as model:
+            result = explain(request())
+        self.assertEqual(result["example"], sample)
+        review_input = model.call_args_list[1].args[1]
+        self.assertEqual(review_input["exampleIndex"], 2)
+        self.assertEqual(review_input["items"][2], sample)
+        self.assertIn("UNSUPPORTED_FIGURE", self.assertRejected(draft(summary="보증금 1억 원을 못 받았다면 임차권등기명령을 신청할 수 있어요.")))
+        self.assertIn("UNKNOWN_ARTICLE", self.assertRejected(draft(example="제8조에 따라 우선변제를 받을 수 있어요.")))
+
+    def test_review_drops_only_a_wrong_example(self):
+        with patch("legal_explain.local_json", side_effect=[draft(example="보증금 1억 원이면 바로 돌려받을 수 있어요."), {"unsupported": [2], "assertsUserFacts": False}]):
+            result = explain(request())
+        self.assertEqual(result["example"], "")
+        self.assertEqual(len(result["points"]), 1)
+        self.assertEqual(result["reviewDropped"], 1)
+
+    def test_related_provisions_can_ground_points_and_are_reported(self):
+        decree = {"label": "주택임대차보호법 시행령 제8조", "quote": "법 제7조에 따른 증액청구는 약정한 차임등의 20분의 1의 금액을 초과하지 못한다."}
+        req = ExplainRequest(question="보증금을 얼마까지 올릴 수 있나요", evidence={"label": "주택임대차보호법 제7조", "quote": QUOTE}, related=[decree])
+        point = {"kind": "RULE", "text": "보증금은 원래 금액의 20분의 1까지만 올릴 수 있어요.", "basis": "약정한 차임등의 20분의 1의 금액을 초과하지 못한다"}
+        with patch("legal_explain.local_json", side_effect=[draft(points=[point]), OK]) as model:
+            result = explain(req)
+        self.assertEqual(result["sources"], ["주택임대차보호법 시행령 제8조"])
+        self.assertEqual(model.call_args_list[0].args[1]["related"][0]["text"], decree["quote"])
+        self.assertIn("related", model.call_args_list[1].args[1])
+        # 관련 조문에도 없는 문장은 여전히 거절한다.
+        with patch.dict("os.environ", {"AURORE_EXPLAIN_ATTEMPTS": "1"}), patch("legal_explain.local_json", side_effect=[draft(points=[{**point, "basis": "어디에도 없는 문장입니다"}]), OK]):
+            with self.assertRaises(HTTPException): explain(req)
+
+    def test_external_budget_exhaustion_falls_back_to_local_and_pauses_external_calls(self):
+        import external_model
+        from urllib.error import HTTPError
+        import io
+        error = HTTPError("https://api.anthropic.com/v1/messages", 400, "Bad Request", {}, io.BytesIO(b'{"error":{"message":"Your credit balance is too low"}}'))
+        env = {"AURORE_EXPLAIN_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key"}
+        external_model._blocked_until = 0.0
+        try:
+            with patch.dict("os.environ", env), patch("external_model.urllib.request.urlopen", side_effect=error) as web,                     patch("legal_explain.local_json", side_effect=[draft(), OK, draft(), OK]) as local:
+                first = explain(request())
+                second = explain(request())
+            self.assertTrue(first["verified"] and second["verified"])
+            self.assertEqual(local.call_count, 4)
+            # 첫 호출에서 예산 소진을 알게 된 뒤에는 쿨다운 동안 외부 호출을 하지 않는다.
+            self.assertEqual(web.call_count, 1)
+            self.assertEqual(external_model.external_blocked(), "BUDGET_EXHAUSTED")
+        finally:
+            external_model._blocked_until = 0.0
+
+    def test_fallback_can_be_disabled_and_bad_requests_are_not_masked(self):
+        import external_model
+        from urllib.error import HTTPError
+        import io
+        external_model._blocked_until = 0.0
+        env = {"AURORE_EXPLAIN_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "test-key", "AURORE_EXPLAIN_FALLBACK": "0"}
+        overloaded = HTTPError("u", 529, "Overloaded", {}, io.BytesIO(b"{}"))
+        try:
+            with patch.dict("os.environ", env), patch("external_model.urllib.request.urlopen", side_effect=overloaded), patch("legal_explain.local_json", return_value=draft()):
+                with self.assertRaises(HTTPException):
+                    explain(request())
+            external_model._blocked_until = 0.0
+            malformed = HTTPError("u", 400, "Bad Request", {}, io.BytesIO(b'{"error":{"message":"max_tokens: invalid"}}'))
+            with patch.dict("os.environ", {**env, "AURORE_EXPLAIN_FALLBACK": "1"}), patch("external_model.urllib.request.urlopen", side_effect=malformed), patch("legal_explain.local_json", return_value=draft()) as local:
+                with self.assertRaises(HTTPException):
+                    explain(request())
+                local.assert_not_called()  # 요청 형식 오류는 코드 문제라 로컬로 덮지 않는다
+        finally:
+            external_model._blocked_until = 0.0
+
     def test_retry_after_rejection_passes_hint_and_succeeds(self):
         bad = draft(summaryBasis="보증금을 즉시 돌려받을 수 있다")
         with patch("legal_explain.local_json", side_effect=[bad, draft(), OK]) as model:
@@ -102,10 +172,17 @@ class ExplainTests(unittest.TestCase):
 
     def test_external_provider_needs_key_and_is_validated(self):
         env = {"AURORE_EXPLAIN_PROVIDER": "anthropic"}
+        import external_model
+        external_model._blocked_until = 0.0
+        # 키가 없으면 로컬 모델로 대신 처리한다. 로컬 모델도 설정돼 있지 않으면 실패한다(503).
         with patch.dict("os.environ", env, clear=True):
             with self.assertRaises(HTTPException) as caught:
                 explain(request())
-        self.assertEqual(caught.exception.status_code, 502)
+        self.assertEqual(caught.exception.status_code, 503)
+        with patch.dict("os.environ", env, clear=True), patch("legal_explain.local_json", side_effect=[draft(), OK]) as local:
+            self.assertTrue(explain(request())["verified"])
+            self.assertEqual(local.call_count, 2)
+        external_model._blocked_until = 0.0
         # 외부 모델이 만든 결과도 같은 결정적 검증을 통과해야 한다.
         with patch.dict("os.environ", {**env, "ANTHROPIC_API_KEY": "test"}, clear=True):
             with patch("legal_explain._anthropic_json", side_effect=[draft(summaryBasis="없는 구간입니다 정말로"), OK]):

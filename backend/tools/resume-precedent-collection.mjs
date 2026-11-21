@@ -153,7 +153,7 @@ export async function resumePrecedentCollection(
 ) {
   const requested =
     queue === undefined ? undefined : validatePrecedentQueue(queue);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
     throw fail('LIMIT_INVALID');
   await mkdir(directory, { recursive: true });
   const result = await withRefreshLock(
@@ -224,7 +224,7 @@ async function main() {
   });
   if (values.help) {
     console.log(
-      'Usage: node --env-file=local-dev/.env backend/tools/resume-precedent-collection.mjs [journal-directory] [--queue queue.json] [--limit 1..100] [--recover-lock] | [journal-directory] --status',
+      'Usage: node --env-file=local-dev/.env backend/tools/resume-precedent-collection.mjs [journal-directory] [--queue queue.json] [--limit 1..1000] [--recover-lock] | [journal-directory] --status',
     );
     return;
   }

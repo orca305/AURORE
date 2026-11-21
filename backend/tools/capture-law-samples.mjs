@@ -36,7 +36,13 @@ export function identifySample(sample, payload) {
   }
 
   const ruling = payload?.PrecService;
-  if (String(ruling?.판례정보일련번호) !== sample.ID || ruling?.사건번호 !== sample.caseNumber ||
+  // 병합 사건은 목록에 대표 번호(예: 4287민상383)만, 본문에는 병합 번호까지(4287민상383-384-384) 나온다.
+  // 판례 일련번호가 같고 본문 번호가 목록 번호에 '-' 또는 ',' 로 병합 번호를 덧붙인 형태일 때만 같은 판례로 본다.
+  const actual = ruling?.사건번호;
+  const sameCase = actual === sample.caseNumber ||
+    (typeof actual === "string" && typeof sample.caseNumber === "string" && sample.caseNumber.length > 0 &&
+      (actual.startsWith(sample.caseNumber + "-") || actual.startsWith(sample.caseNumber + ",")));
+  if (String(ruling?.판례정보일련번호) !== sample.ID || !sameCase ||
       !hasText(ruling?.법원명) || !hasText(ruling?.판례내용)) {
     throw new Error("Expected case identifier and decision text were not present.");
   }

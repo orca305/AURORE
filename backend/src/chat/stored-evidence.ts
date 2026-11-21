@@ -4,6 +4,7 @@ import type { PrismaService } from '../prisma/prisma.service.js';
 import type { DocumentInput, PreparedCitation } from './answer.service.js';
 import { cosine, embedTexts, fuseRanks, searchVectorsMulti, topWithin, vectorEnabled } from './vector-search.js';
 import { searchLawTitles } from './law-titles.js';
+import { EvidenceCache, PINNED_LAWS, isPinnedLaw } from './evidence-cache.js';
 import { matchSituations, toNormNo } from './situations.js';
 import { LAW_LEVEL_FACTOR, PRIORITY_LAWS, termBoosts } from './law-priority.js';
 
@@ -34,9 +35,40 @@ type Chunk = {
 };
 export type StoredEvidence = DocumentInput & { citation: PreparedCitation };
 type CachedSnapshot = { id: bigint; srcUrl: string; edition: string | undefined; chunks: Chunk[] };
-// 파싱된 법령 원문은 크기가 커서 보관 개수를 제한한다(메모리 압박 방지). AURORE_EVIDENCE_CACHE 로 조정한다.
-const EVIDENCE_CACHE_SIZE = Math.max(4, Number(process.env.AURORE_EVIDENCE_CACHE ?? 24) || 24);
-const evidenceCache = new Map<string, CachedSnapshot>();
+// 파싱된 법령 원문 캐시: 개수가 아니라 용량(AURORE_EVIDENCE_CACHE_MB, 기본 64MB 어림)으로 관리하고,
+// 자주 쓰는 법령(PINNED_LAWS)은 밀어내지 않고 상시 유지한다(AURORE_EVIDENCE_PIN=0 으로 끔). 자세한 규칙은 evidence-cache.ts.
+const evidenceCache = new EvidenceCache<CachedSnapshot>();
+type SnapshotTools = { collectEvidence: (payload: unknown, hash: string) => Chunk[] };
+type SnapshotRow = { id: bigint; srcCd: string; srcUrl: string; srcCont: string; contHash: string };
+/** 스냅샷 한 개를 해시 검증하고 조각으로 만든다. 검증 실패나 형식 오류면 null. */
+function buildEntry(snap: SnapshotRow, tools: SnapshotTools): CachedSnapshot | null {
+  if (snap.srcCd !== 'MOLEG' || createHash('sha256').update(snap.srcCont).digest('hex') !== snap.contHash) return null;
+  try {
+    const payload = JSON.parse(snap.srcCont) as { 법령?: { 법령키?: string }; PrecService?: { 사건번호?: string } };
+    return { id: snap.id, srcUrl: snap.srcUrl, edition: payload.법령?.법령키 ?? payload.PrecService?.사건번호, chunks: tools.collectEvidence(payload, snap.contHash) };
+  } catch {
+    return null;
+  }
+}
+const lawNameOf = (title: string) => title.replace(/\s제\d+조.*$/u, '').trim();
+let warmed: Promise<void> | null = null;
+/** 상시 유지 법령의 현행 원문을 한 번만 미리 불러 둔다(백그라운드). 실패해도 질문 처리에는 영향이 없다. */
+export function warmPinnedEvidence(db: PrismaService): Promise<void> {
+  if (process.env.AURORE_EVIDENCE_PIN === '0') return Promise.resolve();
+  return (warmed ??= (async () => {
+    const tools = (await import(new URL('../../tools/law-evidence.mjs', import.meta.url).href)) as SnapshotTools;
+    const rows = await db.$queryRaw<{ name: string; sid: bigint }[]>(Prisma.sql`SELECT l.legal_nm AS name, r.src_snapshot_id AS sid
+      FROM legal l JOIN legal_ver v ON v.legal_id=l.id JOIN legal_ver_rev r ON r.legal_ver_id=v.id
+      WHERE r.current_yn AND r.src_snapshot_id IS NOT NULL AND NOT v.del_yn AND NOT l.del_yn AND l.src_cd='MOLEG' AND l.legal_nm = ANY(${[...PINNED_LAWS]}::text[])
+      AND NOT EXISTS(SELECT 1 FROM legal_ver newer WHERE newer.legal_id=v.legal_id AND NOT newer.del_yn AND newer.enfc_dt>v.enfc_dt AND newer.enfc_dt<=CURRENT_DATE)`);
+    for (const row of rows) {
+      if (evidenceCache.has(String(row.sid))) continue;
+      const snap = await db.srcSnapshot.findFirst({ where: { id: row.sid } });
+      const entry = snap ? buildEntry(snap, tools) : null;
+      if (entry && snap) evidenceCache.set(String(snap.id), entry, snap.srcCont.length, true);
+    }
+  })().catch(() => { warmed = null; }));
+}
 
 export function searchSelectors(question: string) {
   const text = question.normalize('NFKC');
@@ -246,7 +278,7 @@ export async function retrieveStoredEvidence(
   contextText = '',
   candidateLimit = 3,
   lawHints: string[] = [],
-  options: { pool?: number; legalTerms?: string[]; vectorQuery?: string; termQuery?: string; hintedLaws?: Set<string> } = {},
+  options: { pool?: number; legalTerms?: string[]; vectorQuery?: string; termQuery?: string; hintedLaws?: Set<string>; priorityArticles?: string[] | Promise<string[]> } = {},
 ): Promise<StoredEvidence[]> {
   if (
     !Number.isInteger(candidateLimit) ||
@@ -257,6 +289,7 @@ export async function retrieveStoredEvidence(
   const pool = Math.min(60, Math.max(candidateLimit, options.pool ?? candidateLimit));
   const profileStart = performance.now();
   const stage: Record<string, number> = {};
+  void warmPinnedEvidence(db);
   const selectors = searchSelectors(question);
   const { terms, weight } = weightedTerms(question, contextText);
   if (!terms.length && !selectors.article && !selectors.caseNumber) return [];
@@ -340,20 +373,50 @@ export async function retrieveStoredEvidence(
   // 상황 사전: 질문이 알려진 일상 상황에 해당하면 그 핵심 조문을 후보 맨 앞에 넣는다(검토와 원문 검증은 그대로 거친다).
   // 조문·사건번호를 직접 말한 질문에는 쓰지 않는다. AURORE_SITUATION_MAP=0 으로 끈다.
   let rows = ranked0;
-  if (process.env.AURORE_SITUATION_MAP !== '0' && !selectors.article && !selectors.caseNumber) {
-    const keys = matchSituations(question + ' ' + contextText).flatMap((key) => {
-      const [law, article] = key.split('|');
-      const normNo = toNormNo(article);
-      return normNo ? [law + '|' + normNo] : [];
-    });
+  // 모델이 직접 짚은 조문(법령명|정규화 조문번호)과 상황 사전의 핵심 조문을 후보 맨 앞에 넣는다(모델이 짚은 것이 먼저).
+  // 법령명은 띄어쓰기 차이를 무시하고 대조한다. 검토·원문 검증은 그대로 거친다.
+  {
+    const situationKeys =
+      process.env.AURORE_SITUATION_MAP !== '0' && !selectors.article && !selectors.caseNumber
+        ? matchSituations(question + ' ' + contextText).flatMap((key) => {
+            const [law, article] = key.split('|');
+            const normNo = toNormNo(article);
+            return normNo ? [law + '|' + normNo] : [];
+          })
+        : [];
+    // 모델이 짚은 조문은 검색(어휘·의미)과 동시에 기다리던 것이라, 여기서 받는다(실패하면 빈 목록).
+    const priority = (await options.priorityArticles) ?? [];
+    const keys = [...new Set([...priority, ...situationKeys].map((key) => key.replace(/\s/gu, '')))];
     if (keys.length) {
       const curated = await db.$queryRaw<Candidate[]>(Prisma.sql`
- SELECT 'LEGAL' AS kind,r.src_snapshot_id AS "snapshotId",v.id AS "targetId",l.id AS "legalId",l.src_key AS "sourceKey",v.ver_key AS edition,to_char(v.enfc_dt,'YYYYMMDD') AS date,p.norm_no AS article,concat(l.legal_nm,' ',p.disp_no) AS title,p.provi_nm AS "proviNm",p.id::text AS "proviId",TRUE AS vector,concat(l.legal_nm,'|',p.norm_no) AS "lawKey",0::float8 AS score
+ SELECT 'LEGAL' AS kind,r.src_snapshot_id AS "snapshotId",v.id AS "targetId",l.id AS "legalId",l.src_key AS "sourceKey",v.ver_key AS edition,to_char(v.enfc_dt,'YYYYMMDD') AS date,p.norm_no AS article,concat(l.legal_nm,' ',p.disp_no) AS title,p.provi_nm AS "proviNm",p.id::text AS "proviId",TRUE AS vector,concat(regexp_replace(l.legal_nm,'[[:space:]]','','g'),'|',p.norm_no) AS "lawKey",0::float8 AS score
  FROM legal_provi p JOIN legal_ver_rev r ON r.id=p.legal_ver_rev_id JOIN legal_ver v ON v.id=r.legal_ver_id JOIN legal l ON l.id=v.legal_id
- WHERE concat(l.legal_nm,'|',p.norm_no) = ANY(${keys}::text[]) AND NOT p.del_yn AND p.provi_type_cd='ARTICLE' AND p.prnt_provi_id IS NULL AND r.current_yn AND r.src_snapshot_id IS NOT NULL AND NOT v.del_yn AND NOT l.del_yn AND l.src_cd='MOLEG'
+ WHERE concat(regexp_replace(l.legal_nm,'[[:space:]]','','g'),'|',p.norm_no) = ANY(${keys}::text[]) AND NOT p.del_yn AND p.provi_type_cd='ARTICLE' AND p.prnt_provi_id IS NULL AND r.current_yn AND r.src_snapshot_id IS NOT NULL AND NOT v.del_yn AND NOT l.del_yn AND l.src_cd='MOLEG'
  AND v.enfc_dt<=${asOf}::date AND (p.enfc_dt IS NULL OR p.enfc_dt<=${asOf}::date)
  AND NOT EXISTS(SELECT 1 FROM legal_ver newer WHERE newer.legal_id=v.legal_id AND NOT newer.del_yn AND newer.enfc_dt<=${asOf}::date AND newer.enfc_dt>v.enfc_dt)`);
       curated.sort((a, b) => keys.indexOf(a.lawKey ?? '') - keys.indexOf(b.lawKey ?? ''));
+      // 모델이 짚은 조문 번호가 DB에 없으면(번호를 틀렸거나 개정으로 바뀐 경우) 그 법 안에서 질문과 뜻이 가장 가까운 조문을 대신 넣는다.
+      const found = new Set(curated.map((row) => row.lawKey));
+      const missingLaws = [...new Set(priority.map((key) => key.replace(/\s/gu, '')).filter((key) => !found.has(key)).map((key) => key.split('|')[0]))].slice(0, 3);
+      if (missingLaws.length && queryVector) {
+        try {
+          const own = await db.$queryRaw<{ id: string; law: string }[]>(Prisma.sql`
+ SELECT p.id::text AS id, regexp_replace(l.legal_nm,'[[:space:]]','','g') AS law
+ FROM legal_provi p JOIN legal_ver_rev r ON r.id=p.legal_ver_rev_id JOIN legal_ver v ON v.id=r.legal_ver_id JOIN legal l ON l.id=v.legal_id
+ WHERE regexp_replace(l.legal_nm,'[[:space:]]','','g') = ANY(${missingLaws}::text[]) AND NOT p.del_yn AND p.provi_type_cd='ARTICLE' AND p.prnt_provi_id IS NULL AND r.current_yn AND r.src_snapshot_id IS NOT NULL AND NOT v.del_yn AND NOT l.del_yn AND l.src_cd='MOLEG'
+ AND v.enfc_dt<=${asOf}::date AND (p.enfc_dt IS NULL OR p.enfc_dt<=${asOf}::date)
+ AND NOT EXISTS(SELECT 1 FROM legal_ver newer WHERE newer.legal_id=v.legal_id AND NOT newer.del_yn AND newer.enfc_dt<=${asOf}::date AND newer.enfc_dt>v.enfc_dt)`);
+          const have = new Set(curated.map((row) => row.proviId));
+          const picked: string[] = [];
+          for (const law of missingLaws) {
+            const best = await topWithin(queryVector, own.filter((row) => row.law === law).map((row) => row.id), 2);
+            picked.push(...best.map((hit) => hit.id).filter((id) => !have.has(id)).slice(0, 1));
+          }
+          if (picked.length) curated.push(...(await rowsByProviIds(picked)));
+        } catch {
+          // 대체 조문 찾기는 보조 수단이다.
+        }
+      }
       const known = new Set(curated.map(rowKey));
       rows = [...curated, ...ranked0.filter((row) => !known.has(rowKey(row)))];
     }
@@ -404,43 +467,33 @@ export async function retrieveStoredEvidence(
   )) as { collectEvidence: (payload: unknown, hash: string) => Chunk[] };
   // 스냅샷은 내용 해시로 식별되어 바뀌지 않으므로 id로 캐시해도 안전하다. 캐시에 넣을 때 해시를 검증한다.
   const wanted = [...new Set(rows.map((row) => row.snapshotId))];
-  const missing = wanted.filter((id) => !evidenceCache.has(String(id)));
+  // 이번 질문에 필요한 원문은 처리 시작 시점에 따로 잡아 둔다. 캐시(크기 제한)는 이후 다른 원문을 불러오는 동안
+  // 오래된 항목을 밀어내므로, 캐시만 다시 조회하면 방금 있던 원문(예: 민법)의 후보가 통째로 빠질 수 있다.
+  const local = new Map<string, CachedSnapshot>();
+  for (const id of wanted) {
+    const hit = evidenceCache.get(String(id));
+    if (hit) local.set(String(id), hit);
+  }
+  // 상시 유지 법령인지 알기 위한 스냅샷별 법령명(후보 제목에서).
+  const lawOfSnapshot = new Map(rows.filter((row) => row.kind === 'LEGAL').map((row) => [String(row.snapshotId), lawNameOf(row.title)]));
+  const missing = wanted.filter((id) => !local.has(String(id)));
   if (missing.length) {
     const fetched = await db.srcSnapshot.findMany({ where: { id: { in: missing } } });
     for (const snap of fetched) {
-      if (
-        snap.srcCd !== 'MOLEG' ||
-        createHash('sha256').update(snap.srcCont).digest('hex') !== snap.contHash
-      )
-        continue;
-      try {
-        const payload = JSON.parse(snap.srcCont) as {
-          법령?: { 법령키?: string };
-          PrecService?: { 사건번호?: string };
-        };
-        const entry: CachedSnapshot = {
-          id: snap.id,
-          srcUrl: snap.srcUrl,
-          edition: payload.법령?.법령키 ?? payload.PrecService?.사건번호,
-          chunks: tools.collectEvidence(payload, snap.contHash),
-        };
-        evidenceCache.set(String(snap.id), entry);
-        while (evidenceCache.size > EVIDENCE_CACHE_SIZE)
-          evidenceCache.delete(evidenceCache.keys().next().value!);
-      } catch {
-        continue;
-      }
+      const entry = buildEntry(snap, tools);
+      if (!entry) continue;
+      local.set(String(snap.id), entry);
+      evidenceCache.set(String(snap.id), entry, snap.srcCont.length, isPinnedLaw(lawOfSnapshot.get(String(snap.id)) ?? ''));
     }
   }
   const snapshots = new Map<bigint, CachedSnapshot>();
   for (const id of wanted) {
-    const hit = evidenceCache.get(String(id));
+    const hit = local.get(String(id));
     if (!hit) continue;
-    // 최근 사용 순서로 옮겨 오래 안 쓴 법령부터 밀어낸다.
-    evidenceCache.delete(String(id));
-    evidenceCache.set(String(id), hit);
     snapshots.set(id, hit);
   }
+  // 이번 질문에 쓴 원문을 최근 사용으로 표시한다(오래 안 쓴 것부터 밀려나도록).
+  for (const key of local.keys()) evidenceCache.touch(key);
   stage.snapshotFetch = performance.now() - profileStart;
   const result: StoredEvidence[] = [],
     seen = new Set<string>();

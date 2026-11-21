@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useState } from "react";
 import { splitByTerms, type GlossaryTerm } from "./term-match";
 import styles from "./conversation.module.css";
 
@@ -28,6 +28,8 @@ function Term({ term, label }: { term: GlossaryTerm; label: string }) {
   );
 }
 
+const EXPLAIN_HEADINGS = new Set(["질문에 대한 답", "쉽게 풀면", "예를 들어 (가상의 예)", "주의할 점", "확인해 보세요", "함께 본 조문", "도움 받을 곳", "결론", "이렇게 해 보세요", "알아 둘 내용", "근거 조문 (원문 확인됨)"]);
+
 export function HighlightedText({ text }: { text: string }) {
   const [terms, setTerms] = useState<GlossaryTerm[]>([]);
   useEffect(() => {
@@ -35,6 +37,23 @@ export function HighlightedText({ text }: { text: string }) {
     loadGlossary().then((list) => { if (active) setTerms(list); });
     return () => { active = false; };
   }, []);
-  const parts = useMemo(() => splitByTerms(text, terms), [text, terms]);
-  return <>{parts.map((part, index) => part.term ? <Term key={index} term={part.term} label={part.text} /> : part.text)}</>;
+  // 해설의 소제목 줄(질문에 대한 답, 쉽게 풀면 등)은 굵게 보여 주고, 나머지 줄은 용어 하이라이트를 적용한다.
+  const lines = useMemo(
+    () => text.split("\n").map((line) => (EXPLAIN_HEADINGS.has(line.trim()) ? { heading: line.trim() } : { parts: splitByTerms(line, terms) })),
+    [text, terms],
+  );
+  return (
+    <>
+      {lines.map((line, index) => (
+        <Fragment key={index}>
+          {index > 0 && "\n"}
+          {"heading" in line ? (
+            <strong className={styles.explainHeading}>{line.heading}</strong>
+          ) : (
+            line.parts.map((part, at) => (part.term ? <Term key={at} term={part.term} label={part.text} /> : part.text))
+          )}
+        </Fragment>
+      ))}
+    </>
+  );
 }

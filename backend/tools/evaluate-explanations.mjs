@@ -235,7 +235,7 @@ async function main() {
         const explained = answer.providerCd === 'LOCAL_EXPLAIN';
         const record = {
           id, question, history: history ?? null, resultCode: answer.resultCd, provider: answer.providerCd,
-          explained, citationLabel: citation?.label ?? null, explanation: explained ? answer.text : null,
+          explained, citationLabel: citation?.label ?? null, quote: citation?.citeCont ?? null, explanation: explained ? answer.text : null, answerText: answer.text, trace: answer.trace ?? null,
           // 인용문은 해설과 별개의 원문이어야 한다.
           quoteIsSeparate: citation ? !answer.text.includes(citation.citeCont) : null,
           // 검토가 거절했지만 AI가 짚은 법령의 상위 후보를 '질문 관련성 미검증'으로 보여 준 경우(통과로 세지 않고 따로 센다).

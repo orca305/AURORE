@@ -146,3 +146,4 @@
   .fresh .context p { font-size: 14px; }
   .card { min-height: 96px; gap: 14px; }
 }
+.explainHeading { font-weight: 600; color: var(--foreground); }

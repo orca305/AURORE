@@ -10,6 +10,7 @@ vi.mock('./stored-evidence.js', () => ({ retrieveStoredEvidence: vi.fn() }));
 // 기존 시험은 추출·검토 방식(classic)을 전제로 한다. 기본값인 등급 방식은 아래 별도 시험에서 확인한다.
 beforeEach(() => {
   process.env.AURORE_REVIEW_MODE = 'classic';
+  process.env.AURORE_ANSWER_MODE = 'classic'; // 기본은 생성형이므로, 예전 방식 시험은 예전 방식으로 고정한다.
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -202,7 +203,9 @@ describe('plain-language explanation of a verified quote', () => {
       text: '이전 질문',
     });
     expect(result.providerCd).toBe('LOCAL_EXPLAIN');
-    expect(result.text).toBe('쉬운 설명');
+    // 해설 뒤에는 사람이 확인한 연락처 표의 '도움 받을 곳'이 붙는다(법률 상담 132 는 항상).
+    expect(result.text.startsWith('쉬운 설명')).toBe(true);
+    expect(result.text).toContain('도움 받을 곳\n· 대한법률구조공단 법률상담: 132');
     expect(result.citation?.citeCont).toBe(candidates[0].markdown);
     expect(service.explainEvidence).toHaveBeenCalledWith(
       '보증금 반환',
@@ -210,6 +213,7 @@ describe('plain-language explanation of a verified quote', () => {
       '합성법',
       candidates[0].markdown,
       expect.any(Number),
+      [],
     );
   });
   it('falls back to the fixed safe text when explanation is unavailable', async () => {
@@ -231,9 +235,35 @@ describe('plain-language explanation of a verified quote', () => {
   });
   it('formats only explanations whose basis spans are in the quote', () => {
     const text = formatExplanation(EXPLAINED, QUOTE)!;
-    expect(text).toContain('[조건] 임대차가 끝난 뒤여야 합니다.');
-    expect(text).toContain('· 계약 기간이 끝났나요?');
+    expect(text.startsWith('질문에 대한 답\n')).toBe(true);
+    expect(text).toContain('쉽게 풀면\n· 임대차가 끝난 뒤여야 합니다.');
+    expect(text).toContain('확인해 보세요\n· 계약 기간이 끝났나요?');
     expect(text).toContain('전문가 상담');
+    expect(text).not.toContain('예를 들어');
+    expect(text).not.toContain('[조건]');
+    // 예외는 '주의할 점', 가상의 사례는 '예를 들어 (가상의 예)' 로 따로 보여 준다.
+    const richer = formatExplanation(
+      {
+        ...EXPLAINED,
+        example: '보증금 1억 원을 못 받았다면 신청할 수 있어요.',
+        points: [...EXPLAINED.points, { kind: 'EXCEPTION', text: '예외가 있어요.', basis: EXPLAINED.points[0].basis }],
+      },
+      QUOTE,
+    )!;
+    expect(richer).toContain('예를 들어 (가상의 예)\n· 보증금 1억 원을 못 받았다면 신청할 수 있어요.');
+    expect(richer).toContain('주의할 점\n· 예외가 있어요.');
+    expect(richer.indexOf('예를 들어')).toBeLessThan(richer.indexOf('주의할 점'));
+    expect(formatExplanation({ ...EXPLAINED, example: 'x'.repeat(241) }, QUOTE)).toBeUndefined();
+    // 관련 조문에 있는 근거도 인정하고, 실제로 쓰인 관련 조문 이름만 '함께 본 조문'으로 보여 준다.
+    const related = [{ label: '합성법 시행령 제2조', text: '법 제1조에 따른 기준은 20분의 1로 한다.' }];
+    const withRelated = formatExplanation(
+      { ...EXPLAINED, points: [{ kind: 'RULE', text: '20분의 1까지예요.', basis: '기준은 20분의 1로 한다' }], sources: ['합성법 시행령 제2조', '모르는 조문'] },
+      QUOTE,
+      related,
+    )!;
+    expect(withRelated).toContain('함께 본 조문\n· 합성법 시행령 제2조');
+    expect(withRelated).not.toContain('모르는 조문');
+    expect(formatExplanation({ ...EXPLAINED, points: [{ kind: 'RULE', text: '20분의 1까지예요.', basis: '기준은 20분의 1로 한다' }] }, QUOTE)).toBeUndefined();
     expect(
       formatExplanation({ ...EXPLAINED, summaryBasis: '즉시 반환' }, QUOTE),
     ).toBeUndefined();

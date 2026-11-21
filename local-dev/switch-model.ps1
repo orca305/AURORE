@@ -11,9 +11,10 @@ Set-Content -Path (Join-Path $PSScriptRoot 'model-profile.txt') -Value $Profile 
 $root = Split-Path $PSScriptRoot -Parent
 Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'uvicorn main:app' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Start-Sleep -Seconds 2
+$answerer = Set-AuroreExternalEnv
 $env:OLLAMA_HOST = '127.0.0.1:11434'; $env:AURORE_AI_MOCK = '0'; $env:AURORE_OLLAMA_MODEL = $model; $env:AURORE_INTENT_ENABLE_ROUTING = '0'
 $logRoot = Join-Path $PSScriptRoot 'runtime'
 New-Item -ItemType Directory -Force $logRoot | Out-Null
 Start-Process -FilePath (Join-Path $root 'ai-server/.venv/Scripts/python.exe') -ArgumentList '-m uvicorn main:app --host 127.0.0.1 --port 8001' -WorkingDirectory (Join-Path $root 'ai-server') -WindowStyle Hidden -RedirectStandardOutput "$logRoot/ai.out.log" -RedirectStandardError "$logRoot/ai.err.log"
 Start-Sleep -Seconds 6
-Write-Output "AURORE AI model: $Profile ($model)"
+Write-Output "AURORE AI model: $Profile ($model), answers: $answerer"

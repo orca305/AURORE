@@ -40,6 +40,7 @@ $env:AURORE_AI_MOCK = '0'
 # 모델은 local-dev/model-profile.txt(fast|quality)로 고른다. 바꾸려면 local-dev/switch-model.ps1 을 쓴다.
 . (Join-Path $PSScriptRoot 'model-profiles.ps1')
 $env:AURORE_OLLAMA_MODEL = Get-AuroreModel
+$answerer = Set-AuroreExternalEnv
 $env:AURORE_INTENT_CLASSIFY = '0'
 $env:AURORE_INTENT_ENABLE_ROUTING = '0'
 $env:AURORE_AI_URL = 'http://127.0.0.1:8001'

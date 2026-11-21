@@ -2,6 +2,9 @@ import { classifyQuestion } from './intent-routing.js';
 import type { JobResultCode } from './job-diagnostics.js';
 import { missingEvidence, type ClarifyCode } from './clarification.js';
 import { retrieveStoredEvidence, type StoredEvidence } from './stored-evidence.js';
+import { articleNorm, fullArticleTexts, relatedProvisions, type RelatedProvision } from './related-provisions.js';
+import { currentLawNames, matchLawName } from './law-names.js';
+import { helpContactLines } from './help-contacts.js';
 import { Injectable } from '@nestjs/common';
 import { isAbsolute } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -53,25 +56,82 @@ export type PreparedAnswer = {
   clarifyCd?: ClarifyCode;
   providerCd?: 'LOCAL_RAG' | 'LOCAL_EXPLAIN' | 'STORED_SEARCH';
   documentQuotes?: DocumentEvidence[];
+  // 평가 전용(AURORE_EVAL_TRACE=1): 모델이 짚은 조문과 DB에서 맞춘 조문, 후보 목록. 화면·저장에는 쓰지 않는다.
+  trace?: { proposed: string[]; resolved: string[]; candidates: string[] };
   phase: Phase;
   text: string;
   citation?: PreparedCitation;
 };
 
-const EXPLAIN_KINDS: Record<string, string> = {
-  RULE: '내용',
-  CONDITION: '조건',
-  EXCEPTION: '예외',
-};
+const EXPLAIN_KINDS = new Set(['RULE', 'CONDITION', 'EXCEPTION']);
 // 공백·줄바꿈 차이만 허용하고 글자는 원문과 같아야 한다(AI 서버 검증과 동일).
 const inQuote = (quote: string, span: string) => {
   const flat = span.replace(/\s+/gu, '');
   return flat.length >= 4 && quote.replace(/\s+/gu, '').includes(flat);
 };
-/** Re-checks the AI server's contract (basis spans are verbatim) before display. */
+type GenerativeItem = { text?: string; refs?: number[]; unverifiedFigure?: boolean };
+type GenerativeResult = {
+  verified?: boolean;
+  legal?: boolean;
+  conclusion?: string;
+  conclusionRefs?: number[];
+  conclusionUnverifiedFigure?: boolean;
+  actions?: GenerativeItem[];
+  details?: GenerativeItem[];
+  cautions?: GenerativeItem[];
+  checkFacts?: string[];
+  needsExpert?: boolean;
+};
+/**
+ * 생성형 답변을 화면용 글로 만든다. 각 항목 끝에 근거 조문(원문 확인됨)을 붙이고, 근거가 없는 항목은 '(일반 안내)'로 표시한다.
+ * 구성: 결론 → 이렇게 해 보세요 → 알아 둘 내용 → 주의할 점 → 확인해 보세요 → 근거 조문 → 안내.
+ */
+export function formatGenerative(result: GenerativeResult, labels: string[]): string | undefined {
+  const valid = (refs: unknown) =>
+    (Array.isArray(refs) ? refs : []).filter((n): n is number => Number.isInteger(n) && n >= 0 && n < labels.length);
+  const conclusion = typeof result.conclusion === 'string' ? result.conclusion.trim() : '';
+  if (!conclusion || conclusion.length > 300) return;
+  const used: number[] = [];
+  const note = (refs: number[]) => {
+    for (const n of refs) if (!used.includes(n)) used.push(n);
+    return refs.length ? ' — 근거: ' + refs.map((n) => labels[n].replace(/\(.*$/u, '')).join(', ') : ' (일반 안내)';
+  };
+  // 원문에서 확인되지 않은 숫자(기간·금액 등)가 있는 문장은 버리지 않고 그렇게 표시한다.
+  const figureNote = (flag: unknown) => (flag === true ? ' (숫자는 원문으로 확인되지 않았어요)' : '');
+  let unverified = result.conclusionUnverifiedFigure === true;
+  const lines = ['결론', conclusion + figureNote(result.conclusionUnverifiedFigure) + note(valid(result.conclusionRefs))];
+  const section = (title: string, items: GenerativeItem[] | undefined) => {
+    const rows = (items ?? []).filter((item) => typeof item?.text === 'string' && item.text.trim() && item.text.length <= 300);
+    if (rows.length) {
+      for (const item of rows) if (item.unverifiedFigure === true) unverified = true;
+      lines.push('', title, ...rows.map((item) => '· ' + item.text!.trim() + figureNote(item.unverifiedFigure) + note(valid(item.refs))));
+    }
+  };
+  section('이렇게 해 보세요', result.actions);
+  section('알아 둘 내용', result.details);
+  section('주의할 점', result.cautions);
+  const facts = (result.checkFacts ?? []).filter((fact) => typeof fact === 'string' && fact.trim() && fact.length <= 160);
+  if (facts.length) lines.push('', '확인해 보세요', ...facts.map((fact) => '· ' + fact.trim()));
+  if (used.length) lines.push('', '근거 조문 (원문 확인됨)', ...used.map((n) => '· ' + labels[n]));
+  lines.push(
+    '',
+    '(일반 안내)로 표시된 내용은 법령 원문으로 확인하지 않은 일반적인 설명이에요. ' +
+      (unverified ? '원문으로 확인되지 않은 숫자는 법령 원문이나 관할 기관에서 다시 확인해 주세요. ' : '') +
+      (result.needsExpert === false
+        ? '개별 사정에 따라 결론이 달라질 수 있으니 원문과 시행일도 함께 확인해 주세요.'
+        : '실제 분쟁이나 절차가 걸린 문제라면 변호사나 대한법률구조공단 같은 전문가 상담도 함께 받아 보세요.'),
+  );
+  return lines.join('\n');
+}
+
+/**
+ * AI 서버 해설 계약(근거 구간이 원문 그대로)을 다시 확인한 뒤 화면용 글로 만든다.
+ * 구성: 질문에 대한 답 → 쉽게 풀면(규칙·적용되는 경우) → 예를 들어(가상의 예) → 주의할 점(예외) → 확인해 보세요 → 안내.
+ */
 export function formatExplanation(
   value: unknown,
   quote: string,
+  related: RelatedProvision[] = [],
 ): string | undefined {
   const row = value as {
     verified?: unknown;
@@ -80,7 +140,11 @@ export function formatExplanation(
     points?: unknown;
     checkFacts?: unknown;
     needsExpert?: unknown;
+    example?: unknown;
+    sources?: unknown;
   };
+  // 근거 구간은 핵심 조문이나 함께 준 관련 조문 중 하나에 글자 그대로 있어야 한다.
+  const grounded = (span: string) => inQuote(quote, span) || related.some((row) => inQuote(row.text, span));
   const text = (v: unknown, max: number) =>
     typeof v === 'string' && v.trim().length > 0 && v.length <= max;
   if (
@@ -88,16 +152,18 @@ export function formatExplanation(
     row.verified !== true ||
     !text(row.summary, 300) ||
     !text(row.summaryBasis, 600) ||
-    !inQuote(quote, row.summaryBasis as string) ||
+    !grounded(row.summaryBasis as string) ||
     !Array.isArray(row.points) ||
     row.points.length < 1 ||
     row.points.length > 4 ||
     !Array.isArray(row.checkFacts) ||
     row.checkFacts.length > 3 ||
-    typeof row.needsExpert !== 'boolean'
+    typeof row.needsExpert !== 'boolean' ||
+    (row.example !== undefined && row.example !== '' && !text(row.example, 240))
   )
     return;
-  const points: string[] = [];
+  const plain: string[] = [];
+  const caution: string[] = [];
   for (const point of row.points as {
     kind?: unknown;
     text?: unknown;
@@ -106,29 +172,31 @@ export function formatExplanation(
     if (
       !point ||
       typeof point.kind !== 'string' ||
-      !EXPLAIN_KINDS[point.kind] ||
+      !EXPLAIN_KINDS.has(point.kind) ||
       !text(point.text, 300) ||
       !text(point.basis, 600) ||
-      !inQuote(quote, point.basis as string)
+      !grounded(point.basis as string)
     )
       return;
-    points.push(
-      '· [' + EXPLAIN_KINDS[point.kind] + '] ' + (point.text as string).trim(),
-    );
+    (point.kind === 'EXCEPTION' ? caution : plain).push('· ' + (point.text as string).trim());
   }
   if (!row.checkFacts.every((fact) => text(fact, 160))) return;
-  const lines = [(row.summary as string).trim(), '', ...points];
+  const lines = ['질문에 대한 답', (row.summary as string).trim()];
+  if (plain.length) lines.push('', '쉽게 풀면', ...plain);
+  if (typeof row.example === 'string' && row.example.trim())
+    lines.push('', '예를 들어 (가상의 예)', '· ' + row.example.trim());
+  if (caution.length) lines.push('', '주의할 점', ...caution);
   if (row.checkFacts.length)
-    lines.push(
-      '',
-      '이 조문이 적용되는지 확인할 점',
-      ...(row.checkFacts as string[]).map((fact) => '· ' + fact.trim()),
-    );
+    lines.push('', '확인해 보세요', ...(row.checkFacts as string[]).map((fact) => '· ' + fact.trim()));
+  // 해설에 실제로 근거로 쓰인 관련 조문(우리가 넘긴 목록에 있는 이름만 보여 준다).
+  const known = new Set(related.map((item) => item.label));
+  const used = Array.isArray(row.sources) ? (row.sources as unknown[]).filter((label): label is string => typeof label === 'string' && known.has(label)) : [];
+  if (used.length) lines.push('', '함께 본 조문', ...used.map((label) => '· ' + label));
   lines.push(
     '',
     row.needsExpert
-      ? '실제 분쟁이나 절차 진행이 걸린 문제라면 변호사·법률구조공단 등 전문가 상담을 함께 받아 보세요.'
-      : '개별 사정에 따라 결론이 달라질 수 있으니 아래 원문과 시행일을 함께 확인해 주세요.',
+      ? '실제 분쟁이나 절차가 걸린 문제라면 변호사나 대한법률구조공단 같은 전문가 상담도 함께 받아 보세요.'
+      : '개별 사정에 따라 결론이 달라질 수 있으니 아래 원문과 시행일도 함께 확인해 주세요.',
   );
   return lines.join('\n');
 }
@@ -406,6 +474,25 @@ export class ChatAnswerService {
     context?: { text: string; asOf?: string },
     supplement = false,
   ): Promise<PreparedAnswer> {
+    // 생성형 답변(AURORE_ANSWER_MODE=generative): 모델이 적용 조문을 직접 짚고(그 조문을 DB에서 바로 찾아 후보 맨 앞에 넣는다),
+    // 확인된 원문을 근거로 결론·할 일·주의점을 쓴다. 근거 없는 내용은 '일반 안내'로 표시한다.
+    // 기본은 생성형이다(AURORE_ANSWER_MODE=classic 이면 예전 선별·해설 방식만).
+    const generative = process.env.AURORE_ANSWER_MODE !== 'classic';
+    // 조문 짚기는 질문 분석·검색(어휘·의미)과 동시에 시작한다. 검색은 짚은 조문이 필요한 마지막 단계에서만 이 결과를 기다린다.
+    const proposed = generative
+      ? this.proposeArticles(question, context?.text ?? '')
+          .then(async (proposal) => {
+            // 모델이 말한 법령 이름을 DB 정식 명칭으로 맞춘다(약칭·띄어쓰기·비슷한 이름). 맞출 수 없으면 버린다.
+            const lawNames = proposal.citations.length ? await currentLawNames(this.db).catch(() => [] as string[]) : [];
+            const resolved = proposal.citations.flatMap(({ law, article }) => {
+              const norm = articleNorm(article);
+              const name = matchLawName(law, lawNames);
+              return norm && name ? [{ law: name, norm }] : [];
+            });
+            return { proposal, resolved };
+          })
+          .catch(() => null)
+      : Promise.resolve(null);
     const analysis = await this.analyzeQuery(question);
     // 인용 법령 일치 검사: 인용할 조문의 법령이 질문 분석이 짚은 법령이나 질문과 뜻이 가까운 법령(또는 그 시행령·시행규칙)에
     // 없으면 근거로 확정하지 않는다(다른 후보를 보거나 근거 없음으로 처리). 짚은 법령이 하나도 없으면 판단하지 않는다.
@@ -424,8 +511,16 @@ export class ChatAnswerService {
         vectorQuery: [question, ...analysis.terms].join(' '),
         termQuery: [...analysis.terms, ...analysis.laws].join(' '),
         hintedLaws,
+        priorityArticles: proposed.then((value) => value?.resolved.map(({ law, norm }) => law + '|' + norm) ?? []),
       },
     );
+    const proposedResult = await proposed;
+    const proposal = proposedResult?.proposal ?? null;
+    const resolved = proposedResult?.resolved ?? [];
+    const priorityArticles = resolved.map(({ law, norm }) => law + '|' + norm);
+    for (const item of resolved) hintedLaws.add(item.law);
+    if (generative && proposal && !proposal.legal && !priorityArticles.length)
+      return missingEvidence('RELEVANCE_GAP', supplement);
     if (!candidates.length) return missingEvidence('SOURCE_GAP', supplement);
     const lawAllowed = (candidate: StoredEvidence) => {
       if (process.env.AURORE_LAW_GATE === '0' || hintedLaws.size === 0) return true;
@@ -433,6 +528,23 @@ export class ChatAnswerService {
       const name = candidate.citation.label.replace(/\s제\d+조.*$/u, '').trim();
       return hintedLaws.has(name) || hintedLaws.has(name.replace(/\s*(시행령|시행규칙)$/u, ''));
     };
+    if (generative) {
+      // 근거로 줄 조문에서도 인용 법령 일치 검사를 한다(후보에 섞인 무관한 법령을 모델이 근거로 잘못 달지 않도록).
+      const allowed = candidates.filter(lawAllowed);
+      const answered = await this.generativeAnswer(question, context?.text ?? '', allowed.length ? allowed : candidates).catch(() => undefined);
+      if (answered)
+        return process.env.AURORE_EVAL_TRACE === '1'
+          ? {
+              ...answered,
+              trace: {
+                proposed: (proposal?.citations ?? []).map((c) => c.law + ' ' + c.article),
+                resolved: priorityArticles,
+                candidates: candidates.slice(0, 8).map((row) => row.citation.label.replace(/\s·\s.*$/u, '')),
+              },
+            }
+          : answered;
+      // 생성형 답변이 실패하면 기존 선별·해설 경로로 넘어간다.
+    }
     if (!(await this.documentsReady()))
       return {
         phase: 'start',
@@ -448,6 +560,8 @@ export class ChatAnswerService {
     for (let offset = 0; offset < candidates.length; offset += 3)
       batches.push(candidates.slice(offset, offset + 3));
     const finish = async (candidate: StoredEvidence, quoteText: string) => {
+      // 인용한 한 항만으로는 "그래서 어떻게 되는지"를 말하기 어려워, 같은 조문 전체·관련 조문·벌칙·시행령을 함께 준다(모두 공식 원문).
+      const related = await relatedProvisions(this.db, { ...candidate.citation, citeCont: quoteText }).catch(() => [] as RelatedProvision[]);
       const explanation = await this.explainEvidence(
         question,
         context?.text ?? '',
@@ -455,14 +569,18 @@ export class ChatAnswerService {
         quoteText,
         // Stay well inside the 180s per-attempt race; fall back instead of timing out.
         Math.min(110_000, 150_000 - (Date.now() - started)),
+        related,
       );
+      // 도움 받을 곳: 사람이 확인한 고정 연락처 표에서 인용 법령에 맞는 것을 붙인다(AI 생성 아님).
+      const contacts = helpContactLines(candidate.citation.label);
+      const body =
+        explanation ??
+        '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.';
       return {
         phase: 'start' as const,
         providerCd: (explanation ? 'LOCAL_EXPLAIN' : 'LOCAL_RAG') as 'LOCAL_EXPLAIN' | 'LOCAL_RAG',
         resultCd: 'EVIDENCE_FOUND' as const,
-        text:
-          explanation ??
-          '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.',
+        text: contacts.length ? body + '\n\n도움 받을 곳\n' + contacts.join('\n') : body,
         citation: {
           ...candidate.citation,
           citeCont: quoteText,
@@ -568,27 +686,7 @@ export class ChatAnswerService {
         if (!quote) continue;
         const candidate = batch.find((row) => row.id === quote.documentId)!;
         if (!lawAllowed(candidate)) continue;
-        const explanation = await this.explainEvidence(
-          question,
-          context?.text ?? '',
-          candidate.citation.label,
-          quote.quote,
-          // Stay well inside the 180s per-attempt race; fall back instead of timing out.
-          Math.min(110_000, 150_000 - (Date.now() - started)),
-        );
-        return {
-          phase: 'start',
-          providerCd: (explanation ? 'LOCAL_EXPLAIN' : 'LOCAL_RAG') as 'LOCAL_EXPLAIN' | 'LOCAL_RAG',
-          resultCd: 'EVIDENCE_FOUND',
-          text:
-            explanation ??
-            '저장된 법령·판례에서 질문과 관련된 원문을 찾았습니다. 아래 근거를 확인해 주세요. 개별 사건의 적용 여부와 적용 시점은 추가 확인이 필요합니다.',
-          citation: {
-            ...candidate.citation,
-            citeCont: quote.quote,
-            supportVerifyCd: 'MODEL_REVIEWED',
-          },
-        };
+        return finish(candidate, quote.quote);
       }
     }
     // 모든 묶음이 검토 자체에 실패했다면(거절이 아니라 오류) 호출자가 알 수 있게 전달한다.
@@ -691,12 +789,94 @@ export class ChatAnswerService {
    * failure so the caller keeps its fixed safe text; the quote itself is stored
    * separately as the citation and is never replaced by model output.
    */
+  /** 모델이 질문에 적용될 법령 조문을 짚는다(법률 질문이 아니면 legal=false). */
+  async proposeArticles(
+    question: string,
+    context: string,
+  ): Promise<{ legal: boolean; citations: { law: string; article: string }[] }> {
+    const response = await fetch(this.documentUrl('/legal/propose'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: redactDocument(question).slice(0, 1000) || '질문',
+        context: redactDocument(context).slice(0, 2000),
+      }),
+      signal: AbortSignal.timeout(60_000),
+      redirect: 'error',
+    });
+    if (!response.ok) throw new Error('ProposalFailed');
+    const value = (await response.json()) as { legal?: unknown; citations?: unknown };
+    if (typeof value.legal !== 'boolean' || !Array.isArray(value.citations)) throw new Error('ProposalInvalid');
+    const citations = (value.citations as { law?: unknown; article?: unknown }[])
+      .filter((c) => typeof c?.law === 'string' && typeof c?.article === 'string')
+      .slice(0, 6) as { law: string; article: string }[];
+    return { legal: value.legal, citations };
+  }
+
+  /**
+   * 생성형 답변: 후보 상위 8개(모델이 짚은 조문이 앞)의 조문 전문을 근거로 주고 답을 받는다.
+   * 근거가 된 조문 중 첫 번째를 화면의 원문 인용으로 쓴다. 근거를 하나도 밝히지 않았으면 인용은 '질문 관련성 미검증'으로 둔다.
+   */
+  async generativeAnswer(
+    question: string,
+    context: string,
+    candidates: StoredEvidence[],
+  ): Promise<PreparedAnswer | undefined> {
+    // 근거 조문: 후보 상위 6개(조문 전문) + 핵심 조문의 관련 조문(시행령·벌칙·참조·앞뒤 조문) 최대 5개. 번호는 이 순서(0부터)다.
+    const top = candidates.slice(0, 6);
+    const [full, related] = await Promise.all([
+      fullArticleTexts(this.db, top.map((row) => row.citation)).catch(() => new Map<string, string>()),
+      relatedProvisions(this.db, top[0].citation).catch(() => [] as RelatedProvision[]),
+    ]);
+    const shortLabel = (label: string) => label.replace(/\s·\s.*$/u, '');
+    const provisions = top.map((row) => ({
+      label: shortLabel(row.citation.label),
+      text: (full.get(row.citation.label) ?? row.markdown).slice(0, 1600),
+    }));
+    const known = new Set(provisions.map((p) => p.label.replace(/\(.*$/u, '').trim()));
+    for (const row of related) {
+      const key = row.label.replace(/\(.*$/u, '').replace(/\s전체$/u, '').trim();
+      if (provisions.length >= 11 || known.has(key) || /\s전체$/u.test(row.label)) continue;
+      known.add(key);
+      provisions.push({ label: row.label.replace(/\s전체$/u, ''), text: row.text.slice(0, 1200) });
+    }
+    const response = await fetch(this.documentUrl('/legal/answer'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: redactDocument(question).slice(0, 1000) || '질문',
+        context: redactDocument(context).slice(0, 2000),
+        provisions,
+      }),
+      signal: AbortSignal.timeout(110_000),
+      redirect: 'error',
+    });
+    if (!response.ok) return;
+    const result = (await response.json()) as GenerativeResult;
+    if (result?.verified !== true) return;
+    if (!result.legal) return missingEvidence('RELEVANCE_GAP', false);
+    const text = formatGenerative(result, provisions.map((p) => p.label));
+    if (!text) return;
+    const refs = [...(result.conclusionRefs ?? []), ...[...(result.actions ?? []), ...(result.details ?? []), ...(result.cautions ?? [])].flatMap((item) => item.refs ?? [])];
+    const first = refs.find((n) => Number.isInteger(n) && n >= 0 && n < top.length); // 화면 인용은 후보 조문(관련 조문은 제외)
+    const main = top[first ?? 0];
+    const contacts = helpContactLines(main.citation.label);
+    return {
+      phase: 'start',
+      providerCd: 'LOCAL_EXPLAIN',
+      resultCd: 'EVIDENCE_FOUND',
+      text: contacts.length ? text + '\n\n도움 받을 곳\n' + contacts.join('\n') : text,
+      citation: { ...main.citation, supportVerifyCd: first === undefined ? 'UNREVIEWED' : 'MODEL_REVIEWED' },
+    };
+  }
+
   async explainEvidence(
     question: string,
     context: string,
     label: string,
     quote: string,
     budgetMs = 110_000,
+    related: RelatedProvision[] = [],
   ): Promise<string | undefined> {
     if (process.env.AURORE_EXPLAIN === '0' || budgetMs < 20_000) return;
     try {
@@ -709,6 +889,7 @@ export class ChatAnswerService {
           question: redactDocument(question).slice(0, 1000) || '질문',
           context: redactDocument(context).slice(0, 2000),
           evidence: { label: label.slice(0, 200), quote },
+          related: related.map((row) => ({ label: row.label.slice(0, 200), quote: row.text })),
         }),
         signal: AbortSignal.timeout(budgetMs),
         redirect: 'error',
@@ -716,7 +897,7 @@ export class ChatAnswerService {
       if (!response.ok) return;
       const body = await response.text();
       if (body.length > 20000) return;
-      return formatExplanation(JSON.parse(body), quote);
+      return formatExplanation(JSON.parse(body), quote, related);
     } catch {
       return;
     }
