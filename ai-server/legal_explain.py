@@ -9,6 +9,7 @@ Any failure returns 502 so the backend falls back to its fixed safe text.
 """
 import json
 import os
+import time
 import re
 import urllib.request
 from typing import Annotated, Literal
@@ -17,7 +18,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from document_answer import local_json
-from external_model import ExternalUnavailable, anthropic_json
+from external_model import ExternalUnavailable, anthropic_json, external_blocked
 
 router = APIRouter(prefix="/legal")
 
@@ -142,17 +143,45 @@ def validate(draft: Draft, evidence: Evidence, related: list[Evidence] | None = 
 _anthropic_json = anthropic_json  # 시험이 이 이름을 대체한다
 
 
+# 해설·답변 모델 사용 통계(서버가 켜진 뒤 누적, 내용 없이 건수만). 관리자 화면의 'AI 답변 모델' 표시에 쓴다.
+STATS = {"external": 0, "local": 0, "fallback": 0, "since": time.time(), "last_fallback_kind": ""}
+
+
 def _model_json(*args, **kwargs):
     """해설·답변 모델 호출. AURORE_EXPLAIN_PROVIDER=anthropic 이면 Haiku 등 외부 모델을 쓰되,
     예산 소진·인증 오류·과부하·네트워크 문제로 쓸 수 없으면 같은 요청을 로컬 모델로 대신 처리한다(쿨다운 동안은 외부를 부르지 않는다).
     로컬로 넘어가면 답이 더 느리고 품질이 낮을 수 있다. AURORE_EXPLAIN_FALLBACK=0 이면 대신하지 않고 실패시킨다."""
     if os.environ.get("AURORE_EXPLAIN_PROVIDER") == "anthropic":
         try:
-            return _anthropic_json(*args, **kwargs)
-        except ExternalUnavailable:
+            result = _anthropic_json(*args, **kwargs)
+            STATS["external"] += 1
+            return result
+        except ExternalUnavailable as unavailable:
+            STATS["fallback"] += 1
+            STATS["last_fallback_kind"] = unavailable.kind
             if os.environ.get("AURORE_EXPLAIN_FALLBACK", "1") == "0":
                 raise
+    STATS["local"] += 1
     return local_json(*args, **kwargs)
+
+
+@router.get("/status")
+def answer_model_status():
+    """답변·해설 모델의 현재 상태(키 값은 절대 내보내지 않는다). 관리자 화면용."""
+    provider = os.environ.get("AURORE_EXPLAIN_PROVIDER") == "anthropic"
+    blocked = external_blocked() if provider else None
+    import external_model
+    return {
+        "provider": "external" if provider else "local",
+        "externalModel": os.environ.get("AURORE_EXPLAIN_MODEL", "claude-haiku-5-5") if provider else None,
+        "keyConfigured": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "localModel": os.environ.get("AURORE_OLLAMA_MODEL", ""),
+        "mode": "fallback" if blocked else ("external" if provider else "local"),
+        "blockedKind": blocked,
+        "blockedSecondsLeft": max(0, int(external_model._blocked_until - time.time())) if blocked else 0,
+        "calls": {"external": STATS["external"], "local": STATS["local"], "fallback": STATS["fallback"], "lastFallbackKind": STATS["last_fallback_kind"] or None},
+        "sinceSeconds": int(time.time() - STATS["since"]),
+    }
 
 
 # 검증에서 거절됐을 때 다음 시도에 알려 주는 고정 문구(원문·질문 내용은 담지 않는다).

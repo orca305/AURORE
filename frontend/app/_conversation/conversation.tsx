@@ -1,5 +1,6 @@
 "use client";
 
+import { UsageNotice } from "./usage-notice";
 import {documentSelectionProblem,type DocumentSelection} from './context-selection';
 import {TermLookupPanel} from '../_terms/lookup-panel';
 import {HighlightedText} from './term-highlight';
@@ -332,6 +333,7 @@ export function Conversation({ ask, initialChat, member = false }: {
         </button></div>
       </div>
     </form>
+    <UsageNotice />
     {fresh && <div className={styles.situations} aria-label="상황으로 시작하기">
       <p>상황으로 시작하기</p>
       <div className={styles.cards}>

@@ -308,4 +308,11 @@ export class AdminController {
   overview() {
     return this.admin.overview();
   }
+
+  /** 답변·해설 모델 상태(Haiku 정상 / 로컬로 전환 / 로컬만). AI 서버가 알려 주는 값만 그대로 전달하고 키는 포함하지 않는다. */
+  @Get('ai-status')
+  @Header('Cache-Control', 'no-store')
+  aiStatus() {
+    return this.admin.aiStatus();
+  }
 }

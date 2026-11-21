@@ -37,6 +37,9 @@ async function loadIndex(): Promise<Index | null> {
 }
 const index = () => (loading ??= loadIndex().then((value) => { if (!value) loading = null; return value; }));
 
+/** 조문 임베딩 인덱스(약 200MB)를 미리 읽어 둔다. 첫 질문이 이 시간을 기다리지 않게 하려는 것이다. */
+export const warmVectorIndex = () => index().then(() => undefined);
+
 export async function embedQuery(text: string, timeoutMs = 10_000): Promise<Int8Array | null> {
   try {
     const host = process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434';

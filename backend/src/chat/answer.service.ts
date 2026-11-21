@@ -1,11 +1,13 @@
 import { classifyQuestion } from './intent-routing.js';
 import type { JobResultCode } from './job-diagnostics.js';
 import { missingEvidence, type ClarifyCode } from './clarification.js';
-import { retrieveStoredEvidence, type StoredEvidence } from './stored-evidence.js';
+import { retrieveStoredEvidence, warmPinnedEvidence, type StoredEvidence } from './stored-evidence.js';
 import { articleNorm, fullArticleTexts, relatedProvisions, type RelatedProvision } from './related-provisions.js';
 import { currentLawNames, matchLawName } from './law-names.js';
+import { warmVectorIndex, embedQuery } from './vector-search.js';
+import { warmLawTitles } from './law-titles.js';
 import { helpContactLines } from './help-contacts.js';
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 import { isAbsolute } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { redactDocument } from '../documents/document-text.js';
@@ -202,8 +204,22 @@ export function formatExplanation(
 }
 
 @Injectable()
-export class ChatAnswerService {
+export class ChatAnswerService implements OnApplicationBootstrap {
   constructor(private readonly db: PrismaService) {}
+
+  /**
+   * 서버가 켜질 때 첫 질문이 오래 걸리지 않도록 큰 자료를 미리 읽어 둔다(백그라운드, 실패해도 무시).
+   * 조문 임베딩 인덱스(약 200MB), 법령 인덱스, 상시 유지 법령 원문, 임베딩 모델. AURORE_WARMUP=0 으로 끈다.
+   */
+  onApplicationBootstrap() {
+    if (process.env.AURORE_WARMUP === '0' || process.env.VITEST) return;
+    void Promise.allSettled([
+      warmVectorIndex(),
+      warmLawTitles(),
+      warmPinnedEvidence(this.db),
+      embedQuery('워밍업', 30_000),
+    ]);
+  }
 
   private documentUrl(path: string) {
     // 해설만 별도 서버(예: 외부 모델을 붙인 AI 서버)로 보낼 수 있다. 어느 쪽이든 루프백만 허용한다.

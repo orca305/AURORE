@@ -146,4 +146,11 @@
   .fresh .context p { font-size: 14px; }
   .card { min-height: 96px; gap: 14px; }
 }
-.explainHeading { font-weight: 600; color: var(--foreground); }
+.explainHeading { display: inline-block; margin-top: 4px; font-weight: 700; color: var(--accent); font-size: 13px; letter-spacing: 0.02em; }
+.usageNotice { margin: 10px 2px 0; font-size: 12px; line-height: 1.8; color: var(--muted); }
+.usageNotice p { margin: 0; }
+.usageNotice strong { color: var(--secondary); font-weight: 600; }
+.usageNotice details { margin-top: 4px; }
+.usageNotice summary { cursor: pointer; color: var(--accent); width: fit-content; }
+.usageNotice ul { margin: 6px 0 0; padding-left: 18px; }
+.usageNotice li { margin: 2px 0; }

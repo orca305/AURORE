@@ -399,6 +399,39 @@ export class AdminService {
     );
   }
 
+  async aiStatus() {
+    const base = process.env.AURORE_AI_URL || 'http://127.0.0.1:8000';
+    const url = new URL('/legal/status', base);
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !['http:', 'https:'].includes(url.protocol))
+      return { reachable: false };
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'error' });
+      if (!response.ok) return { reachable: false };
+      const value = (await response.json()) as Record<string, unknown>;
+      // 필요한 필드만 걸러서 전달한다(예상 밖의 값이 화면으로 새지 않도록).
+      const calls = (value.calls ?? {}) as Record<string, unknown>;
+      return {
+        reachable: true,
+        provider: value.provider === 'external' ? 'external' : 'local',
+        mode: ['external', 'fallback', 'local'].includes(String(value.mode)) ? String(value.mode) : 'local',
+        externalModel: typeof value.externalModel === 'string' ? value.externalModel.slice(0, 60) : null,
+        localModel: typeof value.localModel === 'string' ? value.localModel.slice(0, 60) : '',
+        keyConfigured: value.keyConfigured === true,
+        blockedKind: typeof value.blockedKind === 'string' ? value.blockedKind.slice(0, 40) : null,
+        blockedSecondsLeft: Math.max(0, Number(value.blockedSecondsLeft) || 0),
+        calls: {
+          external: Number(calls.external) || 0,
+          local: Number(calls.local) || 0,
+          fallback: Number(calls.fallback) || 0,
+          lastFallbackKind: typeof calls.lastFallbackKind === 'string' ? calls.lastFallbackKind.slice(0, 40) : null,
+        },
+        sinceSeconds: Math.max(0, Number(value.sinceSeconds) || 0),
+      };
+    } catch {
+      return { reachable: false };
+    }
+  }
+
   async overview() {
     return this.db.$transaction(
       async (tx) => {

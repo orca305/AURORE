@@ -1,6 +1,7 @@
 import {jobProviders,jobErrors,jobResults} from "../_admin/job-format";
 import Link from "next/link";
-import { requestAdmin, type AdminOverview } from "../_admin/requests";
+import { requestAdmin, type AdminOverview, type AiStatus } from "../_admin/requests";
+import { AiStatusPanel } from "./ai-status-panel";
 import { date, number, states } from "../_admin/format";
 import styles from "./page.module.css";
 export const metadata = { title: "운영 현황 | AURORE" };
@@ -8,10 +9,13 @@ export default async function AdminPage() {
   const response = await requestAdmin("overview");
   if (!response?.ok) return <p role="alert" className={styles.notice}>운영 현황을 불러오지 못했습니다. 권한과 연결 상태를 확인한 뒤 다시 시도해 주세요.</p>;
   const data = await response.json() as AdminOverview;
+  const aiResponse = await requestAdmin("ai-status");
+  const ai = (aiResponse?.ok ? await aiResponse.json() : { reachable: false }) as AiStatus;
   const failures = data.jobs.find(row=>row.status==="FAILED")?.count ?? 0;
   const cards = [["회원 수",data.counts.members,"명","탈퇴 계정 제외"],["보관 중 대화",data.counts.conversations,"개","삭제·보관 만료 제외"],["실패한 AI 작업",failures,"건",failures ? "처리 상태 확인 필요" : "확인할 실패 작업 없음"]] as const;
   const datasets = [["법령",data.counts.legals,"건"],["시행본",data.counts.versions,"개"],["현재 원문 조문",data.counts.provisions,"개"],["판례",data.counts.precedents,"건"],["수집 원본",data.counts.snapshots,"개"]] as const;
   return <>
+    <AiStatusPanel status={ai} />
     <div className={styles.sectionTitle}><div><h2>서비스 현황</h2><p>{date(data.asOf)} 기준</p></div></div>
     <dl className={styles.metrics}>{cards.map(([label,count,unit,note])=><div key={label} className={label==="실패한 AI 작업" && count>0 ? styles.attention : undefined}><dt>{label === "회원 수" ? <Link href="/admin/members" data-action-link>{label} </Link> : label === "실패한 AI 작업" ? <Link href="/admin/ai-jobs" data-action-link>{label} </Link> : label}</dt><dd>{number.format(count)}<small>{unit}</small></dd><dd className={styles.metricNote}>{note}</dd></div>)}</dl>
     <section className={styles.section} aria-labelledby="data-heading"><div className={styles.sectionTitle}><h2 id="data-heading">법령 데이터</h2><Link href="/admin/legal-refresh" data-action-link>수집·정정 관리 </Link></div><dl className={styles.dataset}>{datasets.map(([label,count,unit])=><div key={label}><dt>{label}</dt><dd>{number.format(count)}<small>{unit}</small></dd></div>)}</dl></section>

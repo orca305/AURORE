@@ -144,6 +144,23 @@ class ExplainTests(unittest.TestCase):
         finally:
             external_model._blocked_until = 0.0
 
+    def test_status_reports_mode_without_exposing_the_key(self):
+        import external_model, legal_explain
+        external_model._blocked_until = 0.0
+        env = {"AURORE_EXPLAIN_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "secret-value", "AURORE_OLLAMA_MODEL": "aurore-local:12b"}
+        with patch.dict("os.environ", env):
+            status = legal_explain.answer_model_status()
+            self.assertEqual((status["provider"], status["mode"], status["keyConfigured"]), ("external", "external", True))
+            self.assertNotIn("secret-value", str(status))
+            external_model._blocked_until = __import__("time").time() + 600
+            external_model._blocked_kind = "BUDGET_EXHAUSTED"
+            blocked = legal_explain.answer_model_status()
+            self.assertEqual((blocked["mode"], blocked["blockedKind"]), ("fallback", "BUDGET_EXHAUSTED"))
+            self.assertGreater(blocked["blockedSecondsLeft"], 500)
+        external_model._blocked_until = 0.0
+        with patch.dict("os.environ", {"AURORE_OLLAMA_MODEL": "aurore-local:12b"}, clear=True):
+            self.assertEqual(legal_explain.answer_model_status()["mode"], "local")
+
     def test_retry_after_rejection_passes_hint_and_succeeds(self):
         bad = draft(summaryBasis="보증금을 즉시 돌려받을 수 있다")
         with patch("legal_explain.local_json", side_effect=[bad, draft(), OK]) as model:

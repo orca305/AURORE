@@ -30,6 +30,9 @@ async function load(): Promise<TitleIndex | null> {
 }
 const index = () => (loading ??= load().then((value) => { if (!value) loading = null; return value; }));
 
+/** 법령 인덱스를 미리 읽어 둔다. */
+export const warmLawTitles = () => (lawTitlesEnabled() ? index().then(() => undefined) : Promise.resolve());
+
 /** 질문 벡터와 코사인 유사도가 큰 법령 이름 상위 n개. */
 export async function searchLawTitles(query: Int8Array, n = 3): Promise<{ name: string; score: number }[]> {
   if (!lawTitlesEnabled()) return [];
