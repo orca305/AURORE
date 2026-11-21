@@ -46,7 +46,7 @@ class AnswerTests(unittest.TestCase):
             result = answer(req())
         self.assertTrue(result["legal"])
         self.assertEqual(result["conclusionRefs"], [0])
-        self.assertEqual(result["actions"][0]["refs"], [])  # 일반 안내
+        self.assertEqual(result["actions"][0]["refs"], [])  # 근거 없는 일반 안내(화면에는 표시 없이 나간다)
         self.assertEqual(result["details"][0]["refs"], [1])
         self.assertEqual(result["dropped"], 0)
 
@@ -54,9 +54,11 @@ class AnswerTests(unittest.TestCase):
         bad = good(details=[{"text": "3년 이하의 징역에 처해질 수 있어요.", "refs": [0]}, {"text": "제760조에 따라 공동 책임이에요.", "refs": []}, {"text": "범위 밖 근거", "refs": [9]}])
         with patch("legal_answer._model_json", return_value=bad):
             result = answer(req())
-        self.assertEqual([item["text"] for item in result["details"]], ["3년 이하의 징역에 처해질 수 있어요."])
+        # 범위 밖 근거 번호는 그 번호만 빼고 항목은 살리며, 원문에 없는 조문 번호가 든 항목만 버린다.
+        self.assertEqual([item["text"] for item in result["details"]], ["3년 이하의 징역에 처해질 수 있어요.", "범위 밖 근거"])
         self.assertTrue(result["details"][0]["unverifiedFigure"])
-        self.assertEqual(result["dropped"], 2)
+        self.assertEqual(result["details"][1]["refs"], [])
+        self.assertEqual(result["dropped"], 1)
         self.assertEqual(result["markedFigures"], 1)
 
     def test_conclusion_with_an_unverified_number_is_kept_and_marked_not_retried(self):
@@ -81,6 +83,29 @@ class AnswerTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 answer(req())
 
+    def test_extra_items_and_long_text_are_trimmed_instead_of_rejecting_the_answer(self):
+        many = good(
+            actions=[{"text": "할 일 %d" % i, "refs": []} for i in range(6)],
+            details=[{"text": "내용 %d" % i, "refs": [0, 1, 0, 1, 0, 1]} for i in range(5)],
+            cautions=[{"text": "주의 %d" % i, "refs": []} for i in range(4)],
+            checkFacts=["확인 %d" % i for i in range(5)],
+            conclusion="결론입니다. " + "가" * 400,
+        )
+        with patch("legal_answer._model_json", return_value=many) as model:
+            result = answer(req())
+        self.assertEqual(model.call_count, 1)
+        self.assertEqual((len(result["actions"]), len(result["details"]), len(result["cautions"]), len(result["checkFacts"])), (3, 3, 2, 2))
+        self.assertLessEqual(len(result["conclusion"]), 300)
+        self.assertLessEqual(len(result["details"][0]["refs"]), 2)
+
+    def test_conclusion_keeps_good_sentences_and_drops_only_the_overconfident_one(self):
+        mixed = good(conclusion="네, 원칙적으로 배상할 책임이 있어요. 무조건 100% 승소할 수 있어요. 다만 주의를 다했다면 달라질 수 있어요.", conclusionRefs=[0, 9])
+        with patch("legal_answer._model_json", return_value=mixed) as model:
+            result = answer(req())
+        self.assertEqual(model.call_count, 1)
+        self.assertEqual(result["conclusion"], "네, 원칙적으로 배상할 책임이 있어요. 다만 주의를 다했다면 달라질 수 있어요.")
+        self.assertEqual(result["conclusionRefs"], [0])
+
     def test_non_legal_answer(self):
         with patch("legal_answer._model_json", return_value={"legal": False}):
             self.assertEqual(answer(req()), {"legal": False, "verified": True})
@@ -88,3 +113,34 @@ class AnswerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PRECS = [
+    {"label": "대법원 2024다208865", "text": "판결요지: 개의 점유자가 그 보관에 상당한 주의를 해태하지 않았다는 점은 점유자가 증명하여야 하고, 목줄을 하지 않은 채 산책시킨 경우에는 주의의무를 다했다고 보기 어렵다."},
+    {"label": "대법원 2019다100", "text": "판결요지: 임대차 종료 후 보증금 반환과 목적물 인도는 동시이행 관계에 있다."},
+]
+
+
+class PrecedentNoteTests(unittest.TestCase):
+    def run_with(self, notes, precedents=PRECS):
+        request = AnswerRequest(question="반려견이 이웃을 물었어요 제가 책임을 져야 하나요?", provisions=PROV, precedents=precedents)
+        with patch("legal_answer._model_json", return_value=good(precedentNotes=notes)):
+            return answer(request)
+
+    def test_grounded_note_survives(self):
+        result = self.run_with([{"text": "법원은 목줄을 하지 않은 채 산책시킨 경우 주의의무를 다했다고 보기 어렵다고 판단했어요.", "refs": [0]}])
+        self.assertEqual(result["precedentNotes"], [{"text": "법원은 목줄을 하지 않은 채 산책시킨 경우 주의의무를 다했다고 보기 어렵다고 판단했어요.", "refs": [0]}])
+
+    def test_unrelated_invented_or_out_of_range_notes_are_dropped(self):
+        result = self.run_with([
+            {"text": "법원은 건물 철거를 명령할 수 있다고 판단했어요.", "refs": [0]},  # 요지에 근거 없음
+            {"text": "법원은 목줄을 하지 않은 채 산책시킨 경우 주의의무를 다했다고 보기 어렵다고 판단했어요.", "refs": [7]},  # 범위 밖 번호
+            {"text": "대법원 2099다1 판결은 목줄을 하지 않은 채 산책시킨 경우 주의의무를 다했다고 보기 어렵다고 봤어요.", "refs": [0]},  # 없는 사건번호
+            {"text": "법원은 목줄을 하지 않은 채 산책시킨 경우 주의의무를 다했다고 보기 어렵고 배상액은 300만원이라고 판단했어요.", "refs": [0]},  # 요지에 없는 숫자
+            {"text": "법원은 목줄을 하지 않은 채 산책시킨 경우 반드시 책임을 진다고 판단했어요.", "refs": [0]},  # 단정 표현
+        ])
+        self.assertEqual(result["precedentNotes"], [])
+
+    def test_no_precedents_means_no_notes(self):
+        result = self.run_with([{"text": "법원은 목줄을 하지 않은 채 산책시킨 경우 주의의무를 다했다고 보기 어렵다고 판단했어요.", "refs": [0]}], precedents=[])
+        self.assertEqual(result["precedentNotes"], [])

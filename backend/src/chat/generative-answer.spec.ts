@@ -21,7 +21,8 @@ describe('formatGenerative', () => {
       labels,
     )!;
     expect(text.startsWith('결론\n네, 원칙적으로 배상할 책임이 있어요. — 근거: 민법 제759조')).toBe(true);
-    expect(text).toContain('이렇게 해 보세요\n· 치료비 영수증을 받아 두세요. (일반 안내)');
+    expect(text).toContain('이렇게 해 보세요\n· 치료비 영수증을 받아 두세요.\n');
+    expect(text).not.toContain('일반 안내');
     expect(text).toContain('알아 둘 내용\n· 과태료가 나올 수 있어요. — 근거: 동물보호법 제101조');
     expect(text).toContain('근거 조문 (원문 확인됨)\n· 민법 제759조(동물의 점유자의 책임)\n· 동물보호법 제101조(과태료)');
     expect(text).toContain('전문가 상담');
@@ -41,7 +42,7 @@ describe('formatGenerative unverified figures', () => {
       },
       labels,
     )!;
-    expect(text).toContain('네, 3개월 안에 청구할 수 있어요. (숫자는 원문으로 확인되지 않았어요) (일반 안내)');
+    expect(text).toContain('네, 3개월 안에 청구할 수 있어요. (숫자는 원문으로 확인되지 않았어요)\n');
     expect(text).toContain('과태료는 50만원 이하예요. (숫자는 원문으로 확인되지 않았어요) — 근거: 동물보호법 제101조');
     expect(text).toContain('원문으로 확인되지 않은 숫자는 법령 원문이나 관할 기관에서 다시 확인해 주세요.');
     expect(formatGenerative({ conclusion: '네, 할 수 있어요.', needsExpert: true }, labels)).not.toContain('숫자는');
@@ -122,5 +123,48 @@ describe('generative answer: provisions from unrelated laws are not offered as e
     const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
     expect(body.provisions.map((p: { label: string }) => p.label)).toEqual(['여권법 제15조', '여권법 시행규칙 제11조']);
     expect(result.citation?.label).toContain('여권법 시행규칙 제11조');
+  });
+});
+
+describe('formatGenerative precedents', () => {
+  const labels = ['민법 제759조(동물의 점유자의 책임)'];
+  const precedents = [
+    { short: '대법원 2024다208865', full: '대법원 2024다208865 (2025-01-09 선고) · 손해배상(기)' },
+    { short: '대법원 2019다100', full: '대법원 2019다100 (2020-02-03 선고) · 보증금반환' },
+  ];
+
+  it('판례 항목에는 판례 표시를 붙이고, 근거 판례 목록에는 쓴 판례만 넣는다', () => {
+    const text = formatGenerative(
+      { conclusion: '네, 책임이 있을 수 있어요.', conclusionRefs: [0], precedentNotes: [{ text: '법원은 목줄 없이 산책시킨 경우 주의의무를 다했다고 보기 어렵다고 판단했어요.', refs: [0] }] },
+      labels,
+      precedents,
+    )!;
+    expect(text).toContain('관련 판례');
+    expect(text).toContain('· 법원은 목줄 없이 산책시킨 경우 주의의무를 다했다고 보기 어렵다고 판단했어요. — 판례: 대법원 2024다208865');
+    expect(text).toContain('근거 판례 (판결 요지 확인됨)\n· 대법원 2024다208865 (2025-01-09 선고) · 손해배상(기)');
+    expect(text).not.toContain('2019다100');
+    expect(text.indexOf('근거 조문 (원문 확인됨)')).toBeLessThan(text.indexOf('근거 판례'));
+  });
+
+  it('범위 밖 번호와 후보에 없는 사건번호가 든 판례 문장은 버리고, 남는 것이 없으면 판례 구역을 만들지 않는다', () => {
+    const text = formatGenerative(
+      {
+        conclusion: '네, 책임이 있을 수 있어요.',
+        precedentNotes: [
+          { text: '법원은 그렇게 판단했어요.', refs: [9] },
+          { text: '대법원 2099다1 판결은 그렇게 봤어요.', refs: [0] },
+          { text: '', refs: [0] },
+        ],
+      },
+      labels,
+      precedents,
+    )!;
+    expect(text).not.toContain('관련 판례');
+    expect(text).not.toContain('근거 판례');
+  });
+
+  it('판례 후보가 없으면 판례 항목이 와도 표시하지 않는다', () => {
+    const text = formatGenerative({ conclusion: '네.', precedentNotes: [{ text: '법원은 판단했어요.', refs: [0] }] }, labels)!;
+    expect(text).not.toContain('판례');
   });
 });

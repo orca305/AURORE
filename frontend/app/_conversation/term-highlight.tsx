@@ -28,7 +28,10 @@ function Term({ term, label }: { term: GlossaryTerm; label: string }) {
   );
 }
 
-const EXPLAIN_HEADINGS = new Set(["질문에 대한 답", "쉽게 풀면", "예를 들어 (가상의 예)", "주의할 점", "확인해 보세요", "함께 본 조문", "도움 받을 곳", "결론", "이렇게 해 보세요", "알아 둘 내용", "근거 조문 (원문 확인됨)"]);
+const EXPLAIN_HEADINGS = new Set(["질문에 대한 답", "쉽게 풀면", "예를 들어 (가상의 예)", "주의할 점", "확인해 보세요", "함께 본 조문", "도움 받을 곳", "결론", "이렇게 해 보세요", "알아 둘 내용", "근거 조문 (원문 확인됨)", "관련 판례", "근거 판례 (판결 요지 확인됨)"]);
+// 법령과 구분해서 보여 주는 판례 소제목과, 사건번호(대법원 2024다208865) 링크: 누르면 판결문 원문과 조문 대조 결과가 있는 판례 검색으로 이동한다.
+const CASE_HEADINGS = new Set(["관련 판례", "근거 판례 (판결 요지 확인됨)"]);
+const CASE_REF = /(대법원\s\d{2,4}[가-힣]{1,3}\d+)/u;
 
 export function HighlightedText({ text }: { text: string }) {
   const [terms, setTerms] = useState<GlossaryTerm[]>([]);
@@ -39,7 +42,12 @@ export function HighlightedText({ text }: { text: string }) {
   }, []);
   // 해설의 소제목 줄(질문에 대한 답, 쉽게 풀면 등)은 굵게 보여 주고, 나머지 줄은 용어 하이라이트를 적용한다.
   const lines = useMemo(
-    () => text.split("\n").map((line) => (EXPLAIN_HEADINGS.has(line.trim()) ? { heading: line.trim() } : { parts: splitByTerms(line, terms) })),
+    () =>
+      text.split("\n").map((line) =>
+        EXPLAIN_HEADINGS.has(line.trim())
+          ? { heading: line.trim(), kind: CASE_HEADINGS.has(line.trim()) ? "case" : "law" }
+          : { chunks: line.split(CASE_REF).map((chunk, at) => (at % 2 ? { caseRef: chunk, parts: [] as ReturnType<typeof splitByTerms> } : { caseRef: "", parts: splitByTerms(chunk, terms) })) },
+      ),
     [text, terms],
   );
   return (
@@ -48,9 +56,17 @@ export function HighlightedText({ text }: { text: string }) {
         <Fragment key={index}>
           {index > 0 && "\n"}
           {"heading" in line ? (
-            <strong className={styles.explainHeading}>{line.heading}</strong>
+            <strong className={line.kind === "case" ? styles.caseHeading : styles.explainHeading}>{line.heading}</strong>
           ) : (
-            line.parts.map((part, at) => (part.term ? <Term key={at} term={part.term} label={part.text} /> : part.text))
+            line.chunks.map((chunk, at) =>
+              chunk.caseRef ? (
+                <a key={at} className={styles.caseLink} href={"/precedents?q=" + encodeURIComponent(chunk.caseRef.replace(/^대법원\s/u, ""))} target="_blank" rel="noopener noreferrer" title="판결문 원문과 조문 대조 결과를 새 창으로 열어요">
+                  {chunk.caseRef}
+                </a>
+              ) : (
+                chunk.parts.map((part, i) => (part.term ? <Term key={at + "-" + i} term={part.term} label={part.text} /> : part.text))
+              ),
+            )
           )}
         </Fragment>
       ))}

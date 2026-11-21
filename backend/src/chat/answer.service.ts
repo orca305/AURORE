@@ -3,6 +3,7 @@ import type { JobResultCode } from './job-diagnostics.js';
 import { missingEvidence, type ClarifyCode } from './clarification.js';
 import { retrieveStoredEvidence, warmPinnedEvidence, type StoredEvidence } from './stored-evidence.js';
 import { articleNorm, fullArticleTexts, relatedProvisions, type RelatedProvision } from './related-provisions.js';
+import { precedentCandidates, type PrecedentCandidate } from './precedent-candidates.js';
 import { currentLawNames, matchLawName } from './law-names.js';
 import { warmVectorIndex, embedQuery } from './vector-search.js';
 import { warmLawTitles } from './law-titles.js';
@@ -59,7 +60,9 @@ export type PreparedAnswer = {
   providerCd?: 'LOCAL_RAG' | 'LOCAL_EXPLAIN' | 'STORED_SEARCH';
   documentQuotes?: DocumentEvidence[];
   // 평가 전용(AURORE_EVAL_TRACE=1): 모델이 짚은 조문과 DB에서 맞춘 조문, 후보 목록. 화면·저장에는 쓰지 않는다.
-  trace?: { proposed: string[]; resolved: string[]; candidates: string[] };
+  trace?: { proposed: string[]; resolved: string[]; candidates: string[]; precedents?: string[] };
+  // 근거 조문을 인용한 판례 후보(참조조문 역인덱스). 아직 답변 문장에는 쓰지 않는다(답변 경로 단계에서 사용).
+  precedents?: PrecedentCandidate[];
   phase: Phase;
   text: string;
   citation?: PreparedCitation;
@@ -81,14 +84,18 @@ type GenerativeResult = {
   actions?: GenerativeItem[];
   details?: GenerativeItem[];
   cautions?: GenerativeItem[];
+  precedentNotes?: GenerativeItem[];
   checkFacts?: string[];
   needsExpert?: boolean;
 };
+/** 답변에 붙는 판례 표시: short 는 문장 끝 표시용(대법원 2020다123), full 은 근거 판례 목록용. */
+export type PrecedentLabel = { short: string; full: string };
+const CASE_NO = /\d{2,4}[가-힣]{1,3}\d+/gu;
 /**
- * 생성형 답변을 화면용 글로 만든다. 각 항목 끝에 근거 조문(원문 확인됨)을 붙이고, 근거가 없는 항목은 '(일반 안내)'로 표시한다.
+ * 생성형 답변을 화면용 글로 만든다. 각 항목 끝에 근거 조문(원문 확인됨)을 붙이고, 근거가 없는 항목에는 아무 표시도 하지 않는다.
  * 구성: 결론 → 이렇게 해 보세요 → 알아 둘 내용 → 주의할 점 → 확인해 보세요 → 근거 조문 → 안내.
  */
-export function formatGenerative(result: GenerativeResult, labels: string[]): string | undefined {
+export function formatGenerative(result: GenerativeResult, labels: string[], precedents: PrecedentLabel[] = []): string | undefined {
   const valid = (refs: unknown) =>
     (Array.isArray(refs) ? refs : []).filter((n): n is number => Number.isInteger(n) && n >= 0 && n < labels.length);
   const conclusion = typeof result.conclusion === 'string' ? result.conclusion.trim() : '';
@@ -96,7 +103,7 @@ export function formatGenerative(result: GenerativeResult, labels: string[]): st
   const used: number[] = [];
   const note = (refs: number[]) => {
     for (const n of refs) if (!used.includes(n)) used.push(n);
-    return refs.length ? ' — 근거: ' + refs.map((n) => labels[n].replace(/\(.*$/u, '')).join(', ') : ' (일반 안내)';
+    return refs.length ? ' — 근거: ' + refs.map((n) => labels[n].replace(/\(.*$/u, '')).join(', ') : '';
   };
   // 원문에서 확인되지 않은 숫자(기간·금액 등)가 있는 문장은 버리지 않고 그렇게 표시한다.
   const figureNote = (flag: unknown) => (flag === true ? ' (숫자는 원문으로 확인되지 않았어요)' : '');
@@ -112,12 +119,23 @@ export function formatGenerative(result: GenerativeResult, labels: string[]): st
   section('이렇게 해 보세요', result.actions);
   section('알아 둘 내용', result.details);
   section('주의할 점', result.cautions);
+  // 판례 항목: 후보로 준 판례 번호 안의 것만, 문장에 후보에 없는 사건번호가 있으면 버린다(AI 서버 검증을 코드로 한 번 더 확인).
+  const allowedCases = new Set(precedents.flatMap((p) => p.short.match(CASE_NO) ?? []));
+  const usedPrecedents: number[] = [];
+  const caseRows = (result.precedentNotes ?? []).flatMap((item) => {
+    const text = typeof item?.text === 'string' ? item.text.trim() : '';
+    const refs = (Array.isArray(item?.refs) ? item.refs : []).filter((n): n is number => Number.isInteger(n) && n >= 0 && n < precedents.length);
+    if (!text || text.length > 300 || !refs.length || (text.match(CASE_NO) ?? []).some((c) => !allowedCases.has(c))) return [];
+    for (const n of refs) if (!usedPrecedents.includes(n)) usedPrecedents.push(n);
+    return ['· ' + text + ' — 판례: ' + refs.map((n) => precedents[n].short).join(', ')];
+  });
+  if (caseRows.length) lines.push('', '관련 판례', ...caseRows);
   const facts = (result.checkFacts ?? []).filter((fact) => typeof fact === 'string' && fact.trim() && fact.length <= 160);
   if (facts.length) lines.push('', '확인해 보세요', ...facts.map((fact) => '· ' + fact.trim()));
   if (used.length) lines.push('', '근거 조문 (원문 확인됨)', ...used.map((n) => '· ' + labels[n]));
+  if (usedPrecedents.length) lines.push('', '근거 판례 (판결 요지 확인됨)', ...usedPrecedents.map((n) => '· ' + precedents[n].full));
   lines.push(
     '',
-    '(일반 안내)로 표시된 내용은 법령 원문으로 확인하지 않은 일반적인 설명이에요. ' +
       (unverified ? '원문으로 확인되지 않은 숫자는 법령 원문이나 관할 기관에서 다시 확인해 주세요. ' : '') +
       (result.needsExpert === false
         ? '개별 사정에 따라 결론이 달라질 수 있으니 원문과 시행일도 함께 확인해 주세요.'
@@ -491,7 +509,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
     supplement = false,
   ): Promise<PreparedAnswer> {
     // 생성형 답변(AURORE_ANSWER_MODE=generative): 모델이 적용 조문을 직접 짚고(그 조문을 DB에서 바로 찾아 후보 맨 앞에 넣는다),
-    // 확인된 원문을 근거로 결론·할 일·주의점을 쓴다. 근거 없는 내용은 '일반 안내'로 표시한다.
+    // 확인된 원문을 근거로 결론·할 일·주의점을 쓴다. 근거가 확인된 항목에만 인용 법령을 표시한다.
     // 기본은 생성형이다(AURORE_ANSWER_MODE=classic 이면 예전 선별·해설 방식만).
     const generative = process.env.AURORE_ANSWER_MODE !== 'classic';
     // 조문 짚기는 질문 분석·검색(어휘·의미)과 동시에 시작한다. 검색은 짚은 조문이 필요한 마지막 단계에서만 이 결과를 기다린다.
@@ -556,6 +574,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
                 proposed: (proposal?.citations ?? []).map((c) => c.law + ' ' + c.article),
                 resolved: priorityArticles,
                 candidates: candidates.slice(0, 8).map((row) => row.citation.label.replace(/\s·\s.*$/u, '')),
+                precedents: (answered.precedents ?? []).map((p) => p.caseNo + ' ← ' + p.matched.join(', ')),
               },
             }
           : answered;
@@ -840,9 +859,10 @@ export class ChatAnswerService implements OnApplicationBootstrap {
   ): Promise<PreparedAnswer | undefined> {
     // 근거 조문: 후보 상위 6개(조문 전문) + 핵심 조문의 관련 조문(시행령·벌칙·참조·앞뒤 조문) 최대 5개. 번호는 이 순서(0부터)다.
     const top = candidates.slice(0, 6);
-    const [full, related] = await Promise.all([
+    const [full, related, precedents] = await Promise.all([
       fullArticleTexts(this.db, top.map((row) => row.citation)).catch(() => new Map<string, string>()),
       relatedProvisions(this.db, top[0].citation).catch(() => [] as RelatedProvision[]),
+      precedentCandidates(this.db, top.map((row) => row.citation)).catch(() => [] as PrecedentCandidate[]),
     ]);
     const shortLabel = (label: string) => label.replace(/\s·\s.*$/u, '');
     const provisions = top.map((row) => ({
@@ -856,6 +876,16 @@ export class ChatAnswerService implements OnApplicationBootstrap {
       known.add(key);
       provisions.push({ label: row.label.replace(/\s전체$/u, ''), text: row.text.slice(0, 1200) });
     }
+    // 판례 후보 중 판시사항·판결요지가 있는 것 최대 4건을 근거로 준다(식별 정보는 label 에만, 문장에는 코드가 붙인다).
+    const usable = precedents.filter((p) => p.summary || p.issue).slice(0, 4);
+    const precedentPayload = usable.map((p) => ({
+      label: `${p.courtNm} ${p.caseNo} (${p.decisionDt} 선고)`.slice(0, 160),
+      text: [p.issue ? '판시사항: ' + p.issue : '', p.summary ? '판결요지: ' + p.summary : ''].filter(Boolean).join('\n').slice(0, 1000),
+    }));
+    const precedentLabels: PrecedentLabel[] = usable.map((p) => ({
+      short: `${p.courtNm} ${p.caseNo}`,
+      full: `${p.courtNm} ${p.caseNo} (${p.decisionDt} 선고)${p.caseNm ? ' · ' + p.caseNm : ''}`,
+    }));
     const response = await fetch(this.documentUrl('/legal/answer'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -863,6 +893,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
         question: redactDocument(question).slice(0, 1000) || '질문',
         context: redactDocument(context).slice(0, 2000),
         provisions,
+        ...(precedentPayload.length ? { precedents: precedentPayload } : {}),
       }),
       signal: AbortSignal.timeout(110_000),
       redirect: 'error',
@@ -871,7 +902,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
     const result = (await response.json()) as GenerativeResult;
     if (result?.verified !== true) return;
     if (!result.legal) return missingEvidence('RELEVANCE_GAP', false);
-    const text = formatGenerative(result, provisions.map((p) => p.label));
+    const text = formatGenerative(result, provisions.map((p) => p.label), precedentLabels);
     if (!text) return;
     const refs = [...(result.conclusionRefs ?? []), ...[...(result.actions ?? []), ...(result.details ?? []), ...(result.cautions ?? [])].flatMap((item) => item.refs ?? [])];
     const first = refs.find((n) => Number.isInteger(n) && n >= 0 && n < top.length); // 화면 인용은 후보 조문(관련 조문은 제외)
@@ -883,6 +914,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
       resultCd: 'EVIDENCE_FOUND',
       text: contacts.length ? text + '\n\n도움 받을 곳\n' + contacts.join('\n') : text,
       citation: { ...main.citation, supportVerifyCd: first === undefined ? 'UNREVIEWED' : 'MODEL_REVIEWED' },
+      precedents,
     };
   }
 

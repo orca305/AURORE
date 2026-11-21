@@ -276,6 +276,7 @@ model Legal {
   rgstDttm DateTime   @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
   uptDttm  DateTime   @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
   versions LegalVer[]
+  precedentRefs LegalPrecRef[]
 
   @@unique([srcCd, srcKey], map: "uq_legal_src")
   @@map("legal")
@@ -312,6 +313,7 @@ model LegalPrec {
   delId      BigInt?        @map("del_id")
   rgstDttm   DateTime       @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
   revisions  LegalPrecRev[]
+  refs       LegalPrecRef[]
 
   @@unique([srcCd, srcKey], map: "uq_legal_prec_source")
   citations AnsCite[]
@@ -764,4 +766,20 @@ model LegalTermHist {
  @@unique([legalTermId,revNo],map:"uq_legal_term_hist_revision")
  @@index([actorUserId],map:"idx_legal_term_hist_actor")
  @@map("legal_term_hist")
+}
+
+model LegalPrecRef {
+  id         BigInt    @id @default(autoincrement())
+  legalPrecId BigInt   @map("legal_prec_id")
+  legalId    BigInt    @map("legal_id")
+  artKey     String    @map("art_key")
+  oldYn      Boolean   @default(false) @map("old_yn")
+  rawLawNm   String    @map("raw_law_nm")
+  rgstDttm   DateTime  @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  precedent  LegalPrec @relation(fields: [legalPrecId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  legal      Legal     @relation(fields: [legalId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([legalPrecId, legalId, artKey, oldYn], map: "uq_legal_prec_ref_target")
+  @@index([legalId, artKey], map: "idx_legal_prec_ref_article")
+  @@map("legal_prec_ref")
 }
