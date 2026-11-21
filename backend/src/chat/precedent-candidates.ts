@@ -18,9 +18,15 @@ export type PrecedentCandidate = {
   summary: string | null;
   /** 이 판례가 인용한 조문 중 후보 조문과 겹치는 것(라벨, 예: "민법 제750조"). */
   matched: string[];
+  /** 질문의 내용어가 판시사항·판결요지에 몇 개 들어 있는지(관련도). */
+  score?: number;
 };
 
 const PER_PROVISION = 3;
+// 조문마다 후보를 넉넉히(40건) 가져와 질문과 말이 겹치는 순으로 다시 정렬한 뒤 3건만 쓴다(조문 번호가 같다는 것만으로는 주제가 맞지 않는 경우가 많다).
+const POOL_PER_PROVISION = 40;
+// 겹치는 말이 이 수 미만인 판례는 후보에서 뺀다. 기본은 0(빼지 않고 관련도 순으로만 정렬). 2로 해 보니 맞는 판례까지 빠져 판례 항목이 오히려 줄었다(2026-11-22 측정).
+const minScore = () => Number(process.env.AURORE_PRECEDENT_MIN_SCORE ?? 0) || 0;
 const MAX_TOTAL = 6;
 const EXCERPT = 500;
 
@@ -43,6 +49,25 @@ export function excerpt(value: string | null | undefined, limit = EXCERPT): stri
   return text.length <= limit ? text : text.slice(0, limit).trimEnd() + '…';
 }
 
+const GENERIC = new Set(['어떻게', '어떤', '있나', '없나', '되나', '하나', '경우', '때문', '정도', '대한', '관련', '가능', '그리고', '그런데', '제가', '저도', '있는데', '했는데', '인데']);
+
+/** 질문의 내용어(조사를 뗀 앞 3글자). 서술어("~나요", "~해요")와 흔한 말은 뺀다. */
+export function contentStems(text: string): string[] {
+  const out = new Set<string>();
+  for (const token of text.match(/[가-힣]{2,}/gu) ?? []) {
+    if (GENERIC.has(token) || /(요|까|다|죠)$/u.test(token)) continue;
+    const bare = token.length >= 3 && '을를은는이가에도의와과로'.includes(token.slice(-1)) ? token.slice(0, -1) : token;
+    out.add(bare.length > 3 ? bare.slice(0, 3) : bare);
+  }
+  return [...out];
+}
+
+/** 판시사항·판결요지에 질문 내용어가 몇 개 들어 있는지. */
+export function overlapScore(stems: string[], ...texts: (string | null | undefined)[]): number {
+  const body = texts.filter(Boolean).join(' ');
+  return stems.reduce((n, stem) => n + (body.includes(stem) ? 1 : 0), 0);
+}
+
 /**
  * 후보 인용(법령 조문)마다 그 조문을 인용한 판례를 최대 3건 뽑는다.
  * 우선순위: 현행 법령 인용(구 법령 아님) → 판결요지가 있는 것 → 최신 선고. 판례가 여러 후보 조문과 겹치면 앞으로 올린다.
@@ -51,6 +76,7 @@ export async function precedentCandidates(
   db: PrismaService,
   citations: PreparedCitation[],
   limit = MAX_TOTAL,
+  hint = '',
 ): Promise<PrecedentCandidate[]> {
   if (process.env.AURORE_PRECEDENT_CANDIDATES === '0') return [];
   const targets = citations
@@ -66,24 +92,37 @@ export async function precedentCandidates(
       JOIN legal_ver v ON v.id = t.ver_id
       CROSS JOIN LATERAL (
         SELECT rev.legal_prec_id AS prec_id, rev.case_no, rev.case_nm, rev.court_nm, rev.decision_dt,
-               rev.issue_cont, rev.summary_cont, ref.old_yn
+               left(rev.issue_cont, 700) AS issue_cont, left(rev.summary_cont, 1800) AS summary_cont, ref.old_yn
           FROM legal_prec_ref ref
           JOIN legal_prec p ON p.id = ref.legal_prec_id AND NOT p.del_yn
           JOIN legal_prec_rev rev ON rev.legal_prec_id = p.id AND rev.current_yn
          WHERE ref.legal_id = v.legal_id AND ref.art_key = t.art_key
          ORDER BY ref.old_yn, (btrim(coalesce(rev.summary_cont, '')) <> '') DESC, rev.decision_dt DESC, rev.legal_prec_id
-         LIMIT ${PER_PROVISION}
+         LIMIT ${POOL_PER_PROVISION}
       ) x
-     ORDER BY t.idx, x.old_yn, x.decision_dt DESC`);
+     ORDER BY t.idx`);
+  // 조문별로 질문과 겹치는 말이 많은 순(같으면 현행 법령 인용, 최신 선고)으로 3건씩 고른다.
+  // AURORE_PRECEDENT_RERANK=0 이면 다시 정렬하지 않는다(전후 비교용).
+  const stems = process.env.AURORE_PRECEDENT_RERANK === '0' ? [] : contentStems(hint);
+  const scored = rows.map((row, at) => ({ row, at, score: overlapScore(stems, row.issue_cont, row.summary_cont) }));
+  const kept: { row: Row; score: number }[] = [];
+  for (const idx of new Set(rows.map((row) => row.idx))) {
+    scored
+      .filter((x) => x.row.idx === idx)
+      .sort((a, b) => b.score - a.score || Number(a.row.old_yn) - Number(b.row.old_yn) || a.at - b.at)
+      .slice(0, PER_PROVISION)
+      .forEach((x) => kept.push({ row: x.row, score: x.score }));
+  }
 
   const byPrec = new Map<string, PrecedentCandidate & { rank: number; old: boolean }>();
-  for (const row of rows) {
+  for (const { row, score } of kept) {
     const key = String(row.prec_id);
     const label = targets[row.idx - 1].citation.label.replace(/\s·\s.*$/u, '').replace(/\(.*$/u, '').trim();
     const existing = byPrec.get(key);
     if (existing) {
       if (!existing.matched.includes(label)) existing.matched.push(label);
       existing.old = existing.old && row.old_yn;
+      existing.score = Math.max(existing.score ?? 0, score);
       continue;
     }
     byPrec.set(key, {
@@ -95,12 +134,18 @@ export async function precedentCandidates(
       issue: excerpt(row.issue_cont),
       summary: excerpt(row.summary_cont),
       matched: [label],
+      score,
       rank: row.idx,
       old: row.old_yn,
     });
   }
   // 여러 후보 조문과 겹치는 판례를 먼저, 그다음 앞선 후보 조문 순서. 조문마다 최소 1건은 남도록 먼저 한 건씩 담고 나머지를 채운다.
-  const all = [...byPrec.values()].sort((a, b) => b.matched.length - a.matched.length || Number(a.old) - Number(b.old) || a.rank - b.rank);
+  // 관련도 점수를 쓰면(기본) 질문과 겹치는 말이 많은 판례를 먼저 둔다(기준 미만 제외는 AURORE_PRECEDENT_MIN_SCORE). AURORE_PRECEDENT_SCORE=0 이면 예전 순서(전후 비교용).
+  const useScore = process.env.AURORE_PRECEDENT_SCORE !== '0' && stems.length >= 3;
+  const key = (item: { matched: string[]; score?: number }) => (useScore ? (item.score ?? 0) + 2 * (item.matched.length - 1) : item.matched.length);
+  const all = [...byPrec.values()]
+    .filter((item) => !useScore || (item.score ?? 0) >= minScore())
+    .sort((a, b) => key(b) - key(a) || Number(a.old) - Number(b.old) || a.rank - b.rank);
   const picked: typeof all = [];
   const covered = new Set<number>();
   for (const item of all) {

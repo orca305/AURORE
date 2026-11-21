@@ -2,7 +2,7 @@ import { currentToken } from "../_auth/session";
 
 export type AiStatus = {
   reachable: boolean; provider?: "external" | "local"; mode?: "external" | "fallback" | "local";
-  externalModel?: string | null; localModel?: string; keyConfigured?: boolean; blockedKind?: string | null; blockedSecondsLeft?: number;
+  externalModel?: string | null; selectedModel?: string | null; localModel?: string; keyConfigured?: boolean; blockedKind?: string | null; blockedSecondsLeft?: number;
   calls?: { external: number; local: number; fallback: number; lastFallbackKind: string | null }; sinceSeconds?: number;
 };
 
@@ -14,7 +14,7 @@ export type AdminOverview = {
   recentSources: { id: string; source: string; contentType: string; collectedAt: string }[];
 };
 
-export async function requestAdmin(path: "privacy-retention" | "collection-schedule" | "precedent-collections" | `precedent-collections/${string}` | "ai-jobs" | `ai-jobs/${string}` | "activity" | "members" | `members/${string}` | "session" | "overview" | "ai-status" | "legal-refresh" | "legal-refresh/processing-history" | `legal-refresh/reviews/${string}` | "precedent-reviews" | "precedent-reviews/history" | `precedent-reviews/${string}`, query?: URLSearchParams) {
+export async function requestAdmin(path: "privacy-retention" | "collection-schedule" | "precedent-collections" | `precedent-collections/${string}` | "ai-jobs" | `ai-jobs/${string}` | "activity" | "members" | `members/${string}` | "session" | "overview" | "ai-status" | "ai-model" | "ai-monitor" | "legal-refresh" | "legal-refresh/processing-history" | `legal-refresh/reviews/${string}` | "precedent-reviews" | "precedent-reviews/history" | `precedent-reviews/${string}`, query?: URLSearchParams) {
   const token = await currentToken();
   if (!token) return null;
   try {

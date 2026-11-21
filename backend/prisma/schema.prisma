@@ -36,6 +36,7 @@ model AppUser {
   precedentReviews LegalPrecReviewHist[]
   correctionActions LegalCorrHist[]
   precedentImports LegalPrecIngestHist[]
+  aiModelChanges AiModelHist[]
 
   @@map("app_user")
 }
@@ -782,4 +783,34 @@ model LegalPrecRef {
   @@unique([legalPrecId, legalId, artKey, oldYn], map: "uq_legal_prec_ref_target")
   @@index([legalId, artKey], map: "idx_legal_prec_ref_article")
   @@map("legal_prec_ref")
+}
+
+model AiModelHist {
+  id          BigInt   @id @default(autoincrement())
+  modelCd     String   @map("model_cd") @db.VarChar(60)
+  prevModelCd String?  @map("prev_model_cd") @db.VarChar(60)
+  kindCd      String   @map("kind_cd") @db.VarChar(12)
+  actorUserId BigInt   @map("actor_user_id")
+  reason      String   @db.VarChar(500)
+  rgstDttm    DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  actor       AppUser  @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([rgstDttm(sort: Desc), id(sort: Desc)], map: "idx_ai_model_hist_date")
+  @@map("ai_model_hist")
+}
+
+model AiCallLog {
+  id           BigInt   @id @default(autoincrement())
+  occurredDttm DateTime @default(now()) @map("occurred_dttm") @db.Timestamptz(0)
+  stageCd      String   @map("stage_cd") @db.VarChar(20)
+  providerCd   String   @map("provider_cd") @db.VarChar(10)
+  modelCd      String   @map("model_cd") @db.VarChar(60)
+  latencyMs    Int      @map("latency_ms")
+  inTokens     Int?     @map("in_tokens")
+  outTokens    Int?     @map("out_tokens")
+  outcomeCd    String   @map("outcome_cd") @db.VarChar(10)
+  errCd        String?  @map("err_cd") @db.VarChar(30)
+
+  @@index([occurredDttm(sort: Desc), id(sort: Desc)], map: "idx_ai_call_log_date")
+  @@map("ai_call_log")
 }

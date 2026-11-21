@@ -58,3 +58,28 @@ describe('precedentCandidates', () => {
     expect(result.map((r) => r.legalPrecId)).toEqual(['2']);
   });
 });
+
+describe('질문과 겹치는 말로 다시 정렬', () => {
+  it('서술어와 흔한 말은 빼고 조사를 뗀 내용어만 쓴다', async () => {
+    const { contentStems } = await import('./precedent-candidates.js');
+    expect(contentStems('전세 보증금을 못 받았는데 이사를 가면 대항력이 없어지나요?')).toEqual(expect.arrayContaining(['전세', '보증금', '이사', '대항력']));
+    expect(contentStems('어떻게 되나요')).toEqual([]);
+  });
+
+  it('조문마다 질문과 말이 많이 겹치는 판례를 먼저 고른다', async () => {
+    const mk = (id: number, summary: string) => ({ ...row(1, id), summary_cont: summary });
+    const rows = [mk(1, '건물 철거에 관한 사건'), mk(2, '권리금 회수를 방해한 임대인의 손해배상'), mk(3, '권리금과 임차인의 보호'), mk(4, '다른 사건'), mk(5, '무관')];
+    const result = await precedentCandidates(dbReturning(rows), [citation('상가건물 임대차보호법 제10조의4')], 2, '권리금을 못 받게 방해하면 손해배상을 받나요');
+    // 기본은 관련도 순으로만 정렬한다(기준 미만을 빼지 않는다).
+    expect(result.map((r) => r.legalPrecId)).toEqual(['2', '3']);
+    expect(result[0].score).toBeGreaterThan(result[1].score ?? 0);
+    // 최소 관련도를 2로 두면 겹침이 1개뿐인 3번은 뺀다.
+    process.env.AURORE_PRECEDENT_MIN_SCORE = '2';
+    try {
+      const strict = await precedentCandidates(dbReturning(rows), [citation('상가건물 임대차보호법 제10조의4')], 2, '권리금을 못 받게 방해하면 손해배상을 받나요');
+      expect(strict.map((r) => r.legalPrecId)).toEqual(['2']);
+    } finally {
+      delete process.env.AURORE_PRECEDENT_MIN_SCORE;
+    }
+  });
+});

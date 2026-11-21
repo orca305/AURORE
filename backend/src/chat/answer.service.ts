@@ -3,6 +3,7 @@ import type { JobResultCode } from './job-diagnostics.js';
 import { missingEvidence, type ClarifyCode } from './clarification.js';
 import { retrieveStoredEvidence, warmPinnedEvidence, type StoredEvidence } from './stored-evidence.js';
 import { articleNorm, fullArticleTexts, relatedProvisions, type RelatedProvision } from './related-provisions.js';
+import { recordAiCalls } from './ai-call-log.js';
 import { precedentCandidates, type PrecedentCandidate } from './precedent-candidates.js';
 import { currentLawNames, matchLawName } from './law-names.js';
 import { warmVectorIndex, embedQuery } from './vector-search.js';
@@ -839,6 +840,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
       signal: AbortSignal.timeout(60_000),
       redirect: 'error',
     });
+    void recordAiCalls(this.db, response.headers.get('x-aurore-calls'));
     if (!response.ok) throw new Error('ProposalFailed');
     const value = (await response.json()) as { legal?: unknown; citations?: unknown };
     if (typeof value.legal !== 'boolean' || !Array.isArray(value.citations)) throw new Error('ProposalInvalid');
@@ -862,7 +864,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
     const [full, related, precedents] = await Promise.all([
       fullArticleTexts(this.db, top.map((row) => row.citation)).catch(() => new Map<string, string>()),
       relatedProvisions(this.db, top[0].citation).catch(() => [] as RelatedProvision[]),
-      precedentCandidates(this.db, top.map((row) => row.citation)).catch(() => [] as PrecedentCandidate[]),
+      precedentCandidates(this.db, top.map((row) => row.citation), undefined, question).catch(() => [] as PrecedentCandidate[]),
     ]);
     const shortLabel = (label: string) => label.replace(/\s·\s.*$/u, '');
     const provisions = top.map((row) => ({
@@ -898,6 +900,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
       signal: AbortSignal.timeout(110_000),
       redirect: 'error',
     });
+    void recordAiCalls(this.db, response.headers.get('x-aurore-calls'));
     if (!response.ok) return;
     const result = (await response.json()) as GenerativeResult;
     if (result?.verified !== true) return;
@@ -942,6 +945,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
         signal: AbortSignal.timeout(budgetMs),
         redirect: 'error',
       });
+      void recordAiCalls(this.db, response.headers.get('x-aurore-calls'));
       if (!response.ok) return;
       const body = await response.text();
       if (body.length > 20000) return;

@@ -415,6 +415,7 @@ export class AdminService {
         provider: value.provider === 'external' ? 'external' : 'local',
         mode: ['external', 'fallback', 'local'].includes(String(value.mode)) ? String(value.mode) : 'local',
         externalModel: typeof value.externalModel === 'string' ? value.externalModel.slice(0, 60) : null,
+        selectedModel: typeof value.selectedModel === 'string' ? value.selectedModel.slice(0, 60) : null,
         localModel: typeof value.localModel === 'string' ? value.localModel.slice(0, 60) : '',
         keyConfigured: value.keyConfigured === true,
         blockedKind: typeof value.blockedKind === 'string' ? value.blockedKind.slice(0, 40) : null,

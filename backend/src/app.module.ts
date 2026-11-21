@@ -20,6 +20,8 @@ import { AdminRefreshService } from './admin/admin-refresh.service.js';
 import { AdminController } from './admin/admin.controller.js';
 import { AdminGuard } from './admin/admin.guard.js';
 import { AdminService } from './admin/admin.service.js';
+import { AdminModelService } from './admin/admin-model.service.js';
+import { AdminMonitorService } from './admin/admin-monitor.service.js';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthController } from './auth/auth.controller.js';
@@ -72,6 +74,8 @@ import { CommonCodeController } from './common-code/common-code.controller.js';
     ChatAnswerService,
     AdminGuard,
     AdminService,
+    AdminModelService,
+    AdminMonitorService,
     AdminRefreshService,
     AdminCorrectionService,
     AdminPrecedentService,

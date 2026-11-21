@@ -205,7 +205,60 @@ const fresh = [
   ['f-out-code', null, '파이썬에서 리스트를 정렬하는 방법을 알려줘'],
 ];
 
-const activeScenarios = process.env.EVAL_SET === 'holdout' ? holdout : process.env.EVAL_SET === 'fresh' ? fresh : scenarios;
+// 판례가 도움이 되는 질문(2026-11-22): 요건·범위·금액을 법원이 구체화해 온 주제. EVAL_SET=prec 로 실행한다.
+// 정답은 법령 이름 단위로 보고, 판례 항목은 사람이 읽고 근거·관련성을 따로 검토한다.
+const prec = [
+  ['p-fault-ratio', ['민법', '자동차손해배상', '도로교통법', '교통사고'], '신호 없는 교차로에서 오토바이와 접촉사고가 났는데 과실비율은 어떻게 정해져요?'],
+  ['p-premium', ['상가건물 임대차보호법'], '상가 임대차가 끝나는데 건물주가 권리금을 못 받게 방해하면 어떻게 되나요?'],
+  ['p-lien', ['주택임대차보호법'], '전세 보증금을 못 받았는데 이사를 가면 대항력이 없어지나요?'],
+  ['p-avg-wage', ['근로기준법', '근로자퇴직급여'], '퇴직금 계산할 때 평균임금에 상여금도 들어가나요?'],
+  ['p-layoff', ['근로기준법'], '회사가 경영이 어렵다며 정리해고를 했는데 정당한가요?'],
+  ['p-defamation-fact', ['형법'], '사실을 말했는데도 명예훼손이 되나요?'],
+  ['p-solatium', ['민법', '자동차손해배상'], '교통사고로 다쳤는데 위자료는 어떻게 정해지나요?'],
+  ['p-forced-heir', ['민법'], '부모님이 전 재산을 형제 한 명에게만 주셨는데 나머지 자녀가 받을 수 있나요?'],
+  ['p-noise', ['민법', '공동주택관리법'], '윗집 층간소음으로 정신적 피해가 큰데 손해배상을 받을 수 있나요?'],
+  ['p-fraud-intent', ['형법'], '돈을 빌리고 갚지 못했는데 사기죄가 되나요?'],
+  ['p-self-defense', ['형법'], '먼저 맞아서 밀쳤는데 정당방위가 되나요?'],
+  ['p-down-payment', ['민법'], '집 계약금을 냈는데 계약금을 포기하고 계약을 해제할 수 있나요?'],
+  ['p-defect', ['민법', '집합건물', '공동주택관리법'], '새 아파트에 하자가 있는데 시공사에 보수를 청구할 수 있나요?'],
+  ['p-implied-renew', ['주택임대차보호법'], '전세 계약이 끝났는데 아무 말 없이 계속 살고 있으면 계약이 자동으로 연장되나요?'],
+  ['p-wrong-transfer', ['민법'], '잘못 송금한 돈을 돌려받을 수 있나요?'],
+  ['p-fixed-overtime', ['근로기준법'], '포괄임금제라서 연장근로수당을 따로 안 준대요. 맞나요?'],
+  ['p-data-leak', ['개인정보 보호법', '민법'], '개인정보가 유출됐는데 회사에 손해배상을 청구할 수 있나요?'],
+  ['p-employer-liab', ['민법'], '직원이 일하다가 남에게 피해를 줬는데 사장이 책임지나요?'],
+  ['p-guarantor', ['민법'], '친구 대출 보증을 서 줬는데 친구가 못 갚으면 저도 다 갚아야 하나요?'],
+  ['p-property-split', ['민법'], '이혼할 때 재산분할은 어떻게 나누나요?'],
+];
+
+// 판례 후보 다시 정렬 전후 비교용 새 질문 10개(2026-11-22). 앞으로 측정은 매번 새 10문항으로 한다. EVAL_SET=prec10 로 실행한다.
+const prec10 = [
+  ['q-eviction', ['주택임대차보호법', '민법'], '월세를 두 달 밀렸는데 집주인이 바로 나가라고 해요. 계약을 해지할 수 있나요?'],
+  ['q-severance-interim', ['근로자퇴직급여', '근로기준법'], '퇴직금 중간정산을 했는데 나중에 다시 계산해 달라고 할 수 있나요?'],
+  ['q-insult', ['형법'], '단톡방에서 욕을 했는데 모욕죄가 되나요?'],
+  ['q-medical', ['민법', '의료법'], '병원에서 수술 중에 실수가 있었는데 의사에게 책임을 물을 수 있나요?'],
+  ['q-parking', ['민법', '도로교통법', '교통사고'], '아파트 주차장에서 내 차를 다른 차가 긁고 그냥 갔는데 어떻게 하나요?'],
+  ['q-fixed-term', ['기간제', '근로기준법'], '계약직인데 계약이 끝나면 갱신을 기대할 수 있나요?'],
+  ['q-gift-heir', ['민법'], '아버지가 생전에 증여한 재산도 상속분에 포함되나요?'],
+  ['q-cohabit', ['민법'], '사실혼 관계를 끝낼 때 재산분할을 청구할 수 있나요?'],
+  ['q-debt-collect', ['채권의 공정한 추심'], '채권추심 업체가 직장으로 전화해서 빚 얘기를 해요. 불법 아닌가요?'],
+  ['q-boiler', ['민법', '주택임대차보호법'], '세 들어 사는 집 보일러가 고장 났는데 수리비는 누가 내나요?'],
+];
+
+// 판례 관련도 점수·프롬프트 보정 전후 비교용 새 질문 10개(2026-11-22). EVAL_SET=prec10b 로 실행한다.
+const prec10b = [
+  ['r-restore', ['주택임대차보호법', '민법'], '이사 나갈 때 집주인이 원상복구 비용을 너무 많이 청구해요. 다 내야 하나요?'],
+  ['r-wage-claim', ['근로기준법', '민법'], '퇴사한 지 반년이 지났는데 못 받은 월급을 지금도 청구할 수 있나요?'],
+  ['r-dog-bite', ['민법'], '우리 집 개가 산책 중에 다른 개를 물어서 다쳤어요. 치료비를 줘야 하나요?'],
+  ['r-recording', ['통신비밀보호법', '형사소송법', '민사소송법'], '상대방 모르게 대화를 녹음했는데 증거로 쓸 수 있나요?'],
+  ['r-job-injury', ['산업재해보상보험법', '근로기준법'], '일하다 다쳤는데 회사가 산재 처리를 안 해준대요. 어떻게 하나요?'],
+  ['r-used-car', ['민법', '자동차관리법'], '중고차를 샀는데 사고 이력을 속였어요. 계약을 취소할 수 있나요?'],
+  ['r-tenant-stays', ['주택임대차보호법', '민사집행법', '민법'], '임대차가 끝났는데 세입자가 안 나가요. 어떻게 내보낼 수 있나요?'],
+  ['r-child-support', ['민법', '가사소송법', '양육비'], '이혼한 배우자가 양육비를 안 줘요. 받을 방법이 있나요?'],
+  ['r-bike', ['민법', '도로교통법'], '자전거를 타다가 보행자와 부딪혔어요. 책임이 어떻게 되나요?'],
+  ['r-trade-secret', ['부정경쟁방지'], '퇴사한 직원이 영업비밀을 들고 경쟁사로 갔어요. 어떻게 해야 하나요?'],
+];
+
+const activeScenarios = process.env.EVAL_SET === 'prec10b' ? prec10b : process.env.EVAL_SET === 'prec10' ? prec10 : process.env.EVAL_SET === 'holdout' ? holdout : process.env.EVAL_SET === 'fresh' ? fresh : process.env.EVAL_SET === 'prec' ? prec : scenarios;
 
 async function main() {
   const [out, asOf] = process.argv.slice(2);
@@ -235,7 +288,7 @@ async function main() {
         const explained = answer.providerCd === 'LOCAL_EXPLAIN';
         const record = {
           id, question, history: history ?? null, resultCode: answer.resultCd, provider: answer.providerCd,
-          explained, citationLabel: citation?.label ?? null, quote: citation?.citeCont ?? null, explanation: explained ? answer.text : null, answerText: answer.text, trace: answer.trace ?? null,
+          explained, precedentCandidates: answer.precedents?.length ?? 0, hasPrecedentNotes: answer.text.includes('관련 판례'), citationLabel: citation?.label ?? null, quote: citation?.citeCont ?? null, explanation: explained ? answer.text : null, answerText: answer.text, trace: answer.trace ?? null,
           // 인용문은 해설과 별개의 원문이어야 한다.
           quoteIsSeparate: citation ? !answer.text.includes(citation.citeCont) : null,
           // 검토가 거절했지만 AI가 짚은 법령의 상위 후보를 '질문 관련성 미검증'으로 보여 준 경우(통과로 세지 않고 따로 센다).
@@ -272,6 +325,9 @@ async function main() {
     candidateLawOk: results.filter(r => r.candidateLawOk).length,
     candidateOverreach: results.filter(r => r.inCorpus === false && r.citationLabel).length,
     explained: found.filter(row => row.explained).length,
+    // 판례: 후보가 붙은 답변 수 / "관련 판례" 항목이 실제로 나간 답변 수
+    precedentCandidates: found.filter(row => row.precedentCandidates > 0).length,
+    precedentNotes: found.filter(row => row.hasPrecedentNotes).length,
     // 해설 검증 실패로 고정 문구로 되돌아간 비율: 이 값이 높으면 검증이 지나치게 엄격하거나 모델 출력이 불안정하다.
     fallbackRate: found.length ? 1 - found.filter(row => row.explained).length / found.length : null,
     meanSeconds: seconds.reduce((a, b) => a + b, 0) / seconds.length,

@@ -33,6 +33,8 @@ import { AdminCorrectionService } from './admin-correction.service.js';
 import { AdminRefreshService } from './admin-refresh.service.js';
 import { AdminGuard } from './admin.guard.js';
 import { AdminService } from './admin.service.js';
+import { AdminModelService } from './admin-model.service.js';
+import { AdminMonitorService } from './admin-monitor.service.js';
 
 class MembersDto {
   @IsOptional() @IsIn(['newest','oldest']) sort: 'newest' | 'oldest' = 'newest';
@@ -88,6 +90,21 @@ class MemberStatusDto {
   @Equals(true) confirmed!: true;
 }
 
+class MonitorDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(30) days = 7;
+}
+
+class AiModelDto {
+  @IsString() @Matches(/^[A-Za-z0-9._-]{1,60}$/) model!: string;
+  @IsString() @MinLength(1) @MaxLength(500) reason!: string;
+  @Equals(true) confirmed!: true;
+}
+
+class AiModelRollbackDto {
+  @IsString() @MinLength(1) @MaxLength(500) reason!: string;
+  @Equals(true) confirmed!: true;
+}
+
 class ApprovalDto {
   @Length(36, 36)
   @IsUUID('4')
@@ -125,6 +142,8 @@ export class AdminController {
     private readonly precedent: AdminPrecedentService,
     private readonly refresh: AdminRefreshService,
     private readonly correction: AdminCorrectionService,
+    private readonly model: AdminModelService,
+    private readonly monitor: AdminMonitorService,
   ) {}
 
   @Get('ai-jobs')
@@ -307,6 +326,36 @@ export class AdminController {
   @Header('Cache-Control', 'no-store')
   overview() {
     return this.admin.overview();
+  }
+
+  /** AI 호출 모니터링: 일별 질문 수·지연·오류율·외부/로컬 비율·추정 비용과 임계치 알림. 호출 기록에는 질문·답변 내용이 없다. */
+  @Get('ai-monitor')
+  @Header('Cache-Control', 'no-store')
+  aiMonitor(@Query() query: MonitorDto) {
+    return this.monitor.monitor(query.days);
+  }
+
+  /** AI 답변 모델 교체: 허용 목록·현재 설정·변경 이력. */
+  @Get('ai-model')
+  @Header('Cache-Control', 'no-store')
+  aiModel() {
+    return this.model.settings();
+  }
+
+  /** 허용된 모델로 바꾸고 AI 서버에 바로 반영한다. 사유와 처리자가 이력에 남는다. */
+  @Post('ai-model')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  changeAiModel(@Body() input: AiModelDto, @Headers('authorization') authorization?: string) {
+    return this.model.apply(input, authorization, 'CHANGE');
+  }
+
+  /** 직전 모델로 한 번에 되돌린다. */
+  @Post('ai-model/rollback')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  rollbackAiModel(@Body() input: AiModelRollbackDto, @Headers('authorization') authorization?: string) {
+    return this.model.apply(input, authorization, 'ROLLBACK');
   }
 
   /** 답변·해설 모델 상태(Haiku 정상 / 로컬로 전환 / 로컬만). AI 서버가 알려 주는 값만 그대로 전달하고 키는 포함하지 않는다. */

@@ -10,6 +10,9 @@ import time
 import urllib.error
 import urllib.request
 
+import call_log
+import model_control
+
 
 class ExternalUnavailable(Exception):
     """외부 모델을 쓸 수 없는 상태(예산 소진·인증 오류·과부하·네트워크). 호출자는 로컬 모델로 대신 처리한다. 내용(질문·원문)은 담지 않는다."""
@@ -22,6 +25,12 @@ class ExternalUnavailable(Exception):
 
 _blocked_until = 0.0
 _blocked_kind = ""
+
+
+def reset_block() -> None:
+    """운영자가 모델을 바꾸면 이전 모델 때문에 걸린 쿨다운을 풀고 새로 시도한다."""
+    global _blocked_until, _blocked_kind
+    _blocked_until, _blocked_kind = 0.0, ""
 
 
 def external_blocked() -> str | None:
@@ -54,7 +63,7 @@ def anthropic_json(system, data, *, schema=None, timeout=60, num_predict=1200, t
     if not key:
         # 키가 없으면 외부 모델을 쓸 수 없는 상태로 본다(로컬 모델로 대신 처리).
         raise ExternalUnavailable("KEY_MISSING", 300.0)
-    model = os.environ.get("AURORE_EXPLAIN_MODEL", "claude-haiku-5-5")
+    model = model_control.external_model()
     payload = {
         "model": model,
         "max_tokens": max(num_predict, 2000),
@@ -76,7 +85,10 @@ def anthropic_json(system, data, *, schema=None, timeout=60, num_predict=1200, t
         raise ExternalUnavailable(blocked, _blocked_until - time.time())
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            text = "".join(b.get("text", "") for b in json.load(response).get("content", []) if b.get("type") == "text")
+            body_json = json.load(response)
+            usage = body_json.get("usage") or {}
+            call_log.note_usage(usage.get("input_tokens"), usage.get("output_tokens"))
+            text = "".join(b.get("text", "") for b in body_json.get("content", []) if b.get("type") == "text")
     except Exception as error:
         unavailable = _classify(error)
         if unavailable is None:

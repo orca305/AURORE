@@ -4,9 +4,10 @@ import json
 import os
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, StringConstraints
 
+import call_log
 from document_answer import router as document_router
 from intent_api import router as intent_router
 from legal_explain import router as legal_explain_router
@@ -19,6 +20,22 @@ app.include_router(intent_router)
 app.include_router(local_intent_router)
 app.include_router(legal_explain_router)
 app.include_router(legal_answer_router)
+
+
+@app.middleware("http")
+async def attach_call_log(request: Request, call_next):
+    """/legal/* 요청 하나에서 일어난 모델 호출(단계·모델·시간·토큰·결과)을 X-Aurore-Calls 헤더로 알려 준다(내용 없음)."""
+    if not request.url.path.startswith("/legal/") or request.url.path in ("/legal/status", "/legal/model"):
+        return await call_next(request)
+    tokens = call_log.begin(request.url.path.rsplit("/", 1)[-1])
+    try:
+        response = await call_next(request)
+        value = call_log.header_value()
+        if value:
+            response.headers["x-aurore-calls"] = value
+        return response
+    finally:
+        call_log.end(tokens)
 
 
 @app.get("/")
