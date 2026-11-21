@@ -68,6 +68,7 @@ SYSTEM = (
     "4) 사용자의 사실을 확정하지 말고 '~라면', '~인 경우' 처럼 조건형으로 쓴다. 승소·처벌 여부 등 결과를 단정하지 않는다. "
     "5) checkFacts 에는 이 조문이 적용되는지 판단하려면 사용자가 확인해야 할 사항을 질문 형태로 최대 3개 쓴다. "
     "6) 분쟁·소송·형사 문제이거나 개별 판단이 필요하면 needsExpert 를 true 로 한다. "
+    "data 에 previousAttempt 가 있으면 직전 시도가 검증에서 거절된 이유이므로 같은 실수를 고쳐서 다시 쓴다. "
     "쉬운 한국어 존댓말로, 각 text 는 한두 문장으로 쓴다. JSON 만 반환한다."
 )
 
@@ -133,47 +134,73 @@ def _model_json(*args, **kwargs):
     return local_json(*args, **kwargs)
 
 
+# 검증에서 거절됐을 때 다음 시도에 알려 주는 고정 문구(원문·질문 내용은 담지 않는다).
+RETRY_HINTS = {
+    "BASIS_NOT_IN_QUOTE": "basis 가 quote 의 연속 구간과 글자 그대로 같지 않았다. quote 에서 한 구간을 그대로 복사하고, 요약하거나 이어 붙이지 마라.",
+    "UNSUPPORTED_FIGURE": "text 에 quote 에 없는 기간·금액·숫자가 있었다. quote 에 있는 숫자만 쓰고, 없으면 숫자 없이 써라.",
+    "UNKNOWN_ARTICLE": "text 에 quote 에 없는 조문 번호가 있었다. 다른 조문을 언급하지 마라.",
+    "OVERCONFIDENT": "결과를 단정하는 표현이 있었다. '~라면', '~할 수 있습니다' 처럼 조건형으로 써라.",
+    "PROVISO_NOT_EXPLAINED": "quote 의 '다만' 이하 단서를 설명하지 않았다. 단서를 CONDITION 또는 EXCEPTION 항목으로 쓰고 basis 는 단서 안의 구간으로 하라.",
+    "REVIEW_REJECTED": "검토에서 원문으로 뒷받침되지 않거나 사용자 사실을 단정한다고 판단했다. quote 문장에 가깝게 쓰고 사용자의 상황을 확정하지 마라.",
+}
+GENERIC_HINT = "직전 출력이 형식 또는 검증을 통과하지 못했다. 지정된 JSON 형식을 지키고 quote 에 있는 내용만 써라."
+
+
+def _explain_once(data: dict, payload: ExplainRequest) -> dict:
+    draft = Draft.model_validate(_model_json(
+        SYSTEM, data, schema=Draft.model_json_schema(), think=False, timeout=60, num_predict=1200,
+    ))
+    validate(draft, payload.evidence)
+    items = [draft.summary] + [p.text for p in draft.points]
+    review = Review.model_validate(_model_json(
+        REVIEW_SYSTEM,
+        {"quote": payload.evidence.quote, "items": items, "context": payload.context},
+        schema=Review.model_json_schema(), think=False, timeout=45, num_predict=200,
+    ))
+    if any(type(n) is not int or n < 0 or n >= len(items) for n in review.unsupported):
+        raise ValueError("REVIEW_MISMATCH")
+    if review.assertsUserFacts:
+        raise ValueError("REVIEW_REJECTED")
+    dropped = {n - 1 for n in review.unsupported if n > 0}
+    points = [p for i, p in enumerate(draft.points) if i not in dropped]
+    if not points:
+        raise ValueError("REVIEW_REJECTED")
+    summary, summary_basis = draft.summary, draft.summaryBasis
+    if 0 in review.unsupported:
+        # 요약 한 줄만 문제일 때는 전체를 버리지 않고, 검토를 통과한 첫 규칙 항목을 요약으로 쓴다.
+        rule = next((p for p in points if p.kind == "RULE"), None)
+        if rule is None:
+            raise ValueError("REVIEW_REJECTED")
+        summary, summary_basis = rule.text, rule.basis
+    # 항목을 빼거나 요약을 바꿔도 단서 설명과 원문 대조는 그대로 지켜야 한다.
+    validate(draft.model_copy(update={"points": points, "summary": summary, "summaryBasis": summary_basis}), payload.evidence)
+    return {
+        "summary": summary,
+        "summaryBasis": summary_basis,
+        "points": [p.model_dump() for p in points],
+        "checkFacts": draft.checkFacts,
+        "needsExpert": draft.needsExpert,
+        "reviewDropped": len(dropped) + (1 if 0 in review.unsupported else 0),
+        "verified": True,
+    }
+
+
 @router.post("/explain")
 def explain(payload: ExplainRequest):
     data = payload.model_dump(mode="json")
+    # 검증(결정적 검사·별도 검토)을 통과하지 못하면 거절 사유를 알려 주고 한 번 더 시도한다. 통과 기준은 그대로이며 AURORE_EXPLAIN_ATTEMPTS=1 로 끈다.
+    attempts = max(1, int(os.environ.get("AURORE_EXPLAIN_ATTEMPTS", "2") or 2))
+    previous = None
     try:
-        # 외부 모델은 빠르므로 결정적 검증에 실패하면 한 번 더 시도한다(통과 기준은 그대로).
-        attempts = 2 if os.environ.get("AURORE_EXPLAIN_PROVIDER") == "anthropic" else 1
         for attempt in range(attempts):
             try:
-                draft = Draft.model_validate(_model_json(
-                    SYSTEM, data, schema=Draft.model_json_schema(), think=False, timeout=60, num_predict=1200,
-                ))
-                validate(draft, payload.evidence)
-                break
-            except ValueError:
+                return _explain_once(data if previous is None else {**data, "previousAttempt": previous}, payload)
+            except ValueError as error:
                 if attempt + 1 == attempts:
                     raise
-        items = [draft.summary] + [p.text for p in draft.points]
-        review = Review.model_validate(_model_json(
-            REVIEW_SYSTEM,
-            {"quote": payload.evidence.quote, "items": items, "context": payload.context},
-            schema=Review.model_json_schema(), think=False, timeout=45, num_predict=200,
-        ))
-        if any(type(n) is not int or n < 0 or n >= len(items) for n in review.unsupported):
-            raise ValueError("REVIEW_MISMATCH")
-        if 0 in review.unsupported or review.assertsUserFacts:
-            raise ValueError("REVIEW_REJECTED")
-        dropped = {n - 1 for n in review.unsupported}
-        points = [p for i, p in enumerate(draft.points) if i not in dropped]
-        if not points:
-            raise ValueError("REVIEW_REJECTED")
-        # Dropping a point must not silently remove the explanation of a 단서.
-        validate(draft.model_copy(update={"points": points}), payload.evidence)
-        return {
-            "summary": draft.summary,
-            "summaryBasis": draft.summaryBasis,
-            "points": [p.model_dump() for p in points],
-            "checkFacts": draft.checkFacts,
-            "needsExpert": draft.needsExpert,
-            "reviewDropped": len(dropped),
-            "verified": True,
-        }
+                code = str(error)
+                previous = RETRY_HINTS.get(code, GENERIC_HINT)
+                print("legal_explain_retry", code if re.fullmatch(r"[A-Z_]+", code) else "INVALID", flush=True)
     except HTTPException:
         raise
     except Exception as error:

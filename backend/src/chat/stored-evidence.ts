@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { DocumentInput, PreparedCitation } from './answer.service.js';
-import { cosine, embedTexts, fuseRanks, searchVectorsMulti, vectorEnabled } from './vector-search.js';
+import { cosine, embedTexts, fuseRanks, searchVectorsMulti, topWithin, vectorEnabled } from './vector-search.js';
+import { searchLawTitles } from './law-titles.js';
 import { matchSituations, toNormNo } from './situations.js';
 import { LAW_LEVEL_FACTOR, PRIORITY_LAWS, termBoosts } from './law-priority.js';
 
@@ -214,6 +215,30 @@ export function rerankRows<T extends { kind: string; sourceKey: string; title: s
   return kept;
 }
 
+/**
+ * 검토 대상(상위 limit개)에 보장할 후보를 넣는다. 보장 후보가 이미 상위 limit 안에 있으면 그대로 두고,
+ * 없으면 앞쪽 4개를 지킨 채 그 뒤에 끼워 넣고 맨 뒤쪽의 일반 후보를 밀어낸다. 나머지 순서는 유지한다.
+ */
+export function ensureLawSlots<T>(rows: T[], reserved: T[], limit: number, keyOf: (row: T) => string): T[] {
+  if (!reserved.length) return rows;
+  const reservedKeys = new Set(reserved.map(keyOf));
+  const top = rows.slice(0, limit);
+  const topKeys = new Set(top.map(keyOf));
+  const missing = reserved.filter((row, at) => !topKeys.has(keyOf(row)) && reserved.findIndex((x) => keyOf(x) === keyOf(row)) === at);
+  if (!missing.length) return rows;
+  const missingKeys = new Set(missing.map(keyOf));
+  // 밀어낼 후보: 앞 4개와 보장 후보를 제외한 맨 뒤쪽 것부터.
+  const dropAt: number[] = [];
+  for (let at = top.length - 1; at >= 4 && dropAt.length < missing.length; at--) if (!reservedKeys.has(keyOf(top[at]))) dropAt.push(at);
+  const droppedAt = new Set(dropAt);
+  const kept = top.filter((_, at) => !droppedAt.has(at));
+  const head = kept.slice(0, 4);
+  const tail = kept.slice(4);
+  // 밀려난 후보는 버리지 않고 상위 limit 바로 뒤로 보낸다.
+  const rest = [...top.filter((_, at) => droppedAt.has(at)), ...rows.slice(limit).filter((row) => !missingKeys.has(keyOf(row)))];
+  return [...head, ...missing, ...tail, ...rest];
+}
+
 export async function retrieveStoredEvidence(
   db: PrismaService,
   question: string,
@@ -221,7 +246,7 @@ export async function retrieveStoredEvidence(
   contextText = '',
   candidateLimit = 3,
   lawHints: string[] = [],
-  options: { pool?: number; legalTerms?: string[]; vectorQuery?: string; termQuery?: string } = {},
+  options: { pool?: number; legalTerms?: string[]; vectorQuery?: string; termQuery?: string; hintedLaws?: Set<string> } = {},
 ): Promise<StoredEvidence[]> {
   if (
     !Number.isInteger(candidateLimit) ||
@@ -268,6 +293,14 @@ export async function retrieveStoredEvidence(
     + CASE WHEN l.legal_nm = ANY(${boosts.laws}::text[]) THEN 8 ELSE 0 END
     + CASE WHEN l.legal_nm = ANY(${lawHints}::text[]) THEN 10 ELSE 0 END
     + CASE WHEN concat(l.legal_nm,'|',p.norm_no) = ANY(${boosts.articles}::text[]) THEN 16 ELSE 0 END)`;
+  // 조문 id 목록으로 후보 행을 가져온다(의미 검색 결과, 법령별 보장 후보에 공통).
+  const rowsByProviIds = (provIds: string[]) =>
+    db.$queryRaw<Candidate[]>(Prisma.sql`
+ SELECT 'LEGAL' AS kind,r.src_snapshot_id AS "snapshotId",v.id AS "targetId",l.id AS "legalId",l.src_key AS "sourceKey",v.ver_key AS edition,to_char(v.enfc_dt,'YYYYMMDD') AS date,p.norm_no AS article,concat(l.legal_nm,' ',p.disp_no) AS title,p.provi_nm AS "proviNm",p.id::text AS "proviId",TRUE AS vector,0::float8 AS score
+ FROM legal_provi p JOIN legal_ver_rev r ON r.id=p.legal_ver_rev_id JOIN legal_ver v ON v.id=r.legal_ver_id JOIN legal l ON l.id=v.legal_id
+ WHERE p.id = ANY(${provIds}::bigint[]) AND NOT p.del_yn AND p.provi_type_cd='ARTICLE' AND p.prnt_provi_id IS NULL AND r.current_yn AND r.src_snapshot_id IS NOT NULL AND NOT v.del_yn AND NOT l.del_yn AND l.src_cd='MOLEG'
+ AND v.enfc_dt<=${asOf}::date AND (p.enfc_dt IS NULL OR p.enfc_dt<=${asOf}::date)
+ AND NOT EXISTS(SELECT 1 FROM legal_ver newer WHERE newer.legal_id=v.legal_id AND NOT newer.del_yn AND newer.enfc_dt<=${asOf}::date AND newer.enfc_dt>v.enfc_dt)`);
   const vectorEligible = Boolean(options.vectorQuery) && vectorEnabled() && !selectors.article && !selectors.caseNumber;
   // 질문 전체와, 법률용어·법령 후보만으로 만든 두 번째 질의를 함께 검색해 순위를 융합한다(AURORE_MULTI_QUERY=0 이면 첫 질의만).
   const vectorQueries = [options.vectorQuery ?? '', process.env.AURORE_MULTI_QUERY === '0' ? '' : (options.termQuery ?? '')];
@@ -294,12 +327,7 @@ export async function retrieveStoredEvidence(
   {
     const hits = vectorFound?.hits ?? [];
     if (hits.length) {
-      const vectorRows = await db.$queryRaw<Candidate[]>(Prisma.sql`
- SELECT 'LEGAL' AS kind,r.src_snapshot_id AS "snapshotId",v.id AS "targetId",l.id AS "legalId",l.src_key AS "sourceKey",v.ver_key AS edition,to_char(v.enfc_dt,'YYYYMMDD') AS date,p.norm_no AS article,concat(l.legal_nm,' ',p.disp_no) AS title,p.provi_nm AS "proviNm",p.id::text AS "proviId",TRUE AS vector,0::float8 AS score
- FROM legal_provi p JOIN legal_ver_rev r ON r.id=p.legal_ver_rev_id JOIN legal_ver v ON v.id=r.legal_ver_id JOIN legal l ON l.id=v.legal_id
- WHERE p.id = ANY(${hits.map((hit) => hit.id)}::bigint[]) AND NOT p.del_yn AND p.provi_type_cd='ARTICLE' AND p.prnt_provi_id IS NULL AND r.current_yn AND r.src_snapshot_id IS NOT NULL AND NOT v.del_yn AND NOT l.del_yn AND l.src_cd='MOLEG'
- AND v.enfc_dt<=${asOf}::date AND (p.enfc_dt IS NULL OR p.enfc_dt<=${asOf}::date)
- AND NOT EXISTS(SELECT 1 FROM legal_ver newer WHERE newer.legal_id=v.legal_id AND NOT newer.del_yn AND newer.enfc_dt<=${asOf}::date AND newer.enfc_dt>v.enfc_dt)`);
+      const vectorRows = await rowsByProviIds(hits.map((hit) => hit.id));
       pooled = fuseCandidates(lexicalRows, vectorRows, hits.map((hit) => hit.id));
     }
   }
@@ -330,6 +358,47 @@ export async function retrieveStoredEvidence(
       rows = [...curated, ...ranked0.filter((row) => !known.has(rowKey(row)))];
     }
   }
+  // 법령별 최소 후보 보장: 질문 분석이 짚은 법령과, 질문과 뜻이 가까운 법령(법령 중심 벡터)에서 각각 질문과 가장 가까운 조문을
+  // 최소 2개씩 검토 대상에 넣는다. 분석이 법령을 못 짚었거나 한 법령(민법·채무자회생법 등)이 후보를 채울 때의 누락을 줄인다.
+  // AURORE_LAW_SLOTS=0 으로 끄고, 법령 중심 벡터만 AURORE_LAW_TITLES=0 으로 끈다.
+  // 호출자가 인용 법령 일치 검사에 쓸 수 있게, 분석이 짚은 법령과 질문과 뜻이 가까운 법령을 알려 준다.
+  for (const law of lawHints) options.hintedLaws?.add(law);
+  if (process.env.AURORE_LAW_SLOTS !== '0' && queryVector && !selectors.article && !selectors.caseNumber) {
+    try {
+      // 1위 법령은 항상, 2위는 1위와 점수 차가 0.01 미만일 때만 쓴다(122문항 실측: 격차가 크면 2위는 대개 무관한 법령).
+      const found = await searchLawTitles(queryVector, 2);
+      const titleLaws = found.filter((hit, at) => at === 0 || found[0].score - hit.score < 0.01).map((hit) => hit.name);
+      for (const law of titleLaws) options.hintedLaws?.add(law);
+      const interleaved = [titleLaws[0], lawHints[0], titleLaws[1], lawHints[1]].filter((name): name is string => Boolean(name));
+      const hinted = [...new Set(interleaved)].slice(0, 3);
+      const lawOf = (row: Candidate) => row.title.replace(/\s제\d+조.*$/u, '');
+      const topNow = rows.slice(0, candidateLimit);
+      const need = hinted.filter((law) => topNow.filter((row) => row.kind === 'LEGAL' && lawOf(row) === law).length < 2);
+      if (need.length) {
+        const own = await db.$queryRaw<{ id: string; law: string }[]>(Prisma.sql`
+ SELECT p.id::text AS id,l.legal_nm AS law
+ FROM legal_provi p JOIN legal_ver_rev r ON r.id=p.legal_ver_rev_id JOIN legal_ver v ON v.id=r.legal_ver_id JOIN legal l ON l.id=v.legal_id
+ WHERE l.legal_nm = ANY(${need}::text[]) AND NOT p.del_yn AND p.provi_type_cd='ARTICLE' AND p.prnt_provi_id IS NULL AND r.current_yn AND r.src_snapshot_id IS NOT NULL AND NOT v.del_yn AND NOT l.del_yn AND l.src_cd='MOLEG'
+ AND v.enfc_dt<=${asOf}::date AND (p.enfc_dt IS NULL OR p.enfc_dt<=${asOf}::date)
+ AND NOT EXISTS(SELECT 1 FROM legal_ver newer WHERE newer.legal_id=v.legal_id AND NOT newer.del_yn AND newer.enfc_dt<=${asOf}::date AND newer.enfc_dt>v.enfc_dt)`);
+        const present = new Set(topNow.map((row) => row.proviId).filter(Boolean));
+        const chosen: string[] = [];
+        for (const law of need) {
+          const have = topNow.filter((row) => row.kind === 'LEGAL' && lawOf(row) === law).length;
+          const best = await topWithin(queryVector, own.filter((row) => row.law === law).map((row) => row.id), 4);
+          chosen.push(...best.filter((hit) => !present.has(hit.id)).slice(0, 2 - have).map((hit) => hit.id));
+        }
+        if (chosen.length) {
+          const fetched = await rowsByProviIds(chosen);
+          const reserved = chosen.flatMap((id) => fetched.filter((row) => row.proviId === id));
+          rows = ensureLawSlots(rows, reserved, candidateLimit, rowKey);
+        }
+      }
+    } catch {
+      // 보장 후보는 보조 수단이다. 실패하면 기존 후보를 그대로 쓴다.
+    }
+  }
+  stage.slots = performance.now() - profileStart;
   const tools = (await import(
     new URL('../../tools/law-evidence.mjs', import.meta.url).href
   )) as { collectEvidence: (payload: unknown, hash: string) => Chunk[] };

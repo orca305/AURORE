@@ -13,14 +13,18 @@ def anthropic_json(system, data, *, schema=None, timeout=60, num_predict=1200, t
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not key:
         raise ValueError("EXTERNAL_KEY_MISSING")
-    body = json.dumps({
-        "model": os.environ.get("AURORE_EXPLAIN_MODEL", "claude-haiku-5-5"),
-        # 이 모델은 기본으로 생각 토큰을 쓰므로, 끄고 응답이 잘리지 않도록 여유를 둔다.
-        "thinking": {"type": "disabled"},
+    model = os.environ.get("AURORE_EXPLAIN_MODEL", "claude-haiku-5-5")
+    payload = {
+        "model": model,
         "max_tokens": max(num_predict, 2000),
         "system": system + " 반드시 다음 JSON 스키마에 맞는 JSON 객체 하나만 출력한다: " + json.dumps(schema, ensure_ascii=False),
         "messages": [{"role": "user", "content": json.dumps(data, ensure_ascii=False)}],
-    }).encode()
+    }
+    # Haiku 는 기본으로 생각 토큰을 쓰므로 끄고, 응답이 잘리지 않도록 max_tokens 에 여유를 둔다.
+    # Sonnet·Opus 계열은 "disabled" 를 받지 않으므로(400) thinking 항목을 보내지 않는다(생각 없이 바로 답한다).
+    if "haiku" in model:
+        payload["thinking"] = {"type": "disabled"}
+    body = json.dumps(payload).encode()
     request = urllib.request.Request(
         "https://api.anthropic.com/v1/messages", data=body, method="POST",
         headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},

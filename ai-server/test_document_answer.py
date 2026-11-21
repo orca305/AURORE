@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 from fastapi import HTTPException
-from document_answer import Question, answer_documents, document_health, grade_documents, local_json
+from document_answer import Question, answer_documents, document_health, grade_documents, choose_document, ChooseQuestion, local_json
 
 ID = "00000000-0000-4000-8000-000000000001"
 TEXT = "계약 종료일은 2026년 11월 8일입니다."
@@ -55,4 +55,29 @@ class GradeTests(unittest.TestCase):
         for bad in ({"grades": ["direct", "none"]}, {"grades": ["maybe"]}, {"grades": []}):
             with patch("document_answer.local_json", return_value=bad):
                 with self.assertRaises(HTTPException): grade_documents(self.payload())
+class ChooseTests(unittest.TestCase):
+    def payload(self, n=3):
+        docs = [{"id": "00000000-0000-4000-8000-%012d" % (i + 1), "name": "법 제%d조" % (i + 1), "markdown": "조문 %d 본문입니다." % (i + 1)} for i in range(n)]
+        return ChooseQuestion(question="질문입니다", documents=docs)
+    def test_best_and_alternates(self):
+        with patch("document_answer.local_json", return_value={"best": 1, "alternates": [0]}) as model:
+            result = choose_document(self.payload())
+            self.assertEqual((result["best"], result["alternates"]), (1, [0]))
+            listing = model.call_args.args[1]["provisions"]
+            self.assertEqual([item["number"] for item in listing], [0, 1, 2])
+            self.assertIn("법 제2조", listing[1]["statute"])
+    def test_none_means_no_provision(self):
+        with patch("document_answer.local_json", return_value={"best": -1, "alternates": []}):
+            self.assertIsNone(choose_document(self.payload())["best"])
+    def test_invalid_choices_are_rejected(self):
+        for bad in ({"best": 5, "alternates": []}, {"best": 0, "alternates": [0]}, {"best": -1, "alternates": [1]}, {"best": 0, "alternates": [1, 2, 3]}, {"best": "a", "alternates": []}):
+            with patch("document_answer.local_json", return_value=bad):
+                with self.assertRaises(HTTPException): choose_document(self.payload())
+    def test_up_to_twelve_documents_and_text_is_shortened(self):
+        payload = self.payload(12)
+        payload.documents[0].markdown = "가" * 900
+        with patch("document_answer.local_json", return_value={"best": 0, "alternates": []}) as model:
+            choose_document(payload)
+            self.assertEqual(len(model.call_args.args[1]["provisions"][0]["text"]), 380)
+        with self.assertRaises(ValueError): self.payload(13)
 if __name__=="__main__":unittest.main()

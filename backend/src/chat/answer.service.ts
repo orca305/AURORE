@@ -206,6 +206,46 @@ export class ChatAnswerService {
       throw new Error('DocumentEvidenceInvalid');
     return value.grades as ('direct' | 'related' | 'none')[];
   }
+  // 후보 전체(최대 12개)를 한 번에 보여 주고 가장 알맞은 하나와 대안(최대 2개)의 순번을 받는다. 없으면 best 가 null.
+  async chooseDocument(
+    question: string,
+    documents: DocumentInput[],
+    context?: string,
+  ): Promise<{ best: number | null; alternates: number[] }> {
+    const response = await fetch(this.documentUrl('/documents/choose'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: redactDocument(question).slice(0, 1000) || '질문',
+        ...(context ? { context: redactDocument(context).slice(0, 8000) } : {}),
+        documents: documents.map(({ id, name, markdown }) => ({ id, name, markdown })),
+      }),
+      signal: AbortSignal.timeout(150000),
+      redirect: 'error',
+    }).catch(() => {
+      throw new Error('DocumentAiUnavailable');
+    });
+    if (!response.ok) throw new Error('DocumentAiUpstreamFailure');
+    const value = (await response.json().catch(() => null)) as {
+      best?: unknown;
+      alternates?: unknown;
+      supportChecked?: boolean;
+    } | null;
+    const inRange = (n: unknown): n is number =>
+      Number.isInteger(n) && (n as number) >= 0 && (n as number) < documents.length;
+    if (
+      !value ||
+      value.supportChecked !== true ||
+      !(value.best === null || inRange(value.best)) ||
+      !Array.isArray(value.alternates) ||
+      value.alternates.length > 2 ||
+      !value.alternates.every(inRange) ||
+      (value.best === null && value.alternates.length > 0) ||
+      new Set([value.best, ...value.alternates]).size !== 1 + value.alternates.length
+    )
+      throw new Error('DocumentEvidenceInvalid');
+    return { best: value.best, alternates: value.alternates as number[] };
+  }
   async generateDocuments(
     question: string,
     documents: DocumentInput[],
@@ -367,6 +407,10 @@ export class ChatAnswerService {
     supplement = false,
   ): Promise<PreparedAnswer> {
     const analysis = await this.analyzeQuery(question);
+    // 인용 법령 일치 검사: 인용할 조문의 법령이 질문 분석이 짚은 법령이나 질문과 뜻이 가까운 법령(또는 그 시행령·시행규칙)에
+    // 없으면 근거로 확정하지 않는다(다른 후보를 보거나 근거 없음으로 처리). 짚은 법령이 하나도 없으면 판단하지 않는다.
+    // AURORE_LAW_GATE=0 으로 끈다.
+    const hintedLaws = new Set<string>(analysis.laws);
     const candidates = await retrieveStoredEvidence(
       this.db,
       question,
@@ -379,9 +423,16 @@ export class ChatAnswerService {
         legalTerms: analysis.terms,
         vectorQuery: [question, ...analysis.terms].join(' '),
         termQuery: [...analysis.terms, ...analysis.laws].join(' '),
+        hintedLaws,
       },
     );
     if (!candidates.length) return missingEvidence('SOURCE_GAP', supplement);
+    const lawAllowed = (candidate: StoredEvidence) => {
+      if (process.env.AURORE_LAW_GATE === '0' || hintedLaws.size === 0) return true;
+      if (candidate.citation.citeTypeCd !== 'LEGAL') return true;
+      const name = candidate.citation.label.replace(/\s제\d+조.*$/u, '').trim();
+      return hintedLaws.has(name) || hintedLaws.has(name.replace(/\s*(시행령|시행규칙)$/u, ''));
+    };
     if (!(await this.documentsReady()))
       return {
         phase: 'start',
@@ -422,9 +473,37 @@ export class ChatAnswerService {
     let reviewed = false;
     let firstFailure: unknown;
     const wave = Math.max(1, Number(process.env.AURORE_REVIEW_PARALLEL ?? 2) || 1);
+    // 인용은 원문 그대로여야 하므로 길면 문장 끝에서 잘라 원문의 앞부분을 쓴다.
+    const quoteOf = (candidate: StoredEvidence) => {
+      const body = candidate.markdown.trim();
+      return body.length <= 1200
+        ? body
+        : body.slice(0, 1200).replace(/[^.。다]*$/u, '') || body.slice(0, 1200);
+    };
+    const reviewMode = process.env.AURORE_REVIEW_MODE ?? 'grade';
+    // 선택 방식(AURORE_REVIEW_MODE=choose): 후보 전체를 한 번에 보고 가장 알맞은 하나를 고른 뒤, 고른 후보(와 대안)를
+    // 하나씩 엄격하게 재확인한다. 후보를 서로 비교하므로 독립 등급보다 상대 판단이 가능하고 모델 호출도 적다.
+    if (reviewMode === 'choose') {
+      const choice = await this.chooseDocument(question, candidates, context?.text);
+      reviewed = true;
+      const order = choice.best === null ? [] : [choice.best, ...choice.alternates];
+      for (const index of order) {
+        const candidate = candidates[index];
+        if (!lawAllowed(candidate)) continue;
+        const verdict = await this.gradeDocuments(
+          question,
+          [candidate],
+          context?.text,
+          'verify',
+        ).catch((error) => {
+          firstFailure ??= error;
+          return undefined;
+        });
+        if (verdict?.[0] === 'direct') return finish(candidate, quoteOf(candidate));
+      }
+    } else if (reviewMode !== 'classic') {
     // 등급 방식(기본, AURORE_REVIEW_MODE=classic 이면 예전 추출·검토 방식): 묶음마다 후보를 direct/related/none 으로 분류하고,
     // "direct" 후보 중 검색 순위가 가장 높은 것을 인용한다. 추출·검토를 하나로 합쳐 호출 수도 줄어든다.
-    if (process.env.AURORE_REVIEW_MODE !== 'classic') {
       for (let at = 0; at < batches.length; at += wave) {
         if (at && Date.now() - started >= 30_000) break;
         const graded = await Promise.allSettled(
@@ -448,7 +527,7 @@ export class ChatAnswerService {
         // 검색 순위가 높은 "direct" 후보부터 하나씩 엄격하게 다시 확인하고, 통과한 첫 후보를 인용한다(최대 2개 확인).
         directs.sort((x, y) => x.rank - y.rank);
         let pick: { candidate: StoredEvidence; rank: number } | undefined;
-        for (const direct of directs.slice(0, 2)) {
+        for (const direct of directs.filter((row) => lawAllowed(row.candidate)).slice(0, 2)) {
           const verdict = await this.gradeDocuments(
             question,
             [direct.candidate],
@@ -463,15 +542,7 @@ export class ChatAnswerService {
             break;
           }
         }
-        if (pick) {
-          const body = pick.candidate.markdown.trim();
-          // 인용은 원문 그대로여야 하므로 길면 문장 끝에서 잘라 원문의 앞부분을 쓴다.
-          const quoteText =
-            body.length <= 1200
-              ? body
-              : body.slice(0, 1200).replace(/[^.。다]*$/u, '') || body.slice(0, 1200);
-          return finish(pick.candidate, quoteText);
-        }
+        if (pick) return finish(pick.candidate, quoteOf(pick.candidate));
       }
     } else
     for (let at = 0; at < batches.length; at += wave) {
@@ -496,6 +567,7 @@ export class ChatAnswerService {
         )[0];
         if (!quote) continue;
         const candidate = batch.find((row) => row.id === quote.documentId)!;
+        if (!lawAllowed(candidate)) continue;
         const explanation = await this.explainEvidence(
           question,
           context?.text ?? '',

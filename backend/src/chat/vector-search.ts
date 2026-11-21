@@ -121,6 +121,22 @@ export async function searchVectorsMulti(
     .map(([id]) => ({ id, score: best.get(id) ?? 0 }));
   return { hits, query: vectors[0] };
 }
+let positions: Map<string, number> | null = null;
+/** 주어진 조문 id 집합 안에서만 질문 벡터와 가까운 상위 n개를 구한다(법령 하나 안에서 가장 알맞은 조문 찾기). */
+export async function topWithin(query: Int8Array, ids: string[], n: number): Promise<{ id: string; score: number }[]> {
+  const data = await index();
+  if (!data || !ids.length) return [];
+  positions ??= new Map(data.ids.map((id, at) => [id, at]));
+  const scored: { id: string; score: number }[] = [];
+  for (const id of ids) {
+    const at = positions.get(id);
+    if (at === undefined) continue;
+    let s = 0;
+    for (let k = 0, base = at * data.dims; k < data.dims; k++) s += data.vectors[base + k] * query[k];
+    scored.push({ id, score: s / (127 * 127) });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, n);
+}
 /** 질문 벡터와 내적이 큰 상위 n개 조문 id(내림차순). 임베딩 파일이 없으면 빈 목록. */
 export async function searchVectors(query: string, n = 40): Promise<{ id: string; score: number }[]> {
   return (await searchVectorsDetailed(query, n))?.hits ?? [];

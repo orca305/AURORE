@@ -36,7 +36,8 @@ class ExplainTests(unittest.TestCase):
         self.assertFalse(model.call_args_list[0].kwargs["think"])
 
     def assertRejected(self, value, review=OK, quote=QUOTE):
-        with patch("legal_explain.local_json", side_effect=[value, review]):
+        # 거절 사유 확인 시험은 재시도 없이 한 번만 시도하도록 고정한다(재시도는 별도 시험).
+        with patch.dict("os.environ", {"AURORE_EXPLAIN_ATTEMPTS": "1"}), patch("legal_explain.local_json", side_effect=[value, review]):
             with self.assertRaises(HTTPException) as caught:
                 explain(request(quote))
         self.assertEqual(caught.exception.status_code, 502)
@@ -72,6 +73,32 @@ class ExplainTests(unittest.TestCase):
             result = explain(request())
         self.assertEqual(result["reviewDropped"], 1)
         self.assertEqual(len(result["points"]), 1)
+
+    def test_retry_after_rejection_passes_hint_and_succeeds(self):
+        bad = draft(summaryBasis="보증금을 즉시 돌려받을 수 있다")
+        with patch("legal_explain.local_json", side_effect=[bad, draft(), OK]) as model:
+            result = explain(request())
+        self.assertTrue(result["verified"])
+        self.assertEqual(model.call_count, 3)
+        self.assertNotIn("previousAttempt", model.call_args_list[0].args[1])
+        self.assertIn("글자 그대로", model.call_args_list[1].args[1]["previousAttempt"])
+
+    def test_retry_is_bounded_and_keeps_the_same_checks(self):
+        bad = draft(summaryBasis="보증금을 즉시 돌려받을 수 있다")
+        with patch("legal_explain.local_json", side_effect=[bad, bad]) as model:
+            with self.assertRaises(HTTPException) as caught:
+                explain(request())
+        self.assertIn("BASIS_NOT_IN_QUOTE", caught.exception.detail)
+        self.assertEqual(model.call_count, 2)
+
+    def test_summary_only_rejection_is_rescued_by_a_supported_rule_point(self):
+        rule = {"kind": "RULE", "text": "임차권등기명령을 신청할 수 있습니다.", "basis": "임차권등기명령을 신청할 수 있다"}
+        two = draft(points=[rule] + draft()["points"])
+        with patch("legal_explain.local_json", side_effect=[two, {"unsupported": [0], "assertsUserFacts": False}]):
+            result = explain(request())
+        self.assertEqual(result["summary"], rule["text"])
+        self.assertEqual(result["summaryBasis"], rule["basis"])
+        self.assertEqual(len(result["points"]), 2)
 
     def test_external_provider_needs_key_and_is_validated(self):
         env = {"AURORE_EXPLAIN_PROVIDER": "anthropic"}

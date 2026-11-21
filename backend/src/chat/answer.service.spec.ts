@@ -333,3 +333,85 @@ describe('grade-based review (default)', () => {
     await expect(service.generateStored('보증금')).rejects.toThrow('DocumentAiUpstreamFailure');
   });
 });
+
+describe('choose-one review mode', () => {
+  beforeEach(() => {
+    process.env.AURORE_REVIEW_MODE = 'choose';
+  });
+  it('re-checks the chosen candidate and cites it', async () => {
+    const { service, candidates } = fixture(6);
+    const choose = vi
+      .spyOn(service, 'chooseDocument')
+      .mockResolvedValue({ best: 4, alternates: [1] });
+    const grade = vi.spyOn(service, 'gradeDocuments').mockResolvedValue(['direct']);
+    const result = await service.generateStored('보증금 반환');
+    expect(result.resultCd).toBe('EVIDENCE_FOUND');
+    expect(result.citation?.srcSnapshotId).toBe(candidates[4].citation.srcSnapshotId);
+    expect(choose).toHaveBeenCalledTimes(1);
+    expect(choose.mock.calls[0][1]).toHaveLength(6);
+    expect(grade).toHaveBeenCalledTimes(1);
+    expect(grade.mock.calls[0][3]).toBe('verify');
+  });
+  it('falls back to the alternate when the re-check rejects the best, and reports a gap when all are rejected', async () => {
+    const { service, candidates } = fixture(4);
+    vi.spyOn(service, 'chooseDocument').mockResolvedValue({ best: 0, alternates: [2] });
+    vi.spyOn(service, 'gradeDocuments')
+      .mockResolvedValueOnce(['none'])
+      .mockResolvedValueOnce(['direct']);
+    const result = await service.generateStored('보증금 반환');
+    expect(result.citation?.srcSnapshotId).toBe(candidates[2].citation.srcSnapshotId);
+    vi.spyOn(service, 'gradeDocuments').mockResolvedValue(['none']);
+    const gap = await service.generateStored('보증금 반환');
+    expect(gap.resultCd).toBe('RELEVANCE_GAP');
+    expect(gap.citation).toBeUndefined();
+  });
+  it('never cites anything when nothing was chosen', async () => {
+    const { service } = fixture(3);
+    vi.spyOn(service, 'chooseDocument').mockResolvedValue({ best: null, alternates: [] });
+    const grade = vi.spyOn(service, 'gradeDocuments');
+    const result = await service.generateStored('날씨');
+    expect(result.resultCd).toBe('RELEVANCE_GAP');
+    expect(grade).not.toHaveBeenCalled();
+  });
+  it('surfaces a model failure instead of reporting a false gap', async () => {
+    const { service } = fixture(3);
+    vi.spyOn(service, 'chooseDocument').mockRejectedValue(new Error('DocumentAiUpstreamFailure'));
+    await expect(service.generateStored('보증금')).rejects.toThrow('DocumentAiUpstreamFailure');
+  });
+});
+
+describe('cited-law consistency gate', () => {
+  beforeEach(() => {
+    delete process.env.AURORE_REVIEW_MODE;
+    delete process.env.AURORE_LAW_GATE;
+  });
+  afterEach(() => {
+    delete process.env.AURORE_LAW_GATE;
+  });
+  const named = (service: ChatAnswerService, laws: string[]) =>
+    vi.spyOn(service, 'analyzeQuery').mockResolvedValue({ keywords: [], terms: [], laws });
+  it('does not confirm a citation whose law the analysis did not point at', async () => {
+    const { service } = fixture(3);
+    named(service, ['다른법']);
+    const grade = vi.spyOn(service, 'gradeDocuments').mockResolvedValue(['direct', 'direct', 'direct']);
+    const result = await service.generateStored('질문');
+    expect(result.resultCd).toBe('RELEVANCE_GAP');
+    expect(result.citation).toBeUndefined();
+    // 통과하지 못한 후보는 엄격 재확인(추가 모델 호출)도 하지 않는다.
+    expect(grade).toHaveBeenCalledTimes(1);
+  });
+  it('allows a citation from a pointed-at law and its decree', async () => {
+    const { service } = fixture(3);
+    named(service, ['합성법']);
+    vi.spyOn(service, 'gradeDocuments').mockResolvedValue(['direct', 'direct', 'direct']);
+    expect((await service.generateStored('질문')).resultCd).toBe('EVIDENCE_FOUND');
+  });
+  it('does not judge when nothing was pointed at, and can be switched off', async () => {
+    const { service } = fixture(3);
+    vi.spyOn(service, 'gradeDocuments').mockResolvedValue(['direct', 'direct', 'direct']);
+    expect((await service.generateStored('질문')).resultCd).toBe('EVIDENCE_FOUND');
+    named(service, ['다른법']);
+    process.env.AURORE_LAW_GATE = '0';
+    expect((await service.generateStored('질문')).resultCd).toBe('EVIDENCE_FOUND');
+  });
+});
