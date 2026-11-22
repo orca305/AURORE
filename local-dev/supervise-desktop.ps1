@@ -13,6 +13,21 @@ function Write-Log([string]$message) { Add-Content -Path $log -Value ("{0} {1}" 
 function Test-Http([string]$url) { try { (Invoke-WebRequest -Uri $url -TimeoutSec 4 -UseBasicParsing).StatusCode -eq 200 } catch { $false } }
 $checks = [ordered]@{ '화면(3000)' = 'http://127.0.0.1:3000/legals'; '백엔드(3001)' = 'http://127.0.0.1:3001/legals'; 'AI 서버(8001)' = 'http://127.0.0.1:8001/health'; 'Ollama(11434)' = 'http://127.0.0.1:11434/api/version' }
 $failures = 0
+. (Join-Path $PSScriptRoot 'model-profiles.ps1')
+# 모델 상시 대기(keep-warm): 로컬 질문 분석 모델(12B)과 의미 검색 모델(bge-m3)을 항상 메모리에 올려 둔다.
+# 쉬었다가 처음 오는 질문이 모델을 다시 불러오느라 수십 초 늦어지는 것을 막는다. 질문·답변 내용은 보내지 않는다(빈 요청).
+function Invoke-KeepWarm {
+  try {
+    $local = Get-AuroreModel
+    if ($local) {
+      $body = @{ model = $local; keep_alive = '60m' } | ConvertTo-Json -Compress
+      Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/generate' -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 120 | Out-Null
+    }
+    $body = @{ model = 'bge-m3'; input = '대기'; keep_alive = '60m' } | ConvertTo-Json -Compress
+    Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/embed' -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 120 | Out-Null
+  } catch { Write-Log ('모델 대기 요청 실패: ' + $_.Exception.Message) }
+}
+$lastWarm = [datetime]::MinValue
 Write-Log "감시 시작 (collectors=$($Collectors.IsPresent))"
 while ($true) {
   $down = @($checks.Keys | Where-Object { -not (Test-Http $checks[$_]) })
@@ -31,6 +46,7 @@ while ($true) {
     if ($still.Count -eq 0) { Write-Log '재시작 성공'; $failures = 0 } else { $failures++; Write-Log ("재시작 실패(" + $failures + "회): " + ($still -join ', ')) }
     if ($failures -ge 3) { Write-Log '연속 실패 3회: 10분 쉽니다'; Start-Sleep -Seconds 600; $failures = 0 }
   } else { $failures = 0 }
+  if (((Get-Date) - $lastWarm).TotalMinutes -ge 10 -and (Test-Http $checks['Ollama(11434)'])) { Invoke-KeepWarm; $lastWarm = Get-Date }
   if ($Collectors) {
     $running = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ForEach-Object { $_.CommandLine }
     $node = (Get-Command node.exe).Source

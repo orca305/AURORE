@@ -13,6 +13,7 @@ const paths = {
   squarePen: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z",
   folderPlus: "M3 6h7l2 2h9v12H3zM12 11v6M9 14h6",
   external: "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6",
+  list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
 } as const;
 
 export type IconKind = keyof typeof paths;

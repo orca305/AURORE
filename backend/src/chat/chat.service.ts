@@ -1,5 +1,6 @@
 import { periodRange } from '../common/period.js';
 import { generationErrorCode } from './job-diagnostics.js';
+import { runWithJobStage, stageOf } from './job-stage.js';
 import { isFollowUpQuestion, isUncertainSupplement } from './clarification.js';
 import { redactDocument } from '../documents/document-text.js';
 import { validateQuestion } from './input-filter.js';
@@ -449,6 +450,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         ? {
             id: room.jobs[0].id,
             status: room.jobs[0].statCd,
+            ...(stageOf(room.jobs[0].id) ? { stage: stageOf(room.jobs[0].id) } : {}),
             ...(room.jobs[0].errorCd === 'CASE_CONTEXT_CHANGED'
               ? { reason: 'CASE_CONTEXT_CHANGED' }
               : {}),
@@ -1506,9 +1508,10 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
             const supplementalContext = previous
               ? '보완 대상 질문: ' + previous + '\n' + (context?.text ?? '')
               : context?.text;
-            const answer = await Promise.race([
-              job.providerCd === 'LOCAL_DOC'
-                ? this.jobDocuments(job.id, job.chatSessId, room.userId).then(
+            const jobRef = job;
+            const answer = await runWithJobStage(jobRef.id, () => Promise.race([
+              jobRef.providerCd === 'LOCAL_DOC'
+                ? this.jobDocuments(jobRef.id, jobRef.chatSessId, room.userId).then(
                     (documents) =>
                       this.answers.generateDocuments(
                         documentQuestion,
@@ -1532,8 +1535,8 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
                         Boolean(previous),
                       )
                     : this.followUpContext(
-                        job.chatSessId,
-                        job.input.msgSeq,
+                        jobRef.chatSessId,
+                        jobRef.input.msgSeq,
                         documentQuestion,
                       ).then((history) =>
                         this.answers.generate(
@@ -1549,7 +1552,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
                 );
                 deadline.unref();
               }),
-            ]);
+            ]));
             await this.complete(
               job.chatSessId,
               id,

@@ -7,7 +7,7 @@ export type ChatDetail = {
   linkedCase: {id:string;title:string}|null; canLinkCase:boolean;
   id: string; title: string; updatedAt?:string; phase: Phase; revision: number; expiresAt: string | null;
   messages: Message[]; nextBeforeSeq: number | null;
-  job: { id: string; status: string;reason?:string } | null;
+  job: { id: string; status: string;reason?:string;stage?:"analyze"|"search"|"write" } | null;
 };
 export type ChatList = {
   items: { id: string; title: string; pinned?: boolean; unreadCorrectionCount: number; revision: number; updatedAt: string; expiresAt: string | null }[];

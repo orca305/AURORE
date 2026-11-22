@@ -1,4 +1,5 @@
 import { classifyQuestion } from './intent-routing.js';
+import { reportStage } from './job-stage.js';
 import type { JobResultCode } from './job-diagnostics.js';
 import { missingEvidence, type ClarifyCode } from './clarification.js';
 import { retrieveStoredEvidence, warmPinnedEvidence, type StoredEvidence } from './stored-evidence.js';
@@ -530,7 +531,9 @@ export class ChatAnswerService implements OnApplicationBootstrap {
           })
           .catch(() => null)
       : Promise.resolve(null);
+    reportStage('analyze');
     const analysis = await this.analyzeQuery(question);
+    reportStage('search');
     // 인용 법령 일치 검사: 인용할 조문의 법령이 질문 분석이 짚은 법령이나 질문과 뜻이 가까운 법령(또는 그 시행령·시행규칙)에
     // 없으면 근거로 확정하지 않는다(다른 후보를 보거나 근거 없음으로 처리). 짚은 법령이 하나도 없으면 판단하지 않는다.
     // AURORE_LAW_GATE=0 으로 끈다.
@@ -862,6 +865,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
     candidates: StoredEvidence[],
   ): Promise<PreparedAnswer | undefined> {
     // 근거 조문: 후보 상위 6개(조문 전문) + 핵심 조문의 관련 조문(시행령·벌칙·참조·앞뒤 조문) 최대 5개. 번호는 이 순서(0부터)다.
+    reportStage('write');
     const top = candidates.slice(0, 6);
     const [full, related, precedents] = await Promise.all([
       fullArticleTexts(this.db, top.map((row) => row.citation)).catch(() => new Map<string, string>()),

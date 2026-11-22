@@ -395,7 +395,7 @@ export function Conversation({ ask, initialChat, member = false }: {
             </div>
           </li>)}
         </ol>
-        {pending && <p role="status" className={styles.pending}>{submitting ? "질문을 저장하는 중입니다." : "오로르가 확인 중입니다."}</p>}
+        {pending && <p role="status" className={styles.pending}>{submitting ? "질문을 저장하는 중입니다." : ({analyze:"질문을 이해하는 중입니다. (1/3)",search:"관련 법령과 조문을 찾는 중입니다. (2/3)",write:"확인한 원문으로 답변을 쓰는 중입니다. (3/3)"} as const)[detail?.job?.stage as "analyze"] ?? "오로르가 확인 중입니다."}</p>}
         <div ref={latest} />
       </section>
     </div>}

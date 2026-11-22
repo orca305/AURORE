@@ -57,6 +57,7 @@ async function VersionResults({ id, searchParams }: { id: string; searchParams: 
 
   return <>
     <section className="intro">
+      <IconLink href="/legals" kind="list" label="법령 목록으로" />
       <h1>{"name" in result ? result.name : "법령 시행본"}</h1>
       <p>저장된 시행본을 시행일 기준으로 정렬합니다. 기준일을 입력하면 그날까지 시행된 저장본을 볼 수 있습니다.</p>
     </section>
