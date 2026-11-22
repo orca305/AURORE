@@ -1,7 +1,6 @@
 import { IconLink } from "../_components/icon-link";
 import { PeriodFields } from "../_components/period-fields";
 import { readPeriod } from "../_components/period-read";
-import { SortSelect } from '../_components/sort-select';
 import { ResetSearch } from '../_components/page-actions';
 import Link from "next/link";
 import { requestCase } from "../_cases/requests";
@@ -63,7 +62,7 @@ export default async function CasesPage({
             maxLength={200}
             placeholder="사건 제목을 입력하세요"
           />
-          <SortSelect value={sort} basis="수정일"/><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
+          <input type="hidden" name="sort" value={sort} /><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
         </div>
         <PeriodFields from={from} to={to} />
       </form>
@@ -73,8 +72,8 @@ export default async function CasesPage({
             나의 사건 {data && <span>{number.format(data.total)}개</span>}
           </h2>
           <div className="list-tools">
-            <PageSizeSelect value={limit} />
-            <IconLink href="/cases/new" kind="plus" label="사건 등록" />
+            <PageSizeSelect value={limit} sort={sort} sortBasis="수정일" />
+            <IconLink href="/cases/new" kind="folderPlus" label="사건 등록" />
           </div>
         </div>
         {!data ? (
@@ -107,13 +106,13 @@ export default async function CasesPage({
             )}
             <nav className="pagination" aria-label="사건 목록 페이지">
               {offset > 0 && (
-                <Link href={url(Math.max(0, offset - limit))}>← 이전</Link>
+                <Link href={url(Math.max(0, offset - limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>
               )}
               <span className="page-status">
                 {Math.floor(offset / limit) + 1} 페이지
               </span>
               {data.nextOffset !== null && (
-                <Link href={url(data.nextOffset)}>다음 →</Link>
+                <Link href={url(data.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>
               )}
             </nav>
           </>

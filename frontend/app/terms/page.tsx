@@ -1,8 +1,8 @@
+import { IconLink } from "../_components/icon-link";
 import Link from "next/link";
 import { SiteHeader } from "../_components/site-header";
 import { PageSizeSelect } from "../_components/page-size-select";
 import { parsePageSize } from "../_components/page-size";
-import { SortSelect } from "../_components/sort-select";
 import { ResetSearch } from "../_components/page-actions";
 import { ShortTitle } from "../_components/short-title";
 import { requestTerms } from "../_terms/requests";
@@ -55,7 +55,7 @@ export default async function Terms({
               maxLength={200}
               placeholder="궁금한 법률용어를 입력하세요"
             />
-            <SortSelect value={sort} basis="사전 변경일" />
+            <input type="hidden" name="sort" value={sort} />
             <button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button>
             <ResetSearch />
           </div>
@@ -66,7 +66,7 @@ export default async function Terms({
               {q ? "검색 결과" : "등록된 용어"}
               {data ? ` · ${data.total}개` : ""}
             </h2>
-            <PageSizeSelect value={limit} />
+            <PageSizeSelect value={limit} sort={sort} sortBasis="사전 변경일" />
           </div>
           {!data ? (
             <p className="empty" role="status">
@@ -98,9 +98,7 @@ export default async function Terms({
                   </p>
                   <div className={styles.meta}>
                     <span>{row.sourceName}{row.sourceReference ? " · "+row.sourceReference : ""}</span>
-                    <Link href={"/terms/" + row.id} data-action-link>
-                      정의와 풀이 보기
-                    </Link>
+                    <IconLink href={"/terms/" + row.id} kind="eye" label="정의와 풀이 보기" />
                   </div>
                 </li>
               ))}
@@ -109,13 +107,13 @@ export default async function Terms({
           {data && (
             <nav className="pagination" aria-label="용어 검색 페이지">
               {offset > 0 && (
-                <Link href={page(Math.max(0, offset - limit))}>← 이전</Link>
+                <Link href={page(Math.max(0, offset - limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>
               )}
               <span className="page-status">
                 {Math.floor(offset / limit) + 1} 페이지
               </span>
               {data.nextOffset !== null && (
-                <Link href={page(data.nextOffset)}>다음 →</Link>
+                <Link href={page(data.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>
               )}
             </nav>
           )}

@@ -29,7 +29,6 @@ export default async function Account({searchParams}:{searchParams:Promise<{limi
             <div><dt>닉네임</dt><dd>{member.nickname}</dd></div>
           </dl>
           <div className={styles.field}><span className={styles.fieldLabel}>비밀번호</span><PasswordDisclosure /></div>
-          <div className={styles.accountLinks}><Link href="/conversations" data-action-link>나의 대화 기록 </Link><Link href="/" data-action-link>새 대화 시작 </Link></div>
         </section>
         <section className={styles.accountCard} aria-labelledby="sessions-heading">
           <h2 id="sessions-heading">로그인 관리</h2>

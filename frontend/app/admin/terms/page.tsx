@@ -3,7 +3,6 @@ import { requestTerms } from "../../_terms/requests";
 import type { TermList } from "../../_terms/types";
 import { PageSizeSelect } from "../../_components/page-size-select";
 import { parsePageSize } from "../../_components/page-size";
-import { SortSelect } from "../../_components/sort-select";
 import { ResetSearch } from "../../_components/page-actions";
 import { date } from "../../_admin/format";
 import styles from "../../_terms/terms.module.css";
@@ -72,7 +71,7 @@ export default async function AdminTerms({
             defaultValue={q}
             maxLength={200}
           />
-          <SortSelect value={sort} basis="변경일" />
+          <input type="hidden" name="sort" value={sort} />
           <button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button>
           <ResetSearch />
         </div>
@@ -80,7 +79,7 @@ export default async function AdminTerms({
       <section className="results">
         <div className="section-heading">
           <h2>관리 용어{data ? ` · ${data.total}개` : ""}</h2>
-          <PageSizeSelect value={limit} />
+          <PageSizeSelect value={limit} sort={sort} sortBasis="변경일" />
         </div>
         {!data ? (
           <p role="status" className="empty">
@@ -114,13 +113,13 @@ export default async function AdminTerms({
         {data && (
           <nav className="pagination" aria-label="관리 용어 페이지">
             {offset > 0 && (
-              <Link href={page(Math.max(0, offset - limit))}>← 이전</Link>
+              <Link href={page(Math.max(0, offset - limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>
             )}
             <span className="page-status">
               {Math.floor(offset / limit) + 1} 페이지
             </span>
             {data.nextOffset !== null && (
-              <Link href={page(data.nextOffset)}>다음 →</Link>
+              <Link href={page(data.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>
             )}
           </nav>
         )}

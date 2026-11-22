@@ -15,6 +15,8 @@ export function splitByTerms(text:string,terms:GlossaryTerm[]):TextPart[]{
  for(const match of text.matchAll(pattern)){
   const term=names.get(match[0]);
   if(!term||used.has(term.id))continue;
+  // 앞 글자가 한글·영문·숫자면 낱말 중간이라 용어로 보지 않는다(예: 사고발생 안의 "고발").
+  if(match.index>0&&/[가-힣A-Za-z0-9]/u.test(text[match.index-1]))continue;
   used.add(term.id);
   if(match.index>last)parts.push({text:text.slice(last,match.index)});
   parts.push({text:match[0],term});

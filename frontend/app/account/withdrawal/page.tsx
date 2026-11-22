@@ -22,8 +22,8 @@ export default async function Withdrawal() {
         <section className={styles.accountIntro}>
           <h1>회원 탈퇴</h1>
           <p>탈퇴 전에 이용할 수 없게 되는 자료와 처리 범위를 확인해 주세요.</p>
-          <Link className="ui-button" href="/account">
-            마이페이지로 돌아가기
+          <Link className="ui-button icon-button" href="/account" aria-label="마이페이지로 돌아가기" title="마이페이지로 돌아가기">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" /></svg>
           </Link>
         </section>
         <div className={styles.accountGrid}>

@@ -2,7 +2,6 @@ import { PeriodFields } from "../_components/period-fields";
 import { readPeriod } from "../_components/period-read";
 import { KindBadge, caseKind } from "../_components/kind-badge";
 import { ShortTitle } from '../_components/short-title';
-import { SortSelect } from '../_components/sort-select';
 import { ResetSearch } from '../_components/page-actions';
 import { BookmarkButton } from '../_bookmarks/bookmark-button';
 import { bookmarkStates } from '../_bookmarks/requests';
@@ -110,13 +109,13 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
       <input type="hidden" name="limit" value={pageSize} />
       <div className="search-row">
         <input id="case-query" name="q" defaultValue={q} maxLength={200} placeholder="예시 보증금 반환, 계약갱신요구권" />
-        <SortSelect value={sort} basis="선고일"/><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
+        <input type="hidden" name="sort" value={sort} /><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
       </div>
       <PeriodFields from={from} to={to} />
     </form>
     <section aria-labelledby="precedent-results" className="results">
       <div className="section-heading">
-        <h2 id="precedent-results">{q ? `“${q}” 검색 결과` : "등록된 판례"}</h2><PageSizeSelect value={pageSize} />
+        <h2 id="precedent-results">{q ? `“${q}” 검색 결과` : "등록된 판례"}</h2><PageSizeSelect value={pageSize} sort={sort} sortBasis="선고일" />
       </div>
       {rows === null ? <p role="status" className="empty">판례를 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.</p>
         : rows.length === 0 ? <p className="empty">
@@ -127,10 +126,10 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
         </ul>}
       {rows !== null && (rows.length > 0 || offset > 0) &&
         <nav aria-label="판례 검색 결과 페이지" className="pagination">
-          <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지 · 페이지당 {pageSize}개</span>
-          {offset > 0 && <a href={pageUrl(Math.max(0, offset - pageSize))}>← 이전</a>}
+          <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지</span>
+          {offset > 0 && <a href={pageUrl(Math.max(0, offset - pageSize))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></a>}
           {rows.length > pageSize && offset < maxOffset &&
-            <a href={pageUrl(Math.min(maxOffset, offset + pageSize))}>다음 →</a>}
+            <a href={pageUrl(Math.min(maxOffset, offset + pageSize))} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></a>}
         </nav>}
     </section>
   </>;

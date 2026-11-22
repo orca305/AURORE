@@ -8,7 +8,7 @@ import type { ChatList } from "../_conversation/types";
 
 import { shortDate } from "../_components/format-date";
 
-export function HistoryList({ initial, pageSize, filter }: { initial: ChatList; pageSize: number; filter: { q: string; from: string; to: string } }) {
+export function HistoryList({ initial, pageSize, filter }: { initial: ChatList; pageSize: number; filter: { q: string; from: string; to: string; sort: string } }) {
   const [items, setItems] = useState(initial.items);
   const [cursor, setCursor] = useState(initial.nextCursor);
   const [pageCursors, setPageCursors] = useState([""]);
@@ -58,9 +58,9 @@ export function HistoryList({ initial, pageSize, filter }: { initial: ChatList; 
           aria-label={row.title + " 대화 삭제"} title="대화 삭제"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6m4-6v6" /></svg></button></div>
       </li>)}</ul>}
     <nav className="pagination" aria-label="대화 목록 페이지">
-      <button type="button" disabled={busy || pageCursors.length === 1} onClick={() => void loadPage("previous")}>← 이전</button>
-      <span className="page-status" aria-live="polite">{pageCursors.length} 페이지 · 페이지당 {pageSize}개</span>
-      <button type="button" disabled={busy || !cursor} onClick={() => void loadPage("next")}>다음 →</button>
+      <button type="button" disabled={busy || pageCursors.length === 1} onClick={() => void loadPage("previous")} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></button>
+      <span className="page-status" aria-live="polite">{pageCursors.length} 페이지</span>
+      <button type="button" disabled={busy || !cursor} onClick={() => void loadPage("next")} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></button>
     </nav>
   </>;
 }

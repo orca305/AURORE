@@ -90,8 +90,9 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     owner: ChatOwner,
     cursor?: string,
     limit = 20,
-    filter: { q?: string; from?: string; to?: string } = {},
+    filter: { q?: string; from?: string; to?: string; sort?: string } = {},
   ) {
+    const oldest = filter.sort === 'oldest';
     let boundary: Prisma.ChatSessWhereInput = {};
     const period = periodRange(filter.from, filter.to);
     const term = (filter.q ?? '').trim().replace(/[\\%_]/g, '\\$&');
@@ -127,8 +128,8 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
           throw new Error();
         boundary = {
           OR: [
-            { uptDttm: { lt: date } },
-            { uptDttm: date, id: { lt: parsed[1] } },
+            { uptDttm: oldest ? { gt: date } : { lt: date } },
+            { uptDttm: date, id: oldest ? { gt: parsed[1] } : { lt: parsed[1] } },
           ],
         };
       } catch {
@@ -155,7 +156,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     const rows = await this.db.chatSess.findMany({
       where: { AND: [visibleRoom(owner), boundary, narrowing, { pinDttm: null }] },
       select: listSelect,
-      orderBy: [{ uptDttm: 'desc' }, { id: 'desc' }],
+      orderBy: [{ uptDttm: oldest ? 'asc' : 'desc' }, { id: oldest ? 'asc' : 'desc' }],
       take: limit + 1,
     });
     const page = [...pinned, ...rows.slice(0, limit)];

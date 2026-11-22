@@ -1,6 +1,5 @@
 import { KindBadge, legalKind } from "../_components/kind-badge";
 import { ShortTitle } from '../_components/short-title';
-import { SortSelect } from '../_components/sort-select';
 import { ResetSearch } from '../_components/page-actions';
 import { BookmarkButton } from '../_bookmarks/bookmark-button';
 import { bookmarkStates } from '../_bookmarks/requests';
@@ -46,11 +45,11 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
       <input type="hidden" name="limit" value={pageSize} />
       <div className="search-row">
         <input id="legal-query" name="q" defaultValue={q} maxLength={200} placeholder="찾고 싶은 법규 이름을 입력하세요" />
-        <SortSelect value={sort} basis="등록일"/><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
+        <input type="hidden" name="sort" value={sort} /><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
       </div>
     </form>
     <section aria-labelledby="results-title" className="results">
-      <div className="section-heading"><h2 id="results-title">{q ? `“${q}” 검색 결과` : "등록된 법규"}</h2><PageSizeSelect value={pageSize} /></div>
+      <div className="section-heading"><h2 id="results-title">{q ? `“${q}” 검색 결과` : "등록된 법규"}</h2><PageSizeSelect value={pageSize} sort={sort} sortBasis="등록일" /></div>
       {unavailable ? <p role="status" className="empty">법규 목록을 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.</p>
         : rows.length === 0 ? <p className="empty">{q ? "검색 결과가 없습니다. 다른 이름으로 검색해 보세요." : "아직 등록된 법규가 없습니다."}</p>
         : <ul className="legal-list">{rows.slice(0, pageSize).map(row => <li key={row.id}>
@@ -62,8 +61,8 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
         </li>)}</ul>}
       {!unavailable && <nav aria-label="검색 결과 페이지" className="pagination">
         <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지</span>
-        {offset > 0 && <a href={pageUrl(Math.max(0, offset - pageSize))}>← 이전</a>}
-        {rows.length > pageSize && offset < 100000 && <a href={pageUrl(Math.min(100000, offset + pageSize))}>다음 →</a>}
+        {offset > 0 && <a href={pageUrl(Math.max(0, offset - pageSize))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></a>}
+        {rows.length > pageSize && offset < 100000 && <a href={pageUrl(Math.min(100000, offset + pageSize))} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></a>}
       </nav>}
     </section>
   </>;

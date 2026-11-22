@@ -1,4 +1,3 @@
-import { SortSelect } from '../../_components/sort-select';
 import { ResetSearch } from '../../_components/page-actions';
 import Link from "next/link";
 import { requestAdmin, type MemberList } from "../../_admin/requests";
@@ -102,7 +101,7 @@ export default async function MembersPage({
           </select>
         </label>
         <input type="hidden" name="limit" value={limit} />
-        <SortSelect value={sort} basis="가입일"/><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
+        <input type="hidden" name="sort" value={sort} /><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
 
       </form>
       <div className={styles.sectionTitle}>
@@ -112,7 +111,7 @@ export default async function MembersPage({
             {number.format(data.total)}명
           </span>
         </h3>
-        <PageSizeSelect value={limit} />
+        <PageSizeSelect value={limit} sort={sort} sortBasis="가입일" />
       </div>
       <div className={styles.tableWrap}>
         <table>
@@ -162,7 +161,7 @@ export default async function MembersPage({
       </div>
       <nav className="pagination" aria-label="회원 목록 페이지">
         {offset > 0 && (
-          <Link href={pageUrl(Math.max(0, offset - limit))}>← 이전</Link>
+          <Link href={pageUrl(Math.max(0, offset - limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>
         )}
         <span className="page-status">
           {Math.floor(offset / limit) + 1} 페이지 ·{" "}
@@ -172,7 +171,7 @@ export default async function MembersPage({
           / {number.format(data.total)}명
         </span>
         {data.nextOffset !== null && (
-          <Link href={pageUrl(data.nextOffset)}>다음 →</Link>
+          <Link href={pageUrl(data.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>
         )}
       </nav>
     </>

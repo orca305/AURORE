@@ -6,7 +6,7 @@ import {PageRefresh} from '../_components/page-actions';
 import styles from './lookup.module.css';
 type Result={q:string;limit:number;offset:number;total:number;nextOffset:number|null;items:{id:string;termName:string;definition:string;sourceName:string;sourceReference:string|null;sourceUrl:string}[]};
 export function TermLookupPanel({onClose,initialQuery=''}:{onClose:()=>void;initialQuery?:string}){
- const [draft,setDraft]=useState(initialQuery),[limit,setLimit]=useState(20),[data,setData]=useState<Result|null>(null),[pending,setPending]=useState(false),[error,setError]=useState<string|null>(null);
+ const [draft,setDraft]=useState(initialQuery),[limit,setLimit]=useState(10),[data,setData]=useState<Result|null>(null),[pending,setPending]=useState(false),[error,setError]=useState<string|null>(null);
  const active=useRef<AbortController|null>(null),input=useRef<HTMLInputElement>(null);
  useEffect(()=>{input.current?.focus();return()=>active.current?.abort();},[]);
  async function load(q:string,offset=0,size=limit){

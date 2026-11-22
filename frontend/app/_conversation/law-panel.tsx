@@ -22,8 +22,8 @@ export function LawPanel({ sources }: { sources: Source[] }) {
     </div>
     <div className={styles.lawFoot}>
       <span>{checked ? "법제처 원문과 일치" : "질문과 맞는지 원문을 확인해 주세요"}</span>
-      {source.href && <Link href={source.href} data-action-link aria-label="법규에서 보기" title="법규에서 보기">법규에서 보기 </Link>}
-      <a href={source.url} target="_blank" rel="noopener noreferrer">법제처 원문</a>
+      <span className={styles.lawFootActions}>{source.href && <Link href={source.href} className="ui-button icon-button" aria-label="법규에서 보기" title="법규에서 보기"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v15M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Z" /></svg></Link>}
+      <a href={source.url} className="ui-button icon-button" target="_blank" rel="noopener noreferrer" aria-label="법제처 원문" title="법제처 원문"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" /></svg></a></span>
     </div>
   </aside>;
 }

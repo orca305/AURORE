@@ -1,4 +1,4 @@
-import { SortSelect } from '../../../_components/sort-select';
+import { IconLink } from "../../../_components/icon-link";
 import { ResetSearch } from '../../../_components/page-actions';
 import { parsePageSize } from "../../../_components/page-size";
 import { PageSizeSelect } from "../../../_components/page-size-select";
@@ -65,13 +65,13 @@ async function VersionResults({ id, searchParams }: { id: string; searchParams: 
       <input type="hidden" name="limit" value={pageSize} />
       <div className="search-row">
         <input type="date" id="edition-date" name="asOf" defaultValue={asOf} min="0001-01-01" max="9999-12-31" />
-        <SortSelect value={sort} basis="시행일"/><button type="submit" data-primary aria-label="조회" title="조회"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
+        <input type="hidden" name="sort" value={sort} /><button type="submit" data-primary aria-label="조회" title="조회"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
       </div>
       {asOf && <Link href={path} className="mt-3 inline-block underline">기준일 지우기</Link>}
     </form>
     <section aria-labelledby="version-results" className="results">
       <div className="section-heading">
-        <h2 id="version-results">{asOf ? `${asOf}까지 시행된 저장본` : "저장된 시행본"}</h2><div className="list-tools"><PageSizeSelect value={pageSize} /><Link href={"/legals/"+id+"/compare"} data-action-link>시행본 비교 </Link></div>
+        <h2 id="version-results">{asOf ? `${asOf}까지 시행된 저장본` : "저장된 시행본"}</h2><div className="list-tools"><PageSizeSelect value={pageSize} sort={sort} sortBasis="시행일" />{result.status === "ok" && (result.rows.length > 1 || offset > 0) && <IconLink href={"/legals/"+id+"/compare"} kind="compare" label="시행본 비교" />}</div>
       </div>
       {result.status === "unavailable" ? <p role="status" className="empty">시행본을 불러오지 못했습니다. 잠시 후 다시 조회해 주세요.</p>
         : result.status === "invalid" ? <p role="status" className="empty">유효한 기준일을 입력해 주세요.</p>
@@ -91,10 +91,10 @@ async function VersionResults({ id, searchParams }: { id: string; searchParams: 
         </ul>}
       {result.status === "ok" && (result.rows.length > 0 || offset > 0) &&
         <nav aria-label="시행본 결과 페이지" className="pagination">
-          <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지 · 페이지당 {pageSize}개</span>
-          {offset > 0 && <Link href={pageUrl(Math.max(0, offset - pageSize))}>← 이전</Link>}
+          <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지</span>
+          {offset > 0 && <Link href={pageUrl(Math.max(0, offset - pageSize))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>}
           {result.rows.length > pageSize && offset < maxOffset &&
-            <Link href={pageUrl(Math.min(maxOffset, offset + pageSize))}>다음 →</Link>}
+            <Link href={pageUrl(Math.min(maxOffset, offset + pageSize))} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>}
         </nav>}
     </section>
   </>;

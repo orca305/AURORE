@@ -111,7 +111,9 @@ export function formatGenerative(result: GenerativeResult, labels: string[], pre
   let unverified = result.conclusionUnverifiedFigure === true;
   const lines = ['결론', conclusion + figureNote(result.conclusionUnverifiedFigure) + note(valid(result.conclusionRefs))];
   const section = (title: string, items: GenerativeItem[] | undefined) => {
-    const rows = (items ?? []).filter((item) => typeof item?.text === 'string' && item.text.trim() && item.text.length <= 300);
+    const rows = (items ?? [])
+      .filter((item) => typeof item?.text === 'string' && item.text.trim() && item.text.length <= 300)
+      .slice(0, 2);
     if (rows.length) {
       for (const item of rows) if (item.unverifiedFigure === true) unverified = true;
       lines.push('', title, ...rows.map((item) => '· ' + item.text!.trim() + figureNote(item.unverifiedFigure) + note(valid(item.refs))));

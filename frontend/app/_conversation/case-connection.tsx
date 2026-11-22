@@ -7,7 +7,7 @@ import type {CaseList} from "../_cases/types";
 import styles from "./case-connection.module.css";
 
 export function CaseConnection({chat,pending,onSave}:{chat:ChatDetail;pending:boolean;onSave:(caseId:string|null)=>Promise<string|null>}) {
-  const [open,setOpen]=useState(false),[query,setQuery]=useState(''),[term,setTerm]=useState(''),[limit,setLimit]=useState(20),[data,setData]=useState<CaseList|null>(null),[loading,setLoading]=useState(false),[selected,setSelected]=useState(chat.linkedCase?.id??''),[confirmed,setConfirmed]=useState(false),[error,setError]=useState<string|null>(null),[saved,setSaved]=useState(false),[saving,setSaving]=useState(false),[selectedTitle,setSelectedTitle]=useState(chat.linkedCase?.title??'');
+  const [open,setOpen]=useState(false),[query,setQuery]=useState(''),[term,setTerm]=useState(''),[limit,setLimit]=useState(10),[data,setData]=useState<CaseList|null>(null),[loading,setLoading]=useState(false),[selected,setSelected]=useState(chat.linkedCase?.id??''),[confirmed,setConfirmed]=useState(false),[error,setError]=useState<string|null>(null),[saved,setSaved]=useState(false),[saving,setSaving]=useState(false),[selectedTitle,setSelectedTitle]=useState(chat.linkedCase?.title??'');
   async function load(q:string,size:number,offset:number) {
     setLoading(true);setError(null);
     try {const result=await caseChoices(q,size,offset);setData(result);if(!result)setError('사건 목록을 불러오지 못했습니다. 다시 시도해 주세요.');}
@@ -24,7 +24,7 @@ export function CaseConnection({chat,pending,onSave}:{chat:ChatDetail;pending:bo
       <form className={styles.search} onSubmit={event=>{event.preventDefault();setTerm(query);void load(query,limit,0);}}>
         <label>사건 제목 검색<input value={query} maxLength={200} onChange={event=>setQuery(event.target.value)} disabled={loading||pending||saving}/></label>
         <button disabled={loading||pending||saving}>검색</button><button type="button" disabled={loading||pending||saving} onClick={()=>{setQuery('');setTerm('');void load('',limit,0);}}>초기화</button>
-        <label>페이지당<select value={limit} disabled={loading||pending||saving} onChange={event=>{const size=Number(event.target.value);setLimit(size);void load(term,size,0);}}>{[10,20,50].map(size=><option key={size} value={size}>{size}개</option>)}</select></label>
+        <label><select aria-label="페이지당 조회 개수" value={limit} disabled={loading||pending||saving} onChange={event=>{const size=Number(event.target.value);setLimit(size);void load(term,size,0);}}>{[10,20,50].map(size=><option key={size} value={size}>{size}개</option>)}</select></label>
       </form>
       {loading&&<p role="status">사건을 불러오는 중…</p>}
       <form onSubmit={event=>void save(event)}>

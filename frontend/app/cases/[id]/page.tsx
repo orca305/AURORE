@@ -183,13 +183,13 @@ export default async function CasePage({
         )}
         <nav className="pagination" aria-label="사실관계 페이지">
           {pageOffset > 0 && (
-            <Link href={pageUrl(Math.max(0, pageOffset - limit))}>← 이전</Link>
+            <Link href={pageUrl(Math.max(0, pageOffset - limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>
           )}
           <span className="page-status">
             {Math.floor(pageOffset / limit) + 1} 페이지
           </span>
           {data.facts.nextOffset !== null && (
-            <Link href={pageUrl(data.facts.nextOffset)}>다음 →</Link>
+            <Link href={pageUrl(data.facts.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>
           )}
         </nav>
       </section>
@@ -238,17 +238,13 @@ export default async function CasePage({
                 Math.max(0, historyOffset - limit),
                 "historyOffset",
               )}
-            >
-              ← 이전
-            </Link>
+             aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>
           )}
           <span className="page-status">
             {Math.floor(historyOffset / limit) + 1} 페이지
           </span>
           {data.history.nextOffset !== null && (
-            <Link href={pageUrl(data.history.nextOffset, "historyOffset")}>
-              다음 →
-            </Link>
+            <Link href={pageUrl(data.history.nextOffset, "historyOffset")} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>
           )}
         </nav>
       </details>

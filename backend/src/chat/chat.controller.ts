@@ -99,6 +99,7 @@ class ListDto extends PageSizeDto {
   @MaxLength(200)
   cursor?: string;
   @IsOptional() @IsString() @MaxLength(200) q?: string;
+  @IsOptional() @IsIn(['newest', 'oldest']) sort?: 'newest' | 'oldest';
   @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) from?: string;
   @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) to?: string;
 }
@@ -129,7 +130,7 @@ export class ChatController {
       await this.auth.resolveOwner(authorization),
       query.cursor,
       query.limit,
-      { q: query.q, from: query.from, to: query.to },
+      { q: query.q, from: query.from, to: query.to, sort: query.sort },
     );
   }
 

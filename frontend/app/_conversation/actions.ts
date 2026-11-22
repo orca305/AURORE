@@ -91,9 +91,9 @@ export async function pinChat(id: string, pinned: boolean) {
   return result;
 }
 
-export async function moreChats(cursor: string, limit = 20, filter: { q?: string; from?: string; to?: string } = {}) {
+export async function moreChats(cursor: string, limit = 10, filter: { q?: string; from?: string; to?: string; sort?: string } = {}) {
   if (![10,20,50].includes(limit) || typeof cursor !== "string" || cursor.length > 200) return { data: null, error: "목록 위치를 확인해 주세요.", status: 400 };
-  const clean = { q: typeof filter.q === "string" ? filter.q.slice(0, 200) : "", from: /^\d{4}-\d{2}-\d{2}$/.test(filter.from ?? "") ? filter.from : "", to: /^\d{4}-\d{2}-\d{2}$/.test(filter.to ?? "") ? filter.to : "" };
+  const clean = { sort: filter.sort === "oldest" ? "oldest" : "newest", q: typeof filter.q === "string" ? filter.q.slice(0, 200) : "", from: /^\d{4}-\d{2}-\d{2}$/.test(filter.from ?? "") ? filter.from : "", to: /^\d{4}-\d{2}-\d{2}$/.test(filter.to ?? "") ? filter.to : "" };
   return loadChatList(cursor, limit, clean);
 }
 

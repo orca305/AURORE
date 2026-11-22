@@ -3,13 +3,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import styles from "./page.module.css";
 
-/** 탭 12개를 6개 묶음으로 합쳤다. 묶음 안의 화면은 아래 줄에서 고른다. */
+/** 탭을 큰 묶음으로 나눴다. 묶음 안에 화면이 여럿이면 아래 줄에서 고른다. */
 const groups = [
   { label: "현황", items: [{ href: "/admin", label: "운영 현황", exact: true }] },
   { label: "AI", items: [{ href: "/admin/ai-monitor", label: "모니터링" }, { href: "/admin/ai-model", label: "모델" }, { href: "/admin/ai-jobs", label: "작업 목록" }] },
-  { label: "회원·의견", items: [{ href: "/admin/members", label: "회원" }, { href: "/admin/feedback", label: "사용자 피드백" }] },
+  { label: "회원", items: [{ href: "/admin/members", label: "회원" }] },
+  { label: "의견", items: [{ href: "/admin/feedback", label: "사용자 피드백" }] },
   { label: "데이터", items: [{ href: "/admin/legal-refresh", label: "법령 수집·정정" }, { href: "/admin/precedent-collections", label: "판례 수집 검토" }, { href: "/admin/precedent-reviews", label: "판례 연결 재검토" }, { href: "/admin/terms", label: "용어 관리" }, { href: "/admin/collection-schedule", label: "수집·백업 예약" }] },
-  { label: "보안·이력", items: [{ href: "/admin/activity", label: "작업 이력" }, { href: "/admin/privacy-retention", label: "개인정보 보관" }] },
+  { label: "보안", items: [{ href: "/admin/privacy-retention", label: "개인정보 보관" }] },
+  { label: "이력", items: [{ href: "/admin/activity", label: "작업 이력" }] },
 ] as const;
 
 export function AdminNav() {

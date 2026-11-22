@@ -9,6 +9,7 @@ import {CaseContextPanel} from "./case-context-panel";
 import { CaseConnection } from "./case-connection";
 import {CorrectionRead,CorrectionHistory} from "./correction-read";
 import {FeedbackBar} from "./feedback-bar";
+import {IconLink} from "../_components/icon-link";
 import {parseAnswer} from "./answer-sections";
 import {LawPanel} from "./law-panel";
 import Link from "next/link";
@@ -31,17 +32,98 @@ const followups = {
   "renewal-delivery": ["네, 도달했어요", "도달했는지 모르겠어요"],
 };
 
+type Block = { kind: "list"; items: string[] } | { kind: "text"; text: string };
+type BasisGroup = { name: string; articles: string[] };
+
+/** 문장 끝의 " — 근거: 법 제2조, 법 제9조" 를 본문과 근거 묶음으로 나눈다(같은 법은 한 칩으로 묶는다). */
+function splitBasis(text: string): { body: string; groups: BasisGroup[] } {
+  const match = /^([\s\S]*?)\s*[—–]\s*근거:\s*([\s\S]+)$/u.exec(text);
+  if (!match) return { body: text, groups: [] };
+  const groups: BasisGroup[] = [];
+  for (const raw of match[2].split(/,\s*(?=[^,]*제\d)/u)) {
+    const ref = raw.trim();
+    if (!ref) continue;
+    const parts = /^(.+?)\s+(제\d+조.*)$/u.exec(ref);
+    const name = parts ? parts[1] : ref;
+    const article = parts ? parts[2] : "";
+    const found = groups.find(group => group.name === name);
+    if (found) { if (article && !found.articles.includes(article)) found.articles.push(article); }
+    else groups.push({ name, articles: article ? [article] : [] });
+  }
+  return { body: match[1].trim(), groups };
+}
+
+function BasisChips({ groups }: { groups: BasisGroup[] }) {
+  if (!groups.length) return null;
+  return <span className={styles.basis} aria-label="근거 조문">
+    <span className={styles.basisLabel}>근거</span>
+    {groups.map(group => <span key={group.name} className={styles.basisChip}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v15M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Z" /></svg>
+      <span className={styles.basisLaw}>{group.name}</span>
+      {group.articles.length > 0 && <strong>{group.articles.join(" · ")}</strong>}
+    </span>)}
+  </span>;
+}
+
+function WithBasis({ text }: { text: string }) {
+  const { body, groups } = splitBasis(text);
+  return <><HighlightedText text={body} /><BasisChips groups={groups} /></>;
+}
+
+/** 단계 본문을 글머리(· - •) 목록과 일반 문단으로 나눈다. */
+function toBlocks(body: string): Block[] {
+  const blocks: Block[] = [];
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const bullet = /^[·•\-*]\s*(.+)$/u.exec(line);
+    const last = blocks.at(-1);
+    if (bullet) {
+      if (last?.kind === "list") last.items.push(bullet[1]);
+      else blocks.push({ kind: "list", items: [bullet[1]] });
+    } else if (last?.kind === "text") last.text += " " + line;
+    else blocks.push({ kind: "text", text: line });
+  }
+  return blocks;
+}
+
+// 근거 조문·판례 목록은 단계가 아니라 접었다 펼치는 상자로 보여 준다.
+const EVIDENCE = /^(근거 조문|근거 판례|함께 본 조문)/u;
+
+function StepContent({ blocks }: { blocks: Block[] }) {
+  return <>{blocks.map((block, index) => block.kind === "text"
+    ? <p key={index} className={styles.messageText}><WithBasis text={block.text} /></p>
+    : <ul key={index} className={styles.stepList}>{block.items.map((item, at) => <li key={at}><WithBasis text={item} /></li>)}</ul>)}</>;
+}
+
 /** 해설을 "한 줄 결론"과 번호 단계로 나눠 보여 준다. 소제목이 없는 짧은 답은 그대로 보여 준다. */
 function AnswerBody({ text }: { text: string }) {
   const parsed = parseAnswer(text);
   if (!parsed.structured) return <p className={styles.messageText}><HighlightedText text={text} /></p>;
+  const all = parsed.steps.map(step => ({ heading: step.heading, blocks: toBlocks(step.body) }));
+  const steps = all.filter(step => !EVIDENCE.test(step.heading));
+  const evidence = all.filter(step => EVIDENCE.test(step.heading));
+  // 마지막 단계 끝에 붙은 맺음말(예: "실제 분쟁이라면 전문가와 상담하세요")은 타임라인 밖으로 뺀다.
+  let closing = "";
+  const last = all.at(-1);
+  if (last && last.blocks.length > 1 && last.blocks.some(block => block.kind === "list") && last.blocks.at(-1)?.kind === "text") {
+    closing = (last.blocks.pop() as { kind: "text"; text: string }).text;
+  }
   return <>
-    {parsed.conclusion && <div className={styles.conclusion}><p className={styles.eyebrow}>한 줄 결론</p><p className={styles.conclusionText}><HighlightedText text={parsed.conclusion} /></p></div>}
-    {parsed.steps.length > 0 && <ol className={styles.timeline}>{parsed.steps.map((step, index) => <li key={step.heading + index} className={styles.step}>
+    {parsed.conclusion && <div className={styles.conclusion}><p className={styles.eyebrow}>한 줄 결론</p><p className={styles.conclusionText}><WithBasis text={parsed.conclusion} /></p></div>}
+    {steps.length > 0 && <ol className={styles.timeline}>{steps.map((step, index) => <li key={step.heading + index} className={styles.step}>
       <span className={styles.stepNo} data-tone={(index % 5) + 1}>{index + 1}</span>
       <h3>{step.heading}</h3>
-      <p className={styles.messageText}><HighlightedText text={step.body} /></p>
+      <StepContent blocks={step.blocks} />
     </li>)}</ol>}
+    {evidence.map(step => {
+      const items = step.blocks.flatMap(block => block.kind === "list" ? block.items : [block.text]);
+      return <details key={step.heading} className={styles.evidence}>
+        <summary><span>{step.heading.replace(/\s*\(.*$/u, "")}</span><span className={styles.evidenceCount}>{items.length}개</span></summary>
+        <ul className={styles.evidenceList}>{items.map((item, at) => <li key={at}><HighlightedText text={item} /></li>)}</ul>
+      </details>;
+    })}
+    {closing && <p className={styles.closingNote}><HighlightedText text={closing} /></p>}
   </>;
 }
 
@@ -271,7 +353,7 @@ export function Conversation({ ask, initialChat, member = false }: {
     {fresh && <p className={styles.heroPill}>공식 법령 원문을 근거로 설명해요</p>}
     <div className={styles.context}>
       <div>
-        <div className={styles.titleRow}><h1 className={fresh ? undefined : styles.oneLine} title={detail?.title}>{detail?.title ?? (messages.length ? "나의 법률 대화" : <>어떤 일이 생겼는지<br />편하게 말해 주세요</>)}</h1>
+        <div className={styles.titleRow}><h1 className={fresh ? undefined : styles.oneLine} title={detail?.title}>{detail?.title ?? (messages.length ? "나의 법률 대화" : "어떤 일이 생겼는지 편하게 말해 주세요")}</h1>
         {(messages.length > 0 || detail) && <button type="button" disabled={documentBusy || submitting || (pending && !pollError)} className={styles.newChat} onClick={reset}>새 대화 </button>}</div>
         <p>{fresh ? "법률 용어를 몰라도 괜찮아요. 관련 법 조문을 찾아 쉬운 말로 풀어 드리고, 원문은 그대로 보여 드려요." : "나의 상황을 이야기하고, 필요한 사실을 함께 확인합니다."}</p>
       </div>
@@ -297,7 +379,7 @@ export function Conversation({ ask, initialChat, member = false }: {
               {saved && member && detail?.linkedCase && message.role === "user" && message.id && <Link className={styles.factImport} href={'/cases/'+detail.linkedCase.id+'/from-message/'+message.id} data-action-link>사실관계로 가져오기 </Link>}
 
               {message.documentAnswer&&<div className={styles.documentEvidence}><p className={styles.citationLabel}>회원이 검토한 첨부자료</p>{message.documentQuotes?.map(quote=><figure className={styles.citation} key={quote.id}><blockquote>{quote.quote}</blockquote><figcaption><a href={'/api/chat-documents/'+roomId+'/'+quote.documentId+'/download'} download>{quote.name} ↓</a><span>원문 일치 · 질문 관련성 AI 검토</span></figcaption></figure>)}{!message.documentQuotes?.length&&<p className={styles.sourceNote}>관련 원문을 확인하지 못했거나 첨부자료가 삭제되어 인용을 표시할 수 없습니다.</p>}</div>}
-              {message.source && <figure className={styles.citation}>
+              {message.source && (message.source.warning || message.source.correction) && <figure className={styles.citation}>
                 <p className={styles.citationLabel}>{message.source.verification==='UNREVIEWED'?'검색 후보 · 질문 관련성 미검증':'확인한 원문'}</p>
                 <blockquote>{message.source.quote}</blockquote>
                 <figcaption>
@@ -316,10 +398,6 @@ export function Conversation({ ask, initialChat, member = false }: {
         {pending && <p role="status" className={styles.pending}>{submitting ? "질문을 저장하는 중입니다." : "오로르가 확인 중입니다."}</p>}
         <div ref={latest} />
       </section>
-      <div className={styles.sources}>
-        <p>답변에 쓰인 법령·판례는 인용문과 함께 표시합니다.</p>
-        <Link href="/legals" data-action-link>법규 원문 검색 </Link>
-      </div>
     </div>}
     {(notice || pollError) && <p role="alert" className={styles.error}>{notice || pollError}</p>}
     {detail?.job && ["FAILED", "CANCELLED"].includes(detail.job.status) && <div className={styles.jobControls}>
@@ -369,6 +447,5 @@ export function Conversation({ ask, initialChat, member = false }: {
     </aside>}
     {termsOpen&&<TermLookupPanel key={termQuery} initialQuery={termQuery} onClose={()=>{setTermsOpen(false);termsButton.current?.focus();}}/>}
     {saved&&member&&<DocumentsPanel open={documentsOpen} onClose={()=>setDocumentsOpen(false)} key={documentEpoch} chatId={roomId??null} disabled={pending||documentBusy} onBusy={value=>{inFlight.current=value;setDocumentBusy(value);}} selected={selectedDocuments} onSelect={setSelectedDocuments} onRemoved={id=>setMessages(previous=>previous.map(message=>({...message,documentQuotes:message.documentQuotes?.filter(quote=>quote.documentId!==id)})))} onSaved={data=>{applyChat(data);window.history.replaceState(null,"","/?chat="+data.id);window.dispatchEvent(new Event('aurore:chat-history'));}}/>}
-    {!hasMessages && !pending && <p className={styles.sourceNote}>답변은 법령·판례의 원문과 함께 확인할 수 있습니다. <Link href="/legals" data-action-link>법규 검색 </Link></p>}
-  </section>;
+      </section>;
 }

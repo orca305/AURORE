@@ -51,13 +51,14 @@ class AnswerTests(unittest.TestCase):
         self.assertEqual(result["dropped"], 0)
 
     def test_unknown_figures_are_kept_but_marked_while_bad_articles_and_refs_are_dropped(self):
-        bad = good(details=[{"text": "3년 이하의 징역에 처해질 수 있어요.", "refs": [0]}, {"text": "제760조에 따라 공동 책임이에요.", "refs": []}, {"text": "범위 밖 근거", "refs": [9]}])
+        bad = good(details=[{"text": "3년 이하의 징역에 처해질 수 있어요.", "refs": [0]}, {"text": "범위 밖 근거", "refs": [9]}], actions=[{"text": "제760조에 따라 공동 책임이에요.", "refs": []}])
         with patch("legal_answer._model_json", return_value=bad):
             result = answer(req())
         # 범위 밖 근거 번호는 그 번호만 빼고 항목은 살리며, 원문에 없는 조문 번호가 든 항목만 버린다.
         self.assertEqual([item["text"] for item in result["details"]], ["3년 이하의 징역에 처해질 수 있어요.", "범위 밖 근거"])
-        self.assertTrue(result["details"][0]["unverifiedFigure"])
+        self.assertEqual(result["actions"], [])  # 원문에 없는 조문 번호가 든 항목은 버린다
         self.assertEqual(result["details"][1]["refs"], [])
+        self.assertTrue(result["details"][0]["unverifiedFigure"])
         self.assertEqual(result["dropped"], 1)
         self.assertEqual(result["markedFigures"], 1)
 
@@ -94,7 +95,7 @@ class AnswerTests(unittest.TestCase):
         with patch("legal_answer._model_json", return_value=many) as model:
             result = answer(req())
         self.assertEqual(model.call_count, 1)
-        self.assertEqual((len(result["actions"]), len(result["details"]), len(result["cautions"]), len(result["checkFacts"])), (3, 3, 2, 2))
+        self.assertEqual((len(result["actions"]), len(result["details"]), len(result["cautions"]), len(result["checkFacts"])), (2, 2, 2, 2))
         self.assertLessEqual(len(result["conclusion"]), 300)
         self.assertLessEqual(len(result["details"][0]["refs"]), 2)
 
