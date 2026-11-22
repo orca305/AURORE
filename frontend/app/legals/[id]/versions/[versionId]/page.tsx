@@ -58,12 +58,11 @@ async function ProvisionResults({ id, versionId, searchParams }: {
   return <>
     <section className="intro">
       <IconLink href={asOf ? `${versionsPath}?${new URLSearchParams({ asOf })}` : versionsPath} kind="list" label="시행본 목록으로" />
-      <div className="title-line"><h1>{result.status === "ok" ? result.meta.legalName : "조문 검색"}</h1>{source && <a className="ui-button icon-button" href={source} target="_blank" rel="noopener noreferrer" aria-label="해당 시행본 원문" title="해당 시행본 원문"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" /></svg></a>}</div>
+      <div className="title-line"><h1>{result.status === "ok" ? result.meta.legalName : "조문 검색"}</h1>{source && <a className="ui-button icon-button" href={source} target="_blank" rel="noopener noreferrer" aria-label="해당 시행본 원문" title="해당 시행본 원문"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" /></svg></a>}{canCompare && <IconLink href={"/legals/"+id+"/compare?beforeVersionId="+versionId} kind="compare" label="다른 시행본과 비교" />}</div>
       <p>
         {result.status === "ok" && result.meta.enfcDt && `${result.meta.enfcDt.slice(0, 10)} 시행본 · `}
         조문 번호나 본문 키워드로 검색할 수 있습니다.
       </p>
-      {canCompare && <p className="intro-actions"><IconLink href={"/legals/"+id+"/compare?beforeVersionId="+versionId} kind="compare" label="다른 시행본과 비교" /></p>}
     </section>
     <form className="search" action={path} role="search">
       <label htmlFor="provision-query">조문 번호 또는 키워드</label>
