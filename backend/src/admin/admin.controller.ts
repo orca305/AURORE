@@ -35,6 +35,8 @@ import { AdminGuard } from './admin.guard.js';
 import { AdminService } from './admin.service.js';
 import { AdminModelService } from './admin-model.service.js';
 import { AdminMonitorService } from './admin-monitor.service.js';
+import { AdminFeedbackService, FEEDBACK_STATUSES } from './admin-feedback.service.js';
+import { FEEDBACK_REASONS } from '../chat/feedback.service.js';
 
 class MembersDto {
   @IsOptional() @IsIn(['newest','oldest']) sort: 'newest' | 'oldest' = 'newest';
@@ -88,6 +90,19 @@ class MemberStatusDto {
   @IsIn(['ACTIVE', 'BLOCKED']) status!: string;
   @IsString() @MinLength(1) @MaxLength(1000) reason!: string;
   @Equals(true) confirmed!: true;
+}
+
+class FeedbackListDto {
+  @IsOptional() @IsIn(['all', ...FEEDBACK_STATUSES]) status = 'all';
+  @IsOptional() @IsIn(['all', 'HELPFUL', 'IMPROVE']) rating = 'all';
+  @IsOptional() @IsIn(['all', ...FEEDBACK_REASONS]) reason = 'all';
+  @IsOptional() @Type(() => Number) @IsIn([10, 20, 50]) limit = 20;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100000) offset = 0;
+}
+
+class FeedbackStatusDto {
+  @IsIn([...FEEDBACK_STATUSES]) status!: (typeof FEEDBACK_STATUSES)[number];
+  @IsOptional() @IsString() @MaxLength(1500) note?: string;
 }
 
 class MonitorDto {
@@ -144,6 +159,7 @@ export class AdminController {
     private readonly correction: AdminCorrectionService,
     private readonly model: AdminModelService,
     private readonly monitor: AdminMonitorService,
+    private readonly feedback: AdminFeedbackService,
   ) {}
 
   @Get('ai-jobs')
@@ -333,6 +349,28 @@ export class AdminController {
   @Header('Cache-Control', 'no-store')
   aiMonitor(@Query() query: MonitorDto) {
     return this.monitor.monitor(query.days);
+  }
+
+  /** 사용자 피드백 목록·집계. 질문 일부와 사유를 보여 주고 작성자 식별 정보는 없다. */
+  @Get('feedback')
+  @Header('Cache-Control', 'no-store')
+  feedbackList(@Query() query: FeedbackListDto) {
+    return this.feedback.list(query);
+  }
+
+  /** 피드백이 붙은 질문·답변 전문과 처리 상태. */
+  @Get('feedback/:id')
+  @Header('Cache-Control', 'no-store')
+  feedbackDetail(@Param('id') id: string) {
+    return this.feedback.detail(id);
+  }
+
+  /** 처리 상태(새 의견 / 검토 중 / 처리 완료)와 메모를 바꾼다. */
+  @Post('feedback/:id/status')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  feedbackStatus(@Param('id') id: string, @Body() input: FeedbackStatusDto, @Headers('authorization') authorization?: string) {
+    return this.feedback.setStatus(id, input, authorization);
   }
 
   /** AI 답변 모델 교체: 허용 목록·현재 설정·변경 이력. */

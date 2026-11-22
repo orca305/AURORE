@@ -105,6 +105,19 @@ export async function loadCorrectionHistory(id:string,offset=0,limit=20):Promise
  return requestChat('/chat-sessions/'+id+'/corrections/history?'+new URLSearchParams({offset:String(offset),limit:String(limit)}),credential);
 }
 
+export async function sendAnswerFeedback(id:string,messageId:string,rating:"HELPFUL"|"IMPROVE",reason?:string,text?:string):Promise<ChatResult<import('./types').Feedback>>{
+ if(!chatIdPattern.test(id)||!chatIdPattern.test(messageId)||!["HELPFUL","IMPROVE"].includes(rating))return invalid<import('./types').Feedback>();
+ if(rating==="IMPROVE"&&(typeof reason!=='string'||!/^(WRONG_LAW|NOT_MY_CASE|TOO_HARD|MISSING|OTHER)$/.test(reason)))return invalid<import('./types').Feedback>();
+ if(text!==undefined&&(typeof text!=='string'||Array.from(text).length>300))return invalid<import('./types').Feedback>();
+ const result=await mutation<import('./types').Feedback>('/chat-sessions/'+id+'/messages/'+messageId+'/feedback',{rating,...(rating==="IMPROVE"?{reason,...(text?.trim()?{text}:{})}:{})});
+ if(result.status===404)result.error='이 답변을 찾을 수 없습니다. 대화를 다시 열어 주세요.';
+ if(result.status===400)result.error='이유를 고르고 의견은 300자 이내로 적어 주세요.';
+ return result;
+}
+export async function clearAnswerFeedback(id:string,messageId:string):Promise<ChatResult<{cleared:true}>>{
+ if(!chatIdPattern.test(id)||!chatIdPattern.test(messageId))return invalid<{cleared:true}>();
+ return mutation<{cleared:true}>('/chat-sessions/'+id+'/messages/'+messageId+'/feedback/clear');
+}
 export async function connectChatCase(id:string,revision:number,caseId:string|null,confirmed:boolean) {
   if(!chatIdPattern.test(id)||!Number.isInteger(revision)||revision<0||(caseId!==null&&!chatIdPattern.test(caseId))||confirmed!==true)return invalid();
   return mutation('/chat-sessions/'+id+'/case',{revision,caseId,confirmed});

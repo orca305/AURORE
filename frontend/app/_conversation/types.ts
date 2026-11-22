@@ -1,7 +1,8 @@
 export type Phase = "start" | "lease-end" | "renewal-delivery";
 export type Source = { verification?:string; quote: string; label: string; url: string; href?: string; warning?: string; correction?: {key:string;readAt:string|null;kind:string;recordedAt:string;currentHref:string;compareHref:string|null} };
 export type Reply = { phase: Phase; text: string; source?: Source };
-export type Message = { clarification?:string;clarifyReplyTo?:string; caseContext?:{asOf:string;factCount:number;revision:number;current?:boolean}; documentAnswer?:boolean;explained?:boolean;documentQuotes?:{id:string;documentId:string;name:string;quote:string}[]; id?: string; sequence?: number; role: "user" | "assistant"; text: string; source?: Source };
+export type Feedback = { rating: "HELPFUL" | "IMPROVE"; reason: string | null; text: string | null };
+export type Message = { feedback?: Feedback; clarification?:string;clarifyReplyTo?:string; caseContext?:{asOf:string;factCount:number;revision:number;current?:boolean}; documentAnswer?:boolean;explained?:boolean;documentQuotes?:{id:string;documentId:string;name:string;quote:string}[]; id?: string; sequence?: number; role: "user" | "assistant"; text: string; source?: Source };
 export type ChatDetail = {
   linkedCase: {id:string;title:string}|null; canLinkCase:boolean;
   id: string; title: string; updatedAt?:string; phase: Phase; revision: number; expiresAt: string | null;

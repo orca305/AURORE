@@ -31,6 +31,7 @@ import {
 } from 'class-validator';
 import { AuthService } from '../auth/auth.service.js';
 import { ChatService } from './chat.service.js';
+import { FeedbackService, FEEDBACK_RATINGS, FEEDBACK_REASONS } from './feedback.service.js';
 
 class RevisionDto {
   @IsInt()
@@ -83,6 +84,11 @@ class SubmitDto extends RevisionDto {
   @MaxLength(1000)
   question!: string;
 }
+class FeedbackDto {
+  @IsIn([...FEEDBACK_RATINGS]) rating!: 'HELPFUL' | 'IMPROVE';
+  @IsOptional() @IsIn([...FEEDBACK_REASONS]) reason?: (typeof FEEDBACK_REASONS)[number];
+  @IsOptional() @IsString() @MaxLength(1200) text?: string;
+}
 class ListDto extends PageSizeDto {
   @IsOptional()
   @IsString()
@@ -103,6 +109,7 @@ export class ChatController {
   constructor(
     private readonly chat: ChatService,
     private readonly auth: AuthService,
+    private readonly feedback: FeedbackService,
   ) {}
 
   @Get()
@@ -228,6 +235,29 @@ export class ChatController {
       body.caseId,
       body.confirmed,
     );
+  }
+
+  @Post(':id/messages/:messageId/feedback')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async leaveFeedback(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('messageId', new ParseUUIDPipe({ version: '4' })) messageId: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: FeedbackDto,
+  ) {
+    return this.feedback.submit(id, messageId, await this.auth.resolveOwner(authorization, true), body);
+  }
+
+  @Post(':id/messages/:messageId/feedback/clear')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async clearFeedback(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('messageId', new ParseUUIDPipe({ version: '4' })) messageId: string,
+    @Headers('authorization') authorization: string | undefined,
+  ) {
+    return this.feedback.clear(id, messageId, await this.auth.resolveOwner(authorization, true));
   }
 
   @Post(':id/title')

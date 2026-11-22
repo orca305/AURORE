@@ -5,6 +5,7 @@ import { ChatService } from './chat.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { AuthService, ChatOwner } from '../auth/auth.service.js';
 import type { ChatAnswerService } from './answer.service.js';
+import type { FeedbackService } from './feedback.service.js';
 
 describe('conservative input filtering', () => {
   it('does not start a job or persist malformed questions', async () => {
@@ -13,6 +14,7 @@ describe('conservative input filtering', () => {
       { $transaction: transaction } as unknown as PrismaService,
       {} as AuthService,
       {} as ChatAnswerService,
+      {} as FeedbackService,
     );
     await expect(
       service.submit('unused', {} as ChatOwner, 'unused', '!!!!!!!!', 0),

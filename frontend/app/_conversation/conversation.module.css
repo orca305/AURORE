@@ -76,6 +76,17 @@
   .pending { padding-inline: 18px; }
 }
 
+.feedback { margin-top:14px; padding-top:10px; border-top:1px dashed var(--border); font-size:12px; color:var(--muted); }
+.feedback p { margin:0 0 6px; line-height:1.7; }
+.feedbackButtons { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; }
+.feedbackButtons button { border:1px solid var(--strong-border); padding:5px 12px; background:var(--background); color:var(--accent); cursor:pointer; font-size:12px; }
+.feedbackButtons button[aria-pressed="true"] { background:var(--accent); color:var(--background); }
+.feedbackButtons button:disabled { opacity:.5; cursor:wait; }
+.feedbackForm { display:grid; gap:8px; margin-top:8px; }
+.feedbackForm fieldset { border:0; margin:0; padding:0; display:grid; gap:4px; }
+.feedbackForm legend { padding:0; margin-bottom:4px; }
+.feedbackForm label { display:flex; gap:6px; align-items:center; cursor:pointer; }
+.feedbackForm textarea { width:100%; min-height:60px; resize:vertical; font:inherit; font-size:12px; padding:8px; border:1px solid var(--strong-border); background:var(--background); color:inherit; }
 .sourceNote { margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.8; }
 .sourceNote a { color: var(--accent); margin-left: 8px; white-space: nowrap; }
 

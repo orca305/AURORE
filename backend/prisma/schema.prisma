@@ -37,6 +37,7 @@ model AppUser {
   correctionActions LegalCorrHist[]
   precedentImports LegalPrecIngestHist[]
   aiModelChanges AiModelHist[]
+  feedbackHandled AnsFeedback[]
 
   @@map("app_user")
 }
@@ -199,6 +200,7 @@ model ChatMsg {
   inputJobs  AiJob[] @relation("JobInput")
   answerJobs AiJob[] @relation("JobAnswer")
   citations  AnsCite[]
+  feedback   AnsFeedback[]
 
   @@index([chatSessId,clarifyReplyTo],map:"idx_chat_msg_clarification")
   @@unique([chatSessId, id], map: "uq_chat_msg_same_chat")
@@ -813,4 +815,26 @@ model AiCallLog {
 
   @@index([occurredDttm(sort: Desc), id(sort: Desc)], map: "idx_ai_call_log_date")
   @@map("ai_call_log")
+}
+
+model AnsFeedback {
+  id            BigInt    @id @default(autoincrement())
+  chatSessId    String    @map("chat_sess_id") @db.Uuid
+  msgId         String    @map("msg_id") @db.Uuid
+  ratingCd      String    @map("rating_cd") @db.VarChar(8)
+  reasonCd      String?   @map("reason_cd") @db.VarChar(20)
+  reasonTxt     String?   @map("reason_txt") @db.VarChar(300)
+  statCd        String    @default("NEW") @map("stat_cd") @db.VarChar(12)
+  adminNote     String?   @map("admin_note") @db.VarChar(500)
+  handlerUserId BigInt?   @map("handler_user_id")
+  handledDttm   DateTime? @map("handled_dttm") @db.Timestamptz(0)
+  delYn         Boolean   @default(false) @map("del_yn")
+  delDttm       DateTime? @map("del_dttm") @db.Timestamptz(0)
+  rgstDttm      DateTime  @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  uptDttm       DateTime  @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
+  message       ChatMsg   @relation(fields: [chatSessId, msgId], references: [chatSessId, id], onDelete: Restrict, onUpdate: Restrict, map: "fk_ans_feedback_msg")
+  handler       AppUser?  @relation(fields: [handlerUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([statCd, rgstDttm(sort: Desc), id(sort: Desc)], map: "idx_ans_feedback_list")
+  @@map("ans_feedback")
 }

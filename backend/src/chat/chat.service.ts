@@ -24,6 +24,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { AuthService, type ChatOwner } from '../auth/auth.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../generated/prisma/client.js';
+import { FeedbackService } from './feedback.service.js';
 import {
   ChatAnswerService,
   type PreparedAnswer,
@@ -36,7 +37,7 @@ const nowAtSecond = () => new Date(Math.floor(Date.now() / 1000) * 1000);
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function visibleRoom(owner: ChatOwner): Prisma.ChatSessWhereInput {
+export function visibleRoom(owner: ChatOwner): Prisma.ChatSessWhereInput {
   return {
     userId: owner.userId,
     guestSessId: owner.guestSessId,
@@ -58,6 +59,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     private readonly db: PrismaService,
     private readonly auth: AuthService,
     private readonly answers: ChatAnswerService,
+    private readonly feedback: FeedbackService,
   ) {}
 
   onModuleInit() {
@@ -283,6 +285,9 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         row.readDttm.toISOString(),
       ]),
     );
+    const feedbacks = await this.feedback.forMessages(
+      rows.filter((row) => row.roleCd !== 'USER').map((row) => row.id),
+    );
     const messages = await Promise.all(
       rows.map(async (message) => {
         const citation = message.citations[0];
@@ -322,6 +327,9 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
               ? ('user' as const)
               : ('assistant' as const),
           text: message.msgCont,
+          ...(feedbacks.has(message.id)
+            ? { feedback: feedbacks.get(message.id) }
+            : {}),
           ...(message.clarifyCd ? { clarification: message.clarifyCd } : {}),
           ...(message.clarifyReplyTo
             ? { clarifyReplyTo: message.clarifyReplyTo }

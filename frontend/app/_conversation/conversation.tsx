@@ -8,6 +8,7 @@ import {DocumentsPanel} from "./documents-panel";
 import {CaseContextPanel} from "./case-context-panel";
 import { CaseConnection } from "./case-connection";
 import {CorrectionRead,CorrectionHistory} from "./correction-read";
+import {FeedbackBar} from "./feedback-bar";
 import Link from "next/link";
 import { startTransition, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { cancelChatJob, connectChatCase, markChatRead, refreshChat, retryChatJob, sendChatMessage } from "./actions";
@@ -289,6 +290,7 @@ export function Conversation({ ask, initialChat, member = false }: {
                 {message.source.correction&&<div className={styles.correctionLinks}><span>{new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeZone:'Asia/Seoul'}).format(new Date(message.source.correction.recordedAt))} 정정 원문 등록</span>{message.source.correction.compareHref&&<Link href={message.source.correction.compareHref} data-action-link>정정 전후 비교 </Link>}<Link href={message.source.correction.currentHref} data-action-link>현재 원문 확인 </Link></div>}
                 {saved&&roomId&&message.id&&message.source.correction&&<CorrectionRead chatId={roomId} messageId={message.id} noticeKey={message.source.correction.key} readAt={message.source.correction.readAt} onConfirmed={(key,date)=>setMessages(previous=>previous.map(row=>row.id===message.id&&row.source?.correction?.key===key?{...row,source:{...row.source,correction:{...row.source.correction,readAt:date}}}:row))} onStale={()=>{void refreshChat(roomId).then(result=>{if(result.data)applyChat(result.data);});}}/>}
               </figure>}
+              {saved&&roomId&&message.id&&message.role==="assistant"&&!message.clarification&&<FeedbackBar chatId={roomId} messageId={message.id} value={message.feedback??null} onChange={next=>setMessages(previous=>previous.map(row=>row.id===message.id?{...row,feedback:next??undefined}:row))}/>}
             </div>
           </li>)}
         </ol>
