@@ -84,9 +84,17 @@ export async function deleteChat(id: string, revision: number) {
   return mutation("/chat-sessions/" + id + "/delete", { revision });
 }
 
-export async function moreChats(cursor: string, limit = 20) {
+export async function pinChat(id: string, pinned: boolean) {
+  if (!chatIdPattern.test(id) || typeof pinned !== "boolean") return invalid<{ pinned: boolean }>();
+  const result = await mutation<{ pinned: boolean }>("/chat-sessions/" + id + "/pin", { pinned });
+  if (result.status === 409) result.error = "상단 고정은 최대 10개까지 할 수 있어요.";
+  return result;
+}
+
+export async function moreChats(cursor: string, limit = 20, filter: { q?: string; from?: string; to?: string } = {}) {
   if (![10,20,50].includes(limit) || typeof cursor !== "string" || cursor.length > 200) return { data: null, error: "목록 위치를 확인해 주세요.", status: 400 };
-  return loadChatList(cursor, limit);
+  const clean = { q: typeof filter.q === "string" ? filter.q.slice(0, 200) : "", from: /^\d{4}-\d{2}-\d{2}$/.test(filter.from ?? "") ? filter.from : "", to: /^\d{4}-\d{2}-\d{2}$/.test(filter.to ?? "") ? filter.to : "" };
+  return loadChatList(cursor, limit, clean);
 }
 
 export async function renameChat(id:string,revision:number,title:string){

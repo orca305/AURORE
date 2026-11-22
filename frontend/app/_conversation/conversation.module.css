@@ -2,7 +2,7 @@
 .main { width: 100%; margin: 0; padding: var(--content-top-space) var(--content-gutter) 24px; }
 .context { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; padding-right: 96px; }
 .context > div { min-width: 0; }
-.context h1 { overflow-wrap: anywhere; margin: 0; font: 500 26px/1.5 "Noto Serif KR", Georgia, serif; letter-spacing: -.05em; }
+.context h1 { overflow-wrap: anywhere; margin: 0; font: 700 26px/1.5 "Noto Sans KR", "Malgun Gothic", sans-serif; letter-spacing: -.05em; }
 .context p { margin-top: 4px; color: var(--muted); font-size: 12px; }
 .reset { border: 0; background: none; padding: 6px 0; color: var(--accent); font-size: 12px; cursor: pointer; white-space: nowrap; }
 .reset:disabled { opacity: .6; cursor: wait; }
@@ -168,3 +168,82 @@
 .usageNotice summary { cursor: pointer; color: var(--accent); width: fit-content; }
 .usageNotice ul { margin: 6px 0 0; padding-left: 18px; }
 .usageNotice li { margin: 2px 0; }
+
+/* ===== 시안 적용: 대화 화면 ===== */
+.oneLine { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; font-size: 22px; line-height: 1.5; letter-spacing: -.01em; }
+.context > div, .titleRow { min-width: 0; }
+.titleRow > h1 { min-width: 0; }
+.withSide { display: grid; grid-template-columns: minmax(0, 1fr) 320px; column-gap: 24px; align-items: start; }
+.withSide > * { grid-column: 1; }
+.withSide > .rcol { grid-column: 2; grid-row: 1 / span 30; position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; margin-top: 8px; max-height: calc(100vh - 32px); overflow: auto; }
+.eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.sideCard { padding: 14px 18px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card-white); box-shadow: 0 1px 3px var(--shadow); }
+.sideCard p { margin: 0; }
+.sideStrong { font-size: 14px; font-weight: 700; line-height: 1.5; color: var(--accent); }
+.sideNote { margin-top: 2px; font-size: 14px; line-height: 1.7; color: var(--secondary); }
+.sideLinks { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 12px; }
+.sideLinks a { color: var(--accent); }
+.sideAsk { display: block; width: 100%; margin-top: 6px; padding: 8px 12px; border: 1px solid var(--strong-border); border-radius: var(--radius-control); background: var(--card-white); color: var(--accent); font-size: 13px; text-align: left; cursor: pointer; }
+.sideAsk:hover { background: var(--hover); }
+@media (max-width: 1100px) { .withSide { display: block; } .withSide > .rcol { position: static; max-height: none; margin: 14px 0; } }
+
+.record { border-top: 0; border-bottom: 0; background: transparent; }
+.messages { display: flex; flex-direction: column; gap: 14px; }
+.userMessage, .assistantMessage { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 0; border-bottom: 0; background: transparent; }
+.userMessage { justify-items: end; }
+.userMessage .speaker { display: none; }
+.userMessage .speech { grid-column: 1; grid-row: 1; max-width: 88%; width: fit-content; padding: 12px 16px; border-radius: 16px 16px 4px 16px; background: var(--accent); color: var(--on-accent); text-align: left; }
+.userMessage .speech a, .userMessage .speech p { color: inherit; }
+.assistantMessage .speaker { padding: 0 4px; }
+.assistantMessage .speech, .assistantMessage:last-child .speech { padding: 16px 20px; border: 1px solid var(--border); border-left: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card-white); box-shadow: 0 1px 3px var(--shadow); }
+.messageText { font-size: 15px; line-height: 1.85; }
+.citation { border-left: 0; border-radius: var(--radius-control); background: var(--surface); border: 1px solid var(--border); }
+.sources { border: 0; background: transparent; padding: 12px 4px; }
+.composer { border: 1px solid var(--strong-border); border-radius: 16px; background: var(--card-white); box-shadow: 0 1px 3px var(--shadow), 0 8px 24px var(--shadow); }
+.composeFooter { padding-top: 12px; border-top: 1px solid var(--border); margin-top: 12px; }
+.attach, .composeActions .attach { width: var(--control-height); padding: 0; border-radius: var(--radius-control); }
+.send { width: var(--control-height); min-width: var(--control-height); padding: 0; border-radius: var(--radius-control); display: inline-flex; align-items: center; justify-content: center; }
+.cardIcon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; background: currentColor; }
+.cardIcon svg { color: var(--card-white); }
+.tone1 .cardIcon { color: var(--card-1-text); } .tone2 .cardIcon { color: var(--card-2-text); } .tone3 .cardIcon { color: var(--card-3-text); } .tone4 .cardIcon { color: var(--card-4-text); }
+.card { border-radius: var(--radius-card); gap: 10px; }
+.usageNotice { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+.usageNotice p + p { margin-top: 2px; }
+.usageNotice { flex-direction: row; align-items: flex-start; gap: 12px; }
+.noticeIcon { flex: none; margin-top: 3px; color: var(--accent); }
+.noticeText { min-width: 0; }
+.usageNotice details { margin-top: 6px; }
+
+/* ===== 시안 적용: 한 줄 결론 + 번호 단계 ===== */
+.conclusion { padding: 14px 18px; border: 1px solid var(--strong-border); border-radius: var(--radius-card); background: var(--card-white); }
+.conclusion .eyebrow { color: var(--accent); }
+.conclusionText { margin: 0; font-size: 16px; font-weight: 500; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.timeline { position: relative; list-style: none; margin: 20px 0 0; padding: 0 0 0 40px; }
+.timeline::before { content: ""; position: absolute; left: 11px; top: 12px; bottom: 28px; width: 2px; background: var(--border); }
+.step { position: relative; padding-bottom: 18px; }
+.step:last-child { padding-bottom: 4px; }
+.stepNo { position: absolute; left: -40px; top: 0; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 700; }
+.stepNo[data-tone="2"] { background: var(--card-2-text); color: var(--card-white); }
+.stepNo[data-tone="3"] { background: var(--card-4-text); color: var(--card-white); }
+.stepNo[data-tone="4"] { background: var(--card-3-text); color: var(--card-white); }
+.stepNo[data-tone="5"] { background: #8e2c6b; color: #fff; }
+.step h3 { margin: 0; font: 700 15px/1.5 "Noto Sans KR", sans-serif; letter-spacing: 0; }
+.step .messageText { margin: 2px 0 0; font-size: 14px; color: var(--secondary); line-height: 1.8; }
+.sideCheck { display: flex; gap: 8px; padding: 6px 0; font-size: 14px; line-height: 1.7; color: var(--secondary); }
+.sideCheck svg { flex: none; margin-top: 3px; color: var(--accent); }
+
+/* 근거 조문 원문 패널 */
+.lawPanel { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--card-white); box-shadow: 0 1px 3px var(--shadow); }
+.lawHead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.lawTabs { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.lawTab { height: 30px; padding: 0 10px; border: 1px solid var(--strong-border); border-radius: 8px; background: var(--card-white); color: var(--secondary); font-size: 12px; font-weight: 600; cursor: pointer; }
+.lawTab[data-on] { background: var(--selected); color: var(--accent); border-color: var(--accent); }
+.lawBadge { margin-left: auto; padding: 2px 10px; border-radius: 99px; background: var(--card-2); color: var(--card-2-text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.lawBadge[data-ok] { background: var(--card-1); color: var(--card-1-text); }
+.lawBody { padding: 14px 18px; max-height: 42vh; overflow: auto; }
+.lawBody h3 { margin: 0 0 8px; font: 700 14px/1.5 "Noto Sans KR", sans-serif; color: var(--accent); }
+.lawText { margin: 0; font-size: 14px; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lawFoot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 18px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.lawFoot a { color: var(--accent); }
+.withSide > .rcol { top: 64px; margin-top: 52px; max-height: calc(100vh - 80px); }
+@media (max-width: 1100px) { .withSide > .rcol { margin-top: 14px; } }

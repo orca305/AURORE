@@ -126,3 +126,11 @@
 .memberSearch input,.memberSearch select,.memberSearch button,.activitySearch input,.activitySearch select,.activitySearchActions button{height:var(--control-height);min-height:var(--control-height);line-height:1.4}.memberSearch :global(.ui-button),.activitySearchActions :global(.ui-button){background:var(--background);color:var(--accent);border-color:var(--border)}
 
 .activitySearchActions select{width:auto;height:var(--control-height)}
+
+/* 시안: 큰 탭 6개 + 아래 줄 작은 칩. 가로 스크롤 없이 줄바꿈한다. */
+.tabs { overflow-x: visible; flex-wrap: wrap; gap: 4px; margin: 16px 0 0; }
+.tabs a { padding: 10px 14px 12px; font-size: 14px; font-weight: 600; }
+.subTabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 20px; }
+.subTabs a { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border: 1px solid var(--strong-border); border-radius: 99px; background: var(--card-white); color: var(--secondary); font-size: 13px; font-weight: 500; text-decoration: none; }
+.subTabs a:hover { background: var(--hover); }
+.subTabs a[aria-current] { background: var(--selected); color: var(--accent); border-color: var(--accent); font-weight: 700; }

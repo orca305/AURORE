@@ -1,3 +1,4 @@
+import { dayRange } from '../common/period.js';
 import { compareStoredPrecedent } from './precedent-comparison.js';
 import { compareStoredVersions } from "./legal-comparison.js";
 import type { CompareVersionsDto } from "./dto/compare-versions.dto.js";
@@ -71,10 +72,12 @@ export class LegalService {
         version: { delYn: false, legal: { delYn: false } },
       },
     } satisfies Prisma.LegalProviWhereInput;
+    const period = dayRange(query.from, query.to);
     const rows = await this.prisma.legalPrecRev.findMany({
       where: {
         currentYn: true,
         precedent: { delYn: false },
+        ...(period ? { decisionDt: period } : {}),
         ...(keyword ? {
           OR: [
             { caseNo: keyword },

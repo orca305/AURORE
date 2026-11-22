@@ -17,6 +17,7 @@ import {
   ArrayUnique,
   IsArray,
   Equals,
+  IsBoolean,
   ValidateIf,
   IsInt,
   IsIn,
@@ -84,6 +85,9 @@ class SubmitDto extends RevisionDto {
   @MaxLength(1000)
   question!: string;
 }
+class PinDto {
+  @IsBoolean() pinned!: boolean;
+}
 class FeedbackDto {
   @IsIn([...FEEDBACK_RATINGS]) rating!: 'HELPFUL' | 'IMPROVE';
   @IsOptional() @IsIn([...FEEDBACK_REASONS]) reason?: (typeof FEEDBACK_REASONS)[number];
@@ -94,6 +98,9 @@ class ListDto extends PageSizeDto {
   @IsString()
   @MaxLength(200)
   cursor?: string;
+  @IsOptional() @IsString() @MaxLength(200) q?: string;
+  @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) from?: string;
+  @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) to?: string;
 }
 class MessagesDto {
   @IsOptional()
@@ -122,6 +129,7 @@ export class ChatController {
       await this.auth.resolveOwner(authorization),
       query.cursor,
       query.limit,
+      { q: query.q, from: query.from, to: query.to },
     );
   }
 
@@ -258,6 +266,17 @@ export class ChatController {
     @Headers('authorization') authorization: string | undefined,
   ) {
     return this.feedback.clear(id, messageId, await this.auth.resolveOwner(authorization, true));
+  }
+
+  @Post(':id/pin')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async pin(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: PinDto,
+  ) {
+    return this.chat.pin(id, await this.auth.resolveOwner(authorization, true), body.pinned);
   }
 
   @Post(':id/title')

@@ -1,3 +1,4 @@
+import { KindBadge, legalKind } from "../_components/kind-badge";
 import { ShortTitle } from '../_components/short-title';
 import { SortSelect } from '../_components/sort-select';
 import { ResetSearch } from '../_components/page-actions';
@@ -45,7 +46,7 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
       <input type="hidden" name="limit" value={pageSize} />
       <div className="search-row">
         <input id="legal-query" name="q" defaultValue={q} maxLength={200} placeholder="찾고 싶은 법규 이름을 입력하세요" />
-        <SortSelect value={sort} basis="등록일"/><button type="submit" data-primary>검색</button><ResetSearch/>
+        <SortSelect value={sort} basis="등록일"/><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
       </div>
     </form>
     <section aria-labelledby="results-title" className="results">
@@ -53,7 +54,7 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
       {unavailable ? <p role="status" className="empty">법규 목록을 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.</p>
         : rows.length === 0 ? <p className="empty">{q ? "검색 결과가 없습니다. 다른 이름으로 검색해 보세요." : "아직 등록된 법규가 없습니다."}</p>
         : <ul className="legal-list">{rows.slice(0, pageSize).map(row => <li key={row.id}>
-          <div className="legal-title-row"><h3><ShortTitle text={row.legalNm}/></h3>{member&&<BookmarkButton key={row.id+':'+String(saved?.has(row.id))} kind='LEGAL' id={row.id} saved={saved?saved.has(row.id):null} title={row.legalNm} compact/>}</div><p>출처 {row.srcCd} · {row.srcKey}</p>
+          <div className="legal-title-row"><h3><ShortTitle text={row.legalNm}/> <KindBadge {...legalKind(row.legalNm)} /></h3>{member&&<BookmarkButton key={row.id+':'+String(saved?.has(row.id))} kind='LEGAL' id={row.id} saved={saved?saved.has(row.id):null} title={row.legalNm} compact/>}</div><p>출처 {row.srcCd} · {row.srcKey}</p>
           <Link href={`/legals/${row.id}/versions`} className="mt-2 inline-block underline">
             시행본 조회<span className="sr-only"> · {row.legalNm}</span>
           </Link>

@@ -10,7 +10,7 @@ export type ChatDetail = {
   job: { id: string; status: string;reason?:string } | null;
 };
 export type ChatList = {
-  items: { id: string; title: string; unreadCorrectionCount: number; revision: number; updatedAt: string; expiresAt: string | null }[];
+  items: { id: string; title: string; pinned?: boolean; unreadCorrectionCount: number; revision: number; updatedAt: string; expiresAt: string | null }[];
   nextCursor: string | null;
 };
 export type ChatResult<T> = { data: T | null; error: string | null; status: number };

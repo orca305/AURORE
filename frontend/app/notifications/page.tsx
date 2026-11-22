@@ -1,3 +1,4 @@
+import {shortDate} from "../_components/format-date";
 import {isNotificationPage} from '../_components/list-response';
 import { SortSelect } from '../_components/sort-select';
 import { ResetSearch } from '../_components/page-actions';
@@ -12,7 +13,7 @@ import {ReadNotification} from '../_notifications/read-notification';
 import styles from '../_notifications/notifications.module.css';
 export const metadata={title:'알림 | AURORE'};
 const labels={PROMULGATED:'공포',EFFECTIVE:'시행',CORRECTED:'원문 정정'};
-function date(value:string){return new Intl.DateTimeFormat('ko-KR',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Seoul'}).format(new Date(value));}
+function date(value:string){return shortDate(value);}
 export default async function NotificationsPage({searchParams}:{searchParams:Promise<{filter?:string;sort?:string;kind?:string;limit?:string;offset?:string}>}){
  if(!(await currentMember()))redirect('/login');
  const params=await searchParams,filter=params.filter==='UNREAD'?'UNREAD':'ALL',kind=['PROMULGATED','EFFECTIVE','CORRECTED'].includes(params.kind??'')?params.kind!:'ALL';

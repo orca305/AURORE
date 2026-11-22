@@ -1,3 +1,4 @@
+import { periodRange } from '../common/period.js';
 import { generationErrorCode } from './job-diagnostics.js';
 import { isFollowUpQuestion, isUncertainSupplement } from './clarification.js';
 import { redactDocument } from '../documents/document-text.js';
@@ -85,8 +86,26 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       });
   }
 
-  async list(owner: ChatOwner, cursor?: string, limit = 20) {
+  async list(
+    owner: ChatOwner,
+    cursor?: string,
+    limit = 20,
+    filter: { q?: string; from?: string; to?: string } = {},
+  ) {
     let boundary: Prisma.ChatSessWhereInput = {};
+    const period = periodRange(filter.from, filter.to);
+    const term = (filter.q ?? '').trim().replace(/[\\%_]/g, '\\$&');
+    const narrowing: Prisma.ChatSessWhereInput = {
+      ...(period ? { uptDttm: period } : {}),
+      ...(term
+        ? {
+            OR: [
+              { sessNm: { contains: term, mode: 'insensitive' as const } },
+              { messages: { some: { delYn: false, msgCont: { contains: term, mode: 'insensitive' as const } } } },
+            ],
+          }
+        : {}),
+    };
     if (cursor) {
       try {
         const parsed: unknown = JSON.parse(
@@ -116,19 +135,30 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         throw new BadRequestException('목록 위치를 확인해 주세요.');
       }
     }
+    const listSelect = {
+      id: true,
+      sessNm: true,
+      uptDttm: true,
+      exprDttm: true,
+      revNo: true,
+      pinDttm: true,
+    } as const;
+    // 고정한 대화는 첫 쪽 맨 위에 모아 보여 주고, 나머지 쪽 나누기에서는 빼서 두 번 나오지 않게 한다.
+    const pinned = cursor
+      ? []
+      : await this.db.chatSess.findMany({
+          where: { AND: [visibleRoom(owner), narrowing, { pinDttm: { not: null } }] },
+          select: listSelect,
+          orderBy: [{ pinDttm: 'desc' }, { id: 'desc' }],
+          take: 10,
+        });
     const rows = await this.db.chatSess.findMany({
-      where: { AND: [visibleRoom(owner), boundary] },
-      select: {
-        id: true,
-        sessNm: true,
-        uptDttm: true,
-        exprDttm: true,
-        revNo: true,
-      },
+      where: { AND: [visibleRoom(owner), boundary, narrowing, { pinDttm: null }] },
+      select: listSelect,
       orderBy: [{ uptDttm: 'desc' }, { id: 'desc' }],
       take: limit + 1,
     });
-    const page = rows.slice(0, limit);
+    const page = [...pinned, ...rows.slice(0, limit)];
     const unread = page.length
       ? await this.db.$queryRaw<{ id: string; count: bigint }[]>(Prisma.sql`
       WITH corrected AS (
@@ -159,6 +189,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         title: row.sessNm,
         unreadCorrectionCount: counts.get(row.id) ?? 0,
         revision: row.revNo,
+        pinned: row.pinDttm !== null,
         updatedAt: row.uptDttm.toISOString(),
         expiresAt: row.exprDttm?.toISOString() ?? null,
       })),
@@ -971,6 +1002,26 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       });
     });
     return this.read(id, owner);
+  }
+
+  /** 대화를 목록 맨 위에 고정하거나 풀어 준다. 수정 시각과 개정 번호는 건드리지 않는다. */
+  async pin(id: string, owner: ChatOwner, pinned: boolean) {
+    const room = await this.db.chatSess.findFirst({
+      where: { id, ...visibleRoom(owner) },
+      select: { id: true, pinDttm: true },
+    });
+    if (!room) throw new NotFoundException('대화를 찾을 수 없습니다.');
+    if (pinned && room.pinDttm === null) {
+      const count = await this.db.chatSess.count({
+        where: { AND: [visibleRoom(owner), { pinDttm: { not: null } }] },
+      });
+      if (count >= 10)
+        throw new ConflictException('상단 고정은 최대 10개까지 할 수 있어요.');
+    }
+    await this.db.$executeRaw(
+      Prisma.sql`UPDATE chat_sess SET pin_dttm = ${pinned ? new Date() : null} WHERE id = ${id}::uuid`,
+    );
+    return { pinned };
   }
 
   async rename(id: string, owner: ChatOwner, revision: number, title: string) {

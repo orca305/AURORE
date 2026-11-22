@@ -67,7 +67,7 @@ async function ProvisionResults({ id, versionId, searchParams }: {
       <div className="search-row">
         <input id="provision-query" name="q" defaultValue={q} maxLength={200} placeholder="예시 제6조의2 또는 보증금" />
         {asOf && <input type="hidden" name="asOf" value={asOf} />}
-        <button type="submit" data-primary>검색</button><ResetSearch/>
+        <button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
       </div>
     </form>
     <section aria-labelledby="provision-results" className="results">

@@ -9,6 +9,8 @@ import {CaseContextPanel} from "./case-context-panel";
 import { CaseConnection } from "./case-connection";
 import {CorrectionRead,CorrectionHistory} from "./correction-read";
 import {FeedbackBar} from "./feedback-bar";
+import {parseAnswer} from "./answer-sections";
+import {LawPanel} from "./law-panel";
 import Link from "next/link";
 import { startTransition, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { cancelChatJob, connectChatCase, markChatRead, refreshChat, retryChatJob, sendChatMessage } from "./actions";
@@ -18,16 +20,30 @@ export type { Reply } from "./types";
 
 // 첫 화면 "상황으로 시작하기" 카드. 누르면 입력창에 채워 줄 뿐 바로 보내지 않는다.
 const examples = [
-  { topic: "집 · 임대차", question: "보증금을 돌려받지 못했어요", tone: "tone1" },
-  { topic: "일 · 근로", question: "월급이나 퇴직금이 안 나와요", tone: "tone2" },
-  { topic: "소비 · 계약", question: "약관이 불공정한 것 같아요", tone: "tone3" },
-  { topic: "돈 · 채무", question: "빚이 많아서 회생을 알아봐요", tone: "tone4" },
+  { topic: "집 · 임대차", question: "보증금을 돌려받지 못했어요", tone: "tone1", icon: "M3 11l9-7 9 7v9H3zM9 20v-6h6v6" },
+  { topic: "일 · 근로", question: "월급이나 퇴직금이 안 나와요", tone: "tone2", icon: "M4 8h16v11H4zM9 8V5h6v3M4 13h16" },
+  { topic: "소비 · 계약", question: "약관이 불공정한 것 같아요", tone: "tone3", icon: "M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6" },
+  { topic: "돈 · 채무", question: "빚이 많아서 회생을 알아봐요", tone: "tone4", icon: "M3 7h18v12H3zM3 11h18M7 15h3" },
 ] as const;
 const followups = {
   start: [],
   "lease-end": ["네, 계약이 끝났어요", "아직 안 끝났어요"],
   "renewal-delivery": ["네, 도달했어요", "도달했는지 모르겠어요"],
 };
+
+/** 해설을 "한 줄 결론"과 번호 단계로 나눠 보여 준다. 소제목이 없는 짧은 답은 그대로 보여 준다. */
+function AnswerBody({ text }: { text: string }) {
+  const parsed = parseAnswer(text);
+  if (!parsed.structured) return <p className={styles.messageText}><HighlightedText text={text} /></p>;
+  return <>
+    {parsed.conclusion && <div className={styles.conclusion}><p className={styles.eyebrow}>한 줄 결론</p><p className={styles.conclusionText}><HighlightedText text={parsed.conclusion} /></p></div>}
+    {parsed.steps.length > 0 && <ol className={styles.timeline}>{parsed.steps.map((step, index) => <li key={step.heading + index} className={styles.step}>
+      <span className={styles.stepNo} data-tone={(index % 5) + 1}>{index + 1}</span>
+      <h3>{step.heading}</h3>
+      <p className={styles.messageText}><HighlightedText text={step.body} /></p>
+    </li>)}</ol>}
+  </>;
+}
 
 export function Conversation({ ask, initialChat, member = false }: {
   member?: boolean;
@@ -248,11 +264,14 @@ export function Conversation({ ask, initialChat, member = false }: {
 
   // 첫 질문 화면: 대화도 사건 연결도 없는 새 대화일 때만 큰 입력창 구조를 쓴다.
   const fresh = !hasMessages && !detail && !pending;
-  return <section aria-label="오로르 대화" className={fresh ? styles.fresh : undefined}>
+  const withSide = hasMessages || pending;
+  const panelSources = (() => { const seen = new Set<string>(); const list: NonNullable<Message["source"]>[] = []; for (const message of [...messages].reverse()) { if (message.role === "assistant" && message.source && !seen.has(message.source.label)) { seen.add(message.source.label); list.push(message.source); } if (list.length >= 6) break; } return list; })();
+  const lastParsed = parseAnswer([...messages].reverse().find(message => message.role === "assistant")?.text ?? "");
+  return <section aria-label="오로르 대화" className={[fresh ? styles.fresh : "", withSide ? styles.withSide : ""].filter(Boolean).join(" ") || undefined}>
     {fresh && <p className={styles.heroPill}>공식 법령 원문을 근거로 설명해요</p>}
     <div className={styles.context}>
       <div>
-        <div className={styles.titleRow}><h1>{detail?.title ?? (messages.length ? "나의 법률 대화" : <>어떤 일이 생겼는지<br />편하게 말해 주세요</>)}</h1>
+        <div className={styles.titleRow}><h1 className={fresh ? undefined : styles.oneLine} title={detail?.title}>{detail?.title ?? (messages.length ? "나의 법률 대화" : <>어떤 일이 생겼는지<br />편하게 말해 주세요</>)}</h1>
         {(messages.length > 0 || detail) && <button type="button" disabled={documentBusy || submitting || (pending && !pollError)} className={styles.newChat} onClick={reset}>새 대화 </button>}</div>
         <p>{fresh ? "법률 용어를 몰라도 괜찮아요. 관련 법 조문을 찾아 쉬운 말로 풀어 드리고, 원문은 그대로 보여 드려요." : "나의 상황을 이야기하고, 필요한 사실을 함께 확인합니다."}</p>
       </div>
@@ -273,7 +292,7 @@ export function Conversation({ ask, initialChat, member = false }: {
               {message.caseContext&&<p className={styles.sourceNote}>사건 사실관계 {message.caseContext.factCount}개 · 사건 버전 {message.caseContext.revision} · 법령 조회 기준일 {message.caseContext.asOf}{message.caseContext.current===false&&<span> · 이후 사건 정보나 연결이 변경되었습니다. 현재 사실관계로 다시 질문해 주세요.</span>}</p>}
               {message.clarifyReplyTo&&<p className={styles.sourceNote}>이전 질문에 보완한 내용</p>}
               {message.explained&&<p className={styles.citationLabel}>AI 쉬운 해설 · 참고용 (공식 원문이 아닙니다)</p>}
-              <p className={styles.messageText}>{message.role==="user"?message.text:<HighlightedText text={message.text}/>}</p>
+              {message.role==="user"?<p className={styles.messageText}>{message.text}</p>:<AnswerBody text={message.text}/>}
               {saved&&message.clarification&&message.id===messages.at(-1)?.id&&!pending&&<div className={styles.followups} aria-label="근거 보완 안내"><button type="button" disabled={documentBusy} onClick={()=>{setClarifyTarget(message.id!);inputField.current?.focus();}}>내용 보완하기 </button></div>}
               {saved && member && detail?.linkedCase && message.role === "user" && message.id && <Link className={styles.factImport} href={'/cases/'+detail.linkedCase.id+'/from-message/'+message.id} data-action-link>사실관계로 가져오기 </Link>}
 
@@ -297,10 +316,6 @@ export function Conversation({ ask, initialChat, member = false }: {
         {pending && <p role="status" className={styles.pending}>{submitting ? "질문을 저장하는 중입니다." : "오로르가 확인 중입니다."}</p>}
         <div ref={latest} />
       </section>
-      {!pending && followups[phase].length > 0 && <div className={styles.followups} aria-label="빠른 답변">
-        {followups[phase].map(text => <button key={text} type="button"
-          onClick={() => { setInput(text); inputField.current?.focus(); }}>{text} </button>)}
-      </div>}
       <div className={styles.sources}>
         <p>답변에 쓰인 법령·판례는 인용문과 함께 표시합니다.</p>
         <Link href="/legals" data-action-link>법규 원문 검색 </Link>
@@ -329,9 +344,9 @@ export function Conversation({ ask, initialChat, member = false }: {
         required maxLength={1000} placeholder="상황이나 궁금한 점을 편하게 적어 주세요." />
       <div className={styles.composeFooter}>
         <p>Enter 전송 · Shift + Enter 줄바꿈</p>
-        <div className={styles.composeActions}><button ref={termsButton} type="button" className={styles.attach} aria-expanded={termsOpen} aria-controls="conversation-terms" onClick={()=>{const selection=window.getSelection();const selected=selection?.anchorNode&&selection.focusNode&&termHistory.current?.contains(selection.anchorNode)&&termHistory.current.contains(selection.focusNode)?selection.toString().trim():'';if(selected&&selected.length<=100){setTermQuery(selected);setTermsOpen(true);}else{setTermQuery('');setTermsOpen(value=>!value);}setDocumentsOpen(false);}}>용어 찾기</button>{saved&&member&&<button type="button" className={styles.attach} aria-expanded={documentsOpen} disabled={documentBusy||pending} onClick={()=>{setDocumentsOpen(value=>!value);setTermsOpen(false);}}>첨부파일</button>}
-        <button type="submit" disabled={documentBusy || pending || !input.trim()} className={styles.send} data-primary>
-          {pending ? "확인 중…" : "보내기"}
+        <div className={styles.composeActions}><button ref={termsButton} type="button" className={styles.attach} aria-label="용어 찾기" title="용어 찾기" aria-expanded={termsOpen} aria-controls="conversation-terms" onClick={()=>{const selection=window.getSelection();const selected=selection?.anchorNode&&selection.focusNode&&termHistory.current?.contains(selection.anchorNode)&&termHistory.current.contains(selection.focusNode)?selection.toString().trim():'';if(selected&&selected.length<=100){setTermQuery(selected);setTermsOpen(true);}else{setTermQuery('');setTermsOpen(value=>!value);}setDocumentsOpen(false);}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 18 9 5l5 13M6 13h6M16 8h5m-3 0v10" /></svg></button>{saved&&member&&<button type="button" className={styles.attach} aria-expanded={documentsOpen} disabled={documentBusy||pending} aria-label="첨부파일" title="첨부파일" onClick={()=>{setDocumentsOpen(value=>!value);setTermsOpen(false);}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.3 3.3 0 0 1 5 5l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15 8" /></svg></button>}
+        <button type="submit" disabled={documentBusy || pending || !input.trim()} className={styles.send} data-primary aria-label={pending ? "확인 중" : "보내기"} title="보내기">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
         </button></div>
       </div>
     </form>
@@ -339,12 +354,19 @@ export function Conversation({ ask, initialChat, member = false }: {
     {fresh && <div className={styles.situations} aria-label="상황으로 시작하기">
       <p>상황으로 시작하기</p>
       <div className={styles.cards}>
-        {examples.map(({ topic, question, tone }) => <button key={topic} type="button" className={`${styles.card} ${styles[tone]}`}
+        {examples.map(({ topic, question, tone, icon }) => <button key={topic} type="button" className={`${styles.card} ${styles[tone]}`}
           onClick={() => { setInput(question); inputField.current?.focus(); }}>
-          <small>{topic}</small><strong>{question}</strong>
+          <span className={styles.cardIcon}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={icon} /></svg></span><small>{topic}</small><strong>{question}</strong>
         </button>)}
       </div>
     </div>}
+    {withSide && <aside className={styles.rcol} aria-label="도움말">
+      <LawPanel key={panelSources.map(item => item.label).join("|")} sources={panelSources} />
+      <div className={styles.sideCard}><p className={styles.eyebrow}>도움 받을 곳</p>{lastParsed.help ? <p className={styles.sideNote} style={{ whiteSpace: "pre-wrap" }}>{lastParsed.help}</p> : <p className={styles.sideNote}>대한법률구조공단 법률상담 <strong>132</strong></p>}</div>
+      {lastParsed.checks.length > 0 && <div className={styles.sideCard}><p className={styles.eyebrow}>확인해 보세요 · 마지막 답변 기준</p>{lastParsed.checks.map(text => <p key={text} className={styles.sideCheck}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01" /></svg><span>{text}</span></p>)}</div>}
+      {followups[phase].length > 0 && !pending && <div className={styles.sideCard}><p className={styles.eyebrow}>확인해 보세요 · 마지막 답변 기준</p>
+        {followups[phase].map(text => <button key={text} type="button" className={styles.sideAsk} onClick={() => { setInput(text); inputField.current?.focus(); }}>{text}</button>)}</div>}
+    </aside>}
     {termsOpen&&<TermLookupPanel key={termQuery} initialQuery={termQuery} onClose={()=>{setTermsOpen(false);termsButton.current?.focus();}}/>}
     {saved&&member&&<DocumentsPanel open={documentsOpen} onClose={()=>setDocumentsOpen(false)} key={documentEpoch} chatId={roomId??null} disabled={pending||documentBusy} onBusy={value=>{inFlight.current=value;setDocumentBusy(value);}} selected={selectedDocuments} onSelect={setSelectedDocuments} onRemoved={id=>setMessages(previous=>previous.map(message=>({...message,documentQuotes:message.documentQuotes?.filter(quote=>quote.documentId!==id)})))} onSaved={data=>{applyChat(data);window.history.replaceState(null,"","/?chat="+data.id);window.dispatchEvent(new Event('aurore:chat-history'));}}/>}
     {!hasMessages && !pending && <p className={styles.sourceNote}>답변은 법령·판례의 원문과 함께 확인할 수 있습니다. <Link href="/legals" data-action-link>법규 검색 </Link></p>}

@@ -159,6 +159,7 @@ model ChatSess {
   phaseCd     String   @default("start") @map("phase_cd") @db.VarChar(32)
   revNo       Int      @default(0) @map("rev_no")
   nextMsgSeq  Int      @default(1) @map("next_msg_seq")
+  pinDttm     DateTime? @map("pin_dttm") @db.Timestamptz(0)
   exprDttm    DateTime? @map("expr_dttm") @db.Timestamptz(0)
   delYn       Boolean  @default(false) @map("del_yn")
   delDttm     DateTime? @map("del_dttm") @db.Timestamptz(0)
@@ -545,6 +546,7 @@ model UserCase {
   type CmmnCd @relation(fields:[caseTypeCdId],references:[id],onDelete:Restrict,onUpdate:Restrict)
   facts CaseFact[]
   histories CaseHist[]
+  tasks CaseTask[]
   @@unique([id,userId],map:"uq_user_case_owner")
   @@index([userId,delYn,uptDttm(sort:Desc),id(sort:Desc)],map:"idx_user_case_list")
   @@map("user_case")
@@ -837,4 +839,21 @@ model AnsFeedback {
 
   @@index([statCd, rgstDttm(sort: Desc), id(sort: Desc)], map: "idx_ans_feedback_list")
   @@map("ans_feedback")
+}
+
+model CaseTask {
+  id         BigInt    @id @default(autoincrement())
+  userCaseId String    @map("user_case_id") @db.Uuid
+  userId     BigInt    @map("user_id")
+  seq        Int
+  taskTxt    String    @map("task_txt") @db.VarChar(200)
+  doneYn     Boolean   @default(false) @map("done_yn")
+  delYn      Boolean   @default(false) @map("del_yn")
+  delDttm    DateTime? @map("del_dttm") @db.Timestamptz(0)
+  rgstDttm   DateTime  @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+  uptDttm    DateTime  @default(now()) @updatedAt @map("upt_dttm") @db.Timestamptz(0)
+  userCase   UserCase  @relation(fields: [userCaseId, userId], references: [id, userId], onDelete: Restrict, onUpdate: Restrict, map: "fk_case_task_owner")
+
+  @@index([userCaseId, seq, id], map: "idx_case_task_list")
+  @@map("case_task")
 }

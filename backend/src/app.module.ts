@@ -28,6 +28,7 @@ import { AuthController } from './auth/auth.controller.js';
 import { AuthService } from './auth/auth.service.js';
 import { ChatController, JobsController } from './chat/chat.controller.js';
 import { ChatService } from './chat/chat.service.js';
+import { CaseTasksService } from './cases/case-tasks.service.js';
 import { FeedbackService } from './chat/feedback.service.js';
 import { AdminFeedbackService } from './admin/admin-feedback.service.js';
 import { ChatAnswerService } from './chat/answer.service.js';
@@ -73,6 +74,7 @@ import { CommonCodeController } from './common-code/common-code.controller.js';
     AppService,
     AuthService,
     ChatService,
+    CaseTasksService,
     FeedbackService,
     AdminFeedbackService,
     ChatAnswerService,

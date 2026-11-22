@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {LinkedChats} from "../../_cases/linked-chats";
+import {CaseTasks} from "../../_cases/case-tasks";
 import { notFound } from "next/navigation";
 import { requestCase } from "../../_cases/requests";
 import {
@@ -104,6 +105,7 @@ export default async function CasePage({
         </p>
       )}
       <LinkedChats id={id} limit={limit} offset={offset(query.chatOffset)} query={query}/>
+      <CaseTasks id={id}/>
       <div className={styles.caseTools}>
         <details className={styles.edit}>
           <summary>사건 정보 수정</summary>

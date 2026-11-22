@@ -1,3 +1,4 @@
+import { periodRange } from '../common/period.js';
 import { redactDocument, markdownLiteral } from '../documents/document-text.js';
 import {
   BadRequestException,
@@ -118,12 +119,14 @@ export class CasesService {
   }
   async list(
     owner: Owner,
-    query: { q: string; limit: number; offset: number; sort?: 'newest' | 'oldest' },
+    query: { q: string; limit: number; offset: number; sort?: 'newest' | 'oldest'; from?: string; to?: string },
   ) {
     const term = query.q.trim().replace(/[\\%_]/g, '\\$&'),
+      period = periodRange(query.from, query.to),
       where = {
         userId: owner.userId,
         delYn: false,
+        ...(period ? { uptDttm: period } : {}),
         ...(term
           ? { caseNm: { contains: term, mode: 'insensitive' as const } }
           : {}),

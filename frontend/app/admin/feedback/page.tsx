@@ -15,8 +15,8 @@ type FeedbackList = {
   items: { id: string; rating: string; reason: string | null; text: string | null; status: string; at: string; question: string; provider: string | null }[];
 };
 
-export const feedbackReasons: Record<string, string> = { WRONG_LAW: "관련 없는 법", NOT_MY_CASE: "내 상황과 다름", TOO_HARD: "설명이 어려움", MISSING: "빠진 내용", OTHER: "기타", NONE: "이유 없음" };
-export const feedbackStatuses: Record<string, string> = { NEW: "새 의견", REVIEWING: "검토 중", DONE: "처리 완료" };
+const feedbackReasons: Record<string, string> = { WRONG_LAW: "관련 없는 법", NOT_MY_CASE: "내 상황과 다름", TOO_HARD: "설명이 어려움", MISSING: "빠진 내용", OTHER: "기타", NONE: "이유 없음" };
+const feedbackStatuses: Record<string, string> = { NEW: "새 의견", REVIEWING: "검토 중", DONE: "처리 완료" };
 const ratings: Record<string, string> = { HELPFUL: "도움 됐어요", IMPROVE: "개선 필요" };
 const pick = (value: string | string[] | undefined, allowed: string[]) => (typeof value === "string" && allowed.includes(value) ? value : "all");
 const pct = (value: number | null) => (value === null ? "-" : Math.round(value * 100) + "%");

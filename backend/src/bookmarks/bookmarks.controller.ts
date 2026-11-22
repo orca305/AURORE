@@ -17,6 +17,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -25,6 +26,8 @@ import { AuthService } from '../auth/auth.service.js';
 import { BookmarksService, type BookmarkKind } from './bookmarks.service.js';
 class ListDto {
   @IsOptional() @IsIn(['newest','oldest']) sort: 'newest' | 'oldest' = 'newest';
+  @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) from = '';
+  @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) to = '';
 
   @IsOptional() @IsString() @MaxLength(200) q = '';
   @IsOptional() @IsIn(['ALL', 'LEGAL', 'PREC']) kind: 'ALL' | BookmarkKind =

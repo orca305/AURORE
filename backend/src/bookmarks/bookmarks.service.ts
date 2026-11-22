@@ -1,3 +1,4 @@
+import { periodRange } from '../common/period.js';
 import {
   Injectable,
   NotFoundException,
@@ -14,6 +15,8 @@ type Query = {
   kind: 'ALL' | BookmarkKind;
   limit: number;
   offset: number;
+  from?: string;
+  to?: string;
 };
 const visible: Prisma.UserBmarkWhereInput = {
   delYn: false,
@@ -38,8 +41,10 @@ export class BookmarksService {
   }
   async list(owner: Owner, query: Query) {
     const q = query.q.trim().replace(/[\\%_]/g, '\\$&');
+    const period = periodRange(query.from, query.to);
     const where: Prisma.UserBmarkWhereInput = {
       userId: owner.userId,
+      ...(period ? { rgstDttm: period } : {}),
       AND: [
         visible,
         ...(query.kind === 'ALL'

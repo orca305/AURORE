@@ -25,11 +25,20 @@ import {
   MaxLength,
   Min,
   MinLength,
+  IsBoolean,
 } from 'class-validator';
 import { AuthService } from '../auth/auth.service.js';
 import { CasesService } from './cases.service.js';
+import { CaseTasksService } from './case-tasks.service.js';
+class TaskDto {
+  @IsOptional() @IsString() @MaxLength(400) text?: string;
+  @IsOptional() @IsBoolean() done?: boolean;
+}
+
 class ListDto {
   @IsOptional() @IsIn(['newest','oldest']) sort: 'newest' | 'oldest' = 'newest';
+  @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) from = '';
+  @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/) to = '';
 
   @IsOptional() @IsString() @MaxLength(200) q = '';
   @IsOptional() @Type(() => Number) @IsIn([10, 20, 50]) limit = 20;
@@ -74,6 +83,7 @@ export class CasesController {
   constructor(
     private readonly cases: CasesService,
     private readonly auth: AuthService,
+    private readonly tasks: CaseTasksService,
   ) {}
   private async owner(authorization?: string, activity = false) {
     const owner = await this.auth.resolveOwner(authorization, activity);
@@ -99,6 +109,34 @@ export class CasesController {
     @Query() query: DetailDto,
   ) {
     return this.cases.detail(id, await this.owner(authorization), query);
+  }
+  @Get(':id/tasks') @Header('Cache-Control', 'no-store') async taskList(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    return this.tasks.list(id, (await this.owner(authorization)).userId);
+  }
+  @Post(':id/tasks') @HttpCode(200) @Header('Cache-Control', 'no-store') async taskAdd(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: TaskDto,
+    @Headers('authorization') authorization?: string,
+  ) {
+    return this.tasks.add(id, (await this.owner(authorization, true)).userId, body.text ?? '');
+  }
+  @Post(':id/tasks/:taskId/update') @HttpCode(200) @Header('Cache-Control', 'no-store') async taskUpdate(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('taskId') taskId: string,
+    @Body() body: TaskDto,
+    @Headers('authorization') authorization?: string,
+  ) {
+    return this.tasks.update(id, (await this.owner(authorization, true)).userId, taskId, body);
+  }
+  @Post(':id/tasks/:taskId/delete') @HttpCode(200) @Header('Cache-Control', 'no-store') async taskDelete(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('taskId') taskId: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    return this.tasks.remove(id, (await this.owner(authorization, true)).userId, taskId);
   }
   @Get(':id/drafts/:messageId')
   @Header('Cache-Control', 'no-store')

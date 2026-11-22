@@ -1,3 +1,5 @@
+import { PeriodFields } from "../_components/period-fields";
+import { readPeriod } from "../_components/period-read";
 import { SortSelect } from '../_components/sort-select';
 import { ResetSearch } from '../_components/page-actions';
 import Link from "next/link";
@@ -19,9 +21,12 @@ export default async function CasesPage({
     raw = typeof params.offset === "string" ? params.offset : "0",
     offset = /^\d{1,6}$/.test(raw) ? Math.min(Number(raw), 100000) : 0;
   const sort=params.sort==='oldest'?'oldest':'newest';
+  const from = readPeriod(params.from), to = readPeriod(params.to);
   const query = new URLSearchParams({
       sort,
       q,
+      from,
+      to,
       limit: String(limit),
       offset: String(offset),
     }),
@@ -57,8 +62,9 @@ export default async function CasesPage({
             maxLength={200}
             placeholder="사건 제목을 입력하세요"
           />
-          <SortSelect value={sort} basis="수정일"/><button type="submit" data-primary>검색</button><ResetSearch/>
+          <SortSelect value={sort} basis="수정일"/><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
         </div>
+        <PeriodFields from={from} to={to} />
       </form>
       <section className="results">
         <div className="section-heading">
