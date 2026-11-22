@@ -1,0 +1,12 @@
+# Cloudflare 터널 설정 예시. 복사해서 local-dev/deploy/cloudflared-config.yml 로 저장하고 <> 안을 채운다.
+# 이 파일에는 비밀 값이 없지만, 터널 인증 파일(<터널ID>.json)은 비밀이라 Git에 올리지 않는다(.gitignore 처리됨).
+#
+# 내보내는 것은 화면(3000)뿐이다. 백엔드(3001)·AI 서버(8001)·DB·Ollama는 이 컴퓨터 안에서만 열려 있고 터널에 연결하지 않는다.
+tunnel: <터널ID>
+credentials-file: C:\Users\<사용자>\.cloudflared\<터널ID>.json
+
+ingress:
+  - hostname: <공개 주소 예: aurore.example.com>
+    service: http://127.0.0.1:3000
+  # 위 호스트가 아닌 요청은 모두 404
+  - service: http_status:404

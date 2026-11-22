@@ -1,1 +1,5 @@
 .env
+
+# 외부 공개 터널 설정(실제 값이 든 파일)
+local-dev/deploy/cloudflared-config.yml
+local-dev/deploy/bin/
