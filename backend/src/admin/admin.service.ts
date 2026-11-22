@@ -433,7 +433,17 @@ export class AdminService {
     }
   }
 
+  private overviewCache: { at: number; value: Awaited<ReturnType<AdminService['loadOverview']>> } | null = null;
+
+  /** 운영 현황은 큰 표를 세어서 몇 초 걸릴 수 있어, 60초 동안은 같은 결과를 다시 쓴다. */
   async overview() {
+    if (this.overviewCache && Date.now() - this.overviewCache.at < 60_000) return this.overviewCache.value;
+    const value = await this.loadOverview();
+    this.overviewCache = { at: Date.now(), value };
+    return value;
+  }
+
+  private async loadOverview() {
     return this.db.$transaction(
       async (tx) => {
         const now = new Date();
@@ -536,7 +546,7 @@ export class AdminService {
           })),
         };
       },
-      { isolationLevel: 'RepeatableRead' },
+      { isolationLevel: 'RepeatableRead', timeout: 30000, maxWait: 10000 },
     );
   }
 }

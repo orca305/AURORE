@@ -1,3 +1,4 @@
+import { IconLink } from "../../../_components/icon-link";
 import Link from "next/link";
 import {notFound} from "next/navigation";
 import {requestCase} from "../../../_cases/requests";
@@ -19,13 +20,13 @@ export default async function TimelinePage({params,searchParams}:{params:Promise
   return <>
     <section className="intro"><Link href={path+'?limit='+limit}>← {data.case.title}</Link><h1>사건 타임라인</h1><p>입력한 관련 날짜를 기준으로 오래된 순서대로 보여줍니다. 같은 날짜의 내용은 등록 순서로, 날짜가 없는 내용은 마지막에 표시합니다.</p></section>
     {query.saved==='1'&&<p role="status" className={styles.notice}>변경한 사실관계를 타임라인에 반영했습니다.</p>}
-    <div className="section-heading"><h2>확인한 사실관계 <span>{data.total}개 · 날짜 미입력 {data.undatedTotal}개</span></h2><div className="list-tools"><PageSizeSelect value={limit}/><Link href={path+'#add-fact'} data-action-link>사실관계 추가 </Link><a href={path+"/export"} download>정리본 내려받기 ↓</a></div></div>
+    <div className="section-heading"><h2>확인한 사실관계 <span>{data.total}개 · 날짜 미입력 {data.undatedTotal}개</span></h2><div className="list-tools"><PageSizeSelect value={limit}/><IconLink href={path+'#add-fact'} kind="plus" label="사실관계 추가" /><IconLink href={path+'/export'} kind="download" label="정리본 내려받기" download /></div></div>
     {!data.items.length?<p className="empty">{data.total?'이 페이지에 표시할 사실관계가 없습니다.':'등록된 사실관계가 없습니다. 관련 날짜와 함께 사실관계를 추가해 보세요.'}</p>:<ol className={styles.timeline} aria-label="관련 날짜순 사실관계">
       {data.items.map((row,index)=>{
         const heading=index===0||row.occurredOn!==data.items[index-1].occurredOn;
         return <li key={row.id} className={styles.timelineEntry}>
           <div className={styles.timelineDate}>{heading?(row.occurredOn?<time dateTime={row.occurredOn}>{row.occurredOn}</time>:<strong>날짜 미입력</strong>):<span className={styles.sameDate}>같은 날짜</span>}</div>
-          <article className={styles.timelineFact}><header><h3>{row.title}</h3><div className={styles.factTools}><Link href={path+'/facts/'+row.id+'?returnTo=timeline'} data-action-link>수정 </Link><DeleteCase command={{operation:'deleteFact',caseId:id,factId:row.id,revision:data.case.revision,returnTo:'timeline'}} label={row.title+' 사실관계 삭제'} targetTitle={row.title}/></div></header><p className={styles.content}>{row.content}</p><div className={styles.timelineMeta}><span>{date(row.updatedAt!)} 수정</span>{row.imported&&(row.source?<Link href={'/?chat='+row.source.chatId} data-action-link>가져온 대화 </Link>:<span>가져온 대화가 삭제되었거나 보관이 종료됐습니다.</span>)}</div></article>
+          <article className={styles.timelineFact}><header><h3>{row.title}</h3><div className={styles.factTools}><IconLink href={path+'/facts/'+row.id+'?returnTo=timeline'} kind="edit" label="사실관계 수정" /><DeleteCase command={{operation:'deleteFact',caseId:id,factId:row.id,revision:data.case.revision,returnTo:'timeline'}} label={row.title+' 사실관계 삭제'} targetTitle={row.title}/></div></header><p className={styles.content}>{row.content}</p><div className={styles.timelineMeta}><span>{date(row.updatedAt!)} 수정</span>{row.imported&&(row.source?<Link href={'/?chat='+row.source.chatId} data-action-link>가져온 대화 </Link>:<span>가져온 대화가 삭제되었거나 보관이 종료됐습니다.</span>)}</div></article>
         </li>;
       })}
     </ol>}

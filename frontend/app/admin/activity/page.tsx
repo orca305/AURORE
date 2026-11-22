@@ -127,7 +127,7 @@ export default async function ActivityPage({
         </label>
         <input type="hidden" name="limit" value={limit} />
         <div className={styles.activitySearchActions}>
-          <SortSelect value={sort} basis="처리일"/><button type="submit" data-primary>조회</button><ResetSearch/>
+          <SortSelect value={sort} basis="처리일"/><button type="submit" data-primary aria-label="조회" title="조회"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
 
         </div>
       </form>

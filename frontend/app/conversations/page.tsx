@@ -1,3 +1,4 @@
+import { IconLink } from "../_components/icon-link";
 import { PageSizeSelect } from "../_components/page-size-select";
 import { parsePageSize } from "../_components/page-size";
 import { PeriodFields } from "../_components/period-fields";
@@ -34,7 +35,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
         <PeriodFields from={from} to={to} />
       </form>
       <div className="section-heading">
-        <h2>나의 대화</h2><div className="list-tools"><PageSizeSelect value={pageSize}/><Link href="/" data-action-link>새 대화 </Link></div>
+        <h2>나의 대화</h2><div className="list-tools"><PageSizeSelect value={pageSize}/><IconLink href="/" kind="plus" label="새 대화" /></div>
       </div>
       <section className="results conversation-results">
         {result.data ? <HistoryList key={pageSize + q + from + to} initial={result.data} pageSize={pageSize} filter={{ q, from, to }} />

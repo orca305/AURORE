@@ -1,3 +1,4 @@
+import { IconLink } from "../_components/icon-link";
 import { PeriodFields } from "../_components/period-fields";
 import { readPeriod } from "../_components/period-read";
 import { SortSelect } from '../_components/sort-select';
@@ -73,7 +74,7 @@ export default async function CasesPage({
           </h2>
           <div className="list-tools">
             <PageSizeSelect value={limit} />
-            <Link href="/cases/new" data-action-link>사건 등록 </Link>
+            <IconLink href="/cases/new" kind="plus" label="사건 등록" />
           </div>
         </div>
         {!data ? (

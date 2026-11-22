@@ -247,3 +247,8 @@
 .lawFoot a { color: var(--accent); }
 .withSide > .rcol { top: 64px; margin-top: 52px; max-height: calc(100vh - 80px); }
 @media (max-width: 1100px) { .withSide > .rcol { margin-top: 14px; } }
+
+/* 넓은 화면: 대화 영역도 폭을 제한하고 가운데에 둔다 */
+.main { max-width: 1280px; margin-inline: auto; }
+.fresh .usageNotice, .fresh .sourceNote, .fresh .caseHint { max-width: 760px; margin-inline: auto; }
+.footnote { text-align: center; }

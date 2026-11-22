@@ -138,7 +138,7 @@ body button[data-primary]:not(:disabled):not([data-danger]):hover { background:v
 
 /* 시안: 둥근 컨트롤과 카드, 눌렀을 때 분명한 활성 색 */
 input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea, button, .ui-button, a[data-action-link] { border-radius: var(--radius-control); }
-.search, .legal-list > li:first-child { border-radius: var(--radius-card); }
+.search { border-radius: var(--radius-card); }
 .search { background: var(--card-white); box-shadow: 0 1px 3px var(--shadow); }
 button[data-primary], .search button[type=submit] { font-weight: 600; }
 
@@ -175,3 +175,61 @@ button[data-danger], .history-actions button:last-child { color: #7a4b63; }
 .search .period-row select { margin: 0; flex: 0 0 150px; width: 150px; }
 .search .period-row input[type=date] { width: auto; flex: 1 1 150px; min-width: 140px; min-height: 40px; margin: 0; font-size: 14px; }
 .search .period-row > span { flex: none; }
+
+/* ===== 넓은 화면: 본문 폭을 제한해 가운데에 둔다 ===== */
+:root { --content-max: 1180px; }
+.shell { max-width: var(--content-max); margin-inline: auto; }
+.shell + footer.shell, footer.shell { max-width: var(--content-max); }
+.search { max-width: 100%; }
+.section-heading { margin-top: 28px; }
+.search + .section-heading, .search + .results { margin-top: 28px; }
+
+/* ===== 다듬기 1: 검색은 한 줄(제목 + 기간 + 정렬 + 버튼), 버튼은 한 가지 모양 ===== */
+.search:has(.period-row) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 18px; }
+.search:has(.period-row) > label { flex: 0 0 100%; margin: 0 0 2px; }
+.search:has(.period-row) > input[type=hidden] { display: none; }
+.search:has(.period-row) .search-row, .search:has(.period-row) .period-row { display: contents; }
+.search:has(.period-row) .search-row > input:not([type=hidden]) { order: 1; flex: 1 1 260px; min-width: 200px; margin: 0; }
+.search:has(.period-row) .period-row > * { order: 2; margin: 0; }
+.search:has(.period-row) .period-row > select { flex: 0 0 120px; width: 120px; }
+.search:has(.period-row) .period-row > input[type=date] { flex: 0 1 150px; width: 150px; min-width: 130px; }
+.search:has(.period-row) .search-row > select { order: 3; flex: 0 0 96px; width: 96px; margin: 0; }
+.search:has(.period-row) .search-row > button { order: 4; }
+.search:has(.period-row) .search-row > .search-actions { order: 5; }
+
+/* 모든 입력칸·선택칸 높이를 40px로 맞춘다 */
+.search input:not([type=hidden]):not([type=checkbox]):not([type=radio]), .search select { min-height: var(--control-height); height: var(--control-height); padding: 0 12px; border: 1px solid var(--strong-border); background: var(--card-white); color: var(--foreground); font-size: 14px; }
+.search input::placeholder { color: var(--muted); }
+
+/* 버튼 한 가지 모양: 40px, 둥근 모서리, 같은 테두리·글자. 주 버튼만 초록. */
+.ui-button, a[data-action-link], .search-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--control-height); padding: 0 14px; border: 1px solid var(--strong-border); border-radius: var(--radius-control); background: var(--card-white); color: var(--foreground); font-size: 13px; font-weight: 600; line-height: 1; text-decoration: none; box-shadow: 0 1px 2px var(--shadow); }
+.ui-button:not(:disabled):hover, a[data-action-link]:hover, .search-actions button:not(:disabled):hover { background: var(--hover); border-color: var(--strong-border); }
+.icon-button, .search button[aria-label] { width: var(--control-height); padding: 0; }
+button[data-primary] { min-height: var(--control-height); padding: 0 16px; border: 1px solid var(--button-bg); border-radius: var(--radius-control); background: var(--button-bg); color: var(--on-accent); font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px var(--shadow); }
+.search button[type=submit][aria-label="검색"] { width: var(--control-height); padding: 0; }
+
+/* 목록 위쪽 도구(페이지당·새 대화 등)도 같은 높이 */
+.list-tools { gap: 8px; }
+.list-tools select { min-height: 36px; padding: 0 10px; border: 1px solid var(--strong-border); border-radius: var(--radius-control); background: var(--card-white); color: var(--foreground); }
+.list-tools a[data-action-link] { min-height: 36px; }
+
+.section-heading { border-bottom: 1px solid var(--border); }
+.legal-list li:first-child { border-radius: 0; }
+
+/* ===== 다듬기 2: 입력칸 통일, 기간 칸 크기 ===== */
+.search:has(.period-row) .period-row > input[type=date] { flex: 0 1 140px; width: 140px; min-width: 124px; font-size: 13px; }
+.search:has(.period-row) .period-row > span { color: var(--muted); }
+body main input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=range]):not([type=file]), body main select { min-height: var(--control-height); padding: 0 12px; border: 1px solid var(--strong-border); border-radius: var(--radius-control); background: var(--card-white); color: var(--foreground); font-size: 14px; }
+body main textarea { padding: 10px 12px; border: 1px solid var(--strong-border); border-radius: var(--radius-control); background: var(--card-white); color: var(--foreground); font-size: 14px; }
+body main input::placeholder, body main textarea::placeholder { color: var(--muted); }
+body main input:disabled, body main select:disabled, body main textarea:disabled { background: var(--disabled-bg); color: var(--disabled-text); border-color: var(--disabled-border); }
+body main input[type=checkbox], body main input[type=radio] { width: 18px; height: 18px; accent-color: var(--accent); }
+
+/* 관리자 화면 등 모듈 스타일이 덮어쓰지 못하게 같은 버튼 모양을 한 번 더 고정한다 */
+body main .ui-button, body main a[data-action-link] { min-height: var(--control-height); padding: 0 14px; border: 1px solid var(--strong-border); border-radius: var(--radius-control); background: var(--card-white); color: var(--foreground); font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px var(--shadow); }
+body main .ui-button.icon-button, body main .search button[aria-label] { width: var(--control-height); padding: 0; }
+body main .ui-button:not(:disabled):hover, body main a[data-action-link]:hover { background: var(--hover); }
+body main button[data-primary] { background: var(--button-bg); color: var(--on-accent); border: 1px solid var(--button-bg); border-radius: var(--radius-control); min-height: var(--control-height); }
+body main button[data-primary]:not(:disabled):hover { background: var(--button-hover); }
+/* 지표 카드 제목의 링크는 버튼이 아니라 글자 링크로 */
+body main dt a[data-action-link] { min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; font-weight: 500; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; display: inline; }

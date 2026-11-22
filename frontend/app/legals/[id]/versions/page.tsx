@@ -65,7 +65,7 @@ async function VersionResults({ id, searchParams }: { id: string; searchParams: 
       <input type="hidden" name="limit" value={pageSize} />
       <div className="search-row">
         <input type="date" id="edition-date" name="asOf" defaultValue={asOf} min="0001-01-01" max="9999-12-31" />
-        <SortSelect value={sort} basis="시행일"/><button type="submit" data-primary>조회</button><ResetSearch/>
+        <SortSelect value={sort} basis="시행일"/><button type="submit" data-primary aria-label="조회" title="조회"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/>
       </div>
       {asOf && <Link href={path} className="mt-3 inline-block underline">기준일 지우기</Link>}
     </form>

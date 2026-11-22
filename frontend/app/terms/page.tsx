@@ -8,7 +8,7 @@ import { ShortTitle } from "../_components/short-title";
 import { requestTerms } from "../_terms/requests";
 import type { TermList } from "../_terms/types";
 import styles from "../_terms/terms.module.css";
-export const metadata = { title: "법률용어사전 | AURORE" };
+export const metadata = { title: "용어사전 | AURORE" };
 export default async function Terms({
   searchParams,
 }: {
@@ -38,7 +38,7 @@ export default async function Terms({
       <SiteHeader active="terms" />
       <main className="shell">
         <section className="intro">
-          <h1>법률용어사전</h1>
+          <h1>용어사전</h1>
           <p>
             출처의 정의와 쉬운 풀이를 구분해 살펴보세요. 검토 후 공개한 용어를
             제공합니다.
@@ -56,9 +56,7 @@ export default async function Terms({
               placeholder="궁금한 법률용어를 입력하세요"
             />
             <SortSelect value={sort} basis="사전 변경일" />
-            <button type="submit" data-primary>
-              검색
-            </button>
+            <button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button>
             <ResetSearch />
           </div>
         </form>

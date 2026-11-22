@@ -19,7 +19,7 @@ export async function requestAdmin(path: "privacy-retention" | "collection-sched
   if (!token) return null;
   try {
     return await fetch(new URL("/admin/" + path + (query ? "?" + query.toString() : ""), process.env.BACKEND_URL || "http://127.0.0.1:3001"), {
-      headers: { Authorization: "Bearer " + token }, cache: "no-store", signal: AbortSignal.timeout(8000),
+      headers: { Authorization: "Bearer " + token }, cache: "no-store", signal: AbortSignal.timeout(path === "overview" ? 30000 : 8000),
     });
   } catch { return null; }
 }

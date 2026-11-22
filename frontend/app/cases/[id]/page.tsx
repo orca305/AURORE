@@ -1,3 +1,4 @@
+import { IconLink } from "../../_components/icon-link";
 import Link from "next/link";
 import {LinkedChats} from "../../_cases/linked-chats";
 import {CaseTasks} from "../../_cases/case-tasks";
@@ -138,9 +139,9 @@ export default async function CasePage({
           </h2>
           <div className="list-tools">
             <PageSizeSelect value={limit} />
-            <Link href={path + "/timeline?limit=" + limit} data-action-link>타임라인 보기 </Link>
-            <a href={path+"/export"} download>정리본 내려받기 ↓</a>
-            <a href="#add-fact">사실관계 추가 ↓</a>
+            <IconLink href={path + "/timeline?limit=" + limit} kind="timeline" label="타임라인 보기" />
+            <IconLink href={path+"/export"} kind="download" label="정리본 내려받기" download />
+            <IconLink href="#add-fact" kind="plus" label="사실관계 추가" plain />
           </div>
         </div>
         {!data.facts.items.length ? (
@@ -160,7 +161,7 @@ export default async function CasePage({
                     )}
                   </div>
                   <div className={styles.factTools}>
-                    <Link href={path + "/facts/" + row.id} data-action-link>수정 </Link>
+                    <IconLink href={path + "/facts/" + row.id} kind="edit" label="사실관계 수정" />
                     <DeleteCase
                       command={{
                         operation: "deleteFact",

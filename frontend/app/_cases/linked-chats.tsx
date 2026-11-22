@@ -1,3 +1,4 @@
+import { IconLink } from "../_components/icon-link";
 import Link from "next/link";
 import {requestCase} from "./requests";
 import {date} from "../_admin/format";
@@ -11,7 +12,7 @@ export async function LinkedChats({id,limit,offset,query}:{id:string;limit:numbe
     return '/cases/'+id+'?'+params+'#linked-chats';
   };
   return <section className="results" id="linked-chats" aria-label="연결된 대화">
-    <div className="section-heading"><h2>연결된 대화 {data&&<span>{data.total}개</span>}</h2><div className="list-tools"><PageSizeSelect value={limit}/><Link href="/" data-action-link>대화하기 </Link></div></div>
+    <div className="section-heading"><h2>연결된 대화 {data&&<span>{data.total}개</span>}</h2><div className="list-tools"><PageSizeSelect value={limit}/><IconLink href="/" kind="chat" label="대화하기" /></div></div>
     {!data?<p role="alert" className="empty">연결된 대화를 불러오지 못했습니다.</p>:<>
       {!data.items.length?<p className="empty">연결된 대화가 없습니다. 대화 화면의 ‘사건 연결’에서 이 사건을 선택하세요.</p>:<ul className="legal-list">{data.items.map(row=><li key={row.id}><h3><Link href={'/?chat='+row.id}>{row.title}</Link></h3><p>{date(row.updatedAt)} 수정</p></li>)}</ul>}
       <nav className="pagination" aria-label="연결된 대화 페이지">{offset>0&&<Link href={url(Math.max(0,offset-limit))}>← 이전</Link>}<span className="page-status">{Math.floor(offset/limit)+1} 페이지</span>{data.nextOffset!==null&&<Link href={url(data.nextOffset)}>다음 →</Link>}</nav>
