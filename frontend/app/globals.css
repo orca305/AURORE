@@ -307,3 +307,25 @@ body main button[data-primary][aria-label] svg { width: 1.25rem; height: 1.25rem
 /* 제목 오른쪽에 보조 아이콘(원문 보기 등)을 붙이는 줄 */
 .title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 .title-line h1 { margin: 0; }
+
+/* 한글은 단어 단위로 줄바꿈한다(예: "편하/게" 처럼 단어 중간에서 끊기지 않게). 아주 긴 문자열만 강제로 끊는다. */
+body { word-break: keep-all; overflow-wrap: break-word; }
+
+/* ===== 모바일(약 650px 이하) ===== */
+@media (max-width: 40.625em) {
+  :root { --content-top-space: 1.25rem; --content-gutter: 1rem; --control-height: 2.75rem; --content-width: calc(100% - 2rem); }
+  body:has([data-site-navigation]) { padding-left: 0; padding-top: 3.25rem; padding-bottom: calc(4rem + env(safe-area-inset-bottom)); }
+  .shell { padding-inline: 0; }
+  .intro { padding-right: 0; padding-bottom: 1rem; }
+  h1 { font-size: 1.5rem; }
+  .site-copyright { position: static; display: block; padding: 1.25rem 1rem 0; background: none; text-align: center; }
+  .search { padding: 1rem; }
+  .pagination { flex-wrap: wrap; }
+}
+@media (max-width: 40.625em) {
+  .legal-list li, .history-list li { padding: 1rem; }
+  .history-list li { gap: 0.5rem; }
+}
+@media (max-width: 40.625em) {
+  .pagination { padding-right: 3.5rem; }
+}

@@ -371,3 +371,26 @@
 .feedbackForm label { gap: 0.6rem; padding: 0.15rem 0; }
 .feedbackForm textarea { min-height: 5rem; font-size: 0.875rem; }
 .feedback .sourceNote { margin-top: 1rem; line-height: 1.9; }
+
+/* ===== 모바일 다듬기(약 650px 이하) ===== */
+@media (max-width: 40.625em) {
+  .main, .main:has(.fresh) { padding: 1rem 0 1.5rem; }
+  .context { padding-right: 0; }
+  .fresh .heroPill { margin-bottom: 0.875rem; font-size: 0.8125rem; }
+  .fresh .context h1 { font-size: 1.625rem; line-height: 1.4; white-space: normal; }
+  .fresh .context p { margin-top: 0.75rem; font-size: 0.9375rem; line-height: 1.7; }
+  .fresh .composer.initialComposer { margin-top: 1.25rem; padding: 0.875rem 1rem; border-radius: 1.25rem; }
+  .fresh .composer textarea, .composer textarea { min-height: 6.5rem; font-size: 1rem; }
+  .composeFooter { justify-content: flex-end; align-items: center; gap: 0.5rem; padding-top: 0.625rem; margin-top: 0.5rem; }
+  .composeFooter p { display: none; }
+  .composeActions { flex-wrap: nowrap; gap: 0.5rem; margin-left: auto; }
+  .fresh .caseHint { margin-top: 0.875rem; font-size: 0.75rem; }
+  .userMessage, .assistantMessage { padding: 1rem; }
+  .feedbackButtons button { min-height: 2.5rem; padding-inline: 1rem; }
+}
+@media (max-width: 40.625em) {
+  .userMessage, .assistantMessage { padding-inline: 0; }
+  .assistantMessage .speech, .assistantMessage:last-child .speech { padding: 1rem; }
+  .conclusion { padding: 0.875rem 1rem; }
+  .oneLine { font-size: 1.25rem; }
+}
