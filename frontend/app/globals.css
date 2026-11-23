@@ -235,7 +235,7 @@ body main button[data-primary]:not([aria-pressed]):not(:disabled):hover { backgr
 body main dt a[data-action-link] { min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; font-weight: 500; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; display: inline; }
 
 /* 화면 크기에 맞춰 글자와 칸이 함께 커지도록, 기준 글자 크기를 화면 폭에 따라 자연스럽게 키운다 */
-html { font-size: clamp(80%, 0.56rem + 0.28vw, 100%); }
+html { font-size: clamp(88%, 0.616rem + 0.308vw, 110%); }
 
 /* ===== 크기 체계: 모든 버튼·선택칸·입력칸이 같은 높이 ===== */
 .page-size select, .pagination a, .pagination button, .list-tools select, .list-tools a[data-action-link], .ui-button, a[data-action-link] { height: var(--control-height); min-height: var(--control-height); box-sizing: border-box; }

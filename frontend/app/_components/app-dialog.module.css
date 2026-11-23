@@ -1,0 +1,24 @@
+.dialog { position: fixed; inset: 0; margin: auto; width: min(24rem, calc(100vw - 2rem)); max-height: calc(100svh - 2rem); padding: 1.75rem 1.5rem 1.25rem; border: 1px solid var(--border); border-radius: 1.25rem; background: var(--card-white); color: var(--foreground); box-shadow: 0 24px 60px -12px var(--shadow), 0 4px 16px var(--shadow); animation: dialog-in .18s ease-out; }
+.dialog::backdrop { background: rgb(15 23 35 / .45); backdrop-filter: blur(3px); animation: backdrop-in .18s ease-out; }
+.body { display: grid; justify-items: center; gap: 0.625rem; text-align: center; }
+.icon { display: inline-flex; align-items: center; justify-content: center; width: 3.25rem; height: 3.25rem; margin-bottom: 0.25rem; border-radius: 50%; background: var(--selected); color: var(--accent); }
+.dialog[data-tone="danger"] .icon { background: var(--danger-surface); color: var(--danger); }
+.body h2 { margin: 0; font: 700 1.125rem/1.5 "Noto Sans KR", "Malgun Gothic", sans-serif; letter-spacing: -.01em; }
+.body p { margin: 0; color: var(--muted); font-size: 0.875rem; line-height: 1.7; }
+.actions { display: flex; gap: 0.625rem; margin-top: 1.5rem; }
+.actions button { flex: 1; min-height: 2.75rem; padding: 0 1rem; border-radius: 0.75rem; font-size: 0.9375rem; font-weight: 600; cursor: pointer; transition: background .12s, transform .08s; }
+.actions button:active { transform: scale(.98); }
+.cancel { border: 1px solid var(--strong-border); background: var(--background); color: var(--foreground); }
+.cancel:hover { background: var(--hover); }
+.ok { border: 1px solid var(--button-bg); background: var(--button-bg); color: var(--on-accent); }
+.ok:hover { background: var(--button-hover); border-color: var(--button-hover); }
+.ok[data-tone="danger"] { border-color: var(--danger); background: var(--danger); color: #fff; }
+.ok[data-tone="danger"]:hover { filter: brightness(.92); background: var(--danger); border-color: var(--danger); }
+.actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dialog, .dialog::backdrop { animation: none; } }
+@media (max-width: 40.625em) {
+  .dialog { inset: auto 0 0 0; width: 100%; max-height: none; margin: 0; padding-bottom: calc(1.25rem + env(safe-area-inset-bottom)); border-radius: 1.25rem 1.25rem 0 0; border-bottom: 0; animation: sheet-in .22s ease-out; }
+}

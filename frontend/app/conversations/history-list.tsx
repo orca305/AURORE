@@ -1,6 +1,7 @@
 "use client";
 
 import { RenameChat } from "../_components/rename-chat";
+import { useAppDialog } from "../_components/app-dialog";
 import Link from "next/link";
 import { useState } from "react";
 import { deleteChat, moreChats } from "../_conversation/actions";
@@ -9,13 +10,15 @@ import type { ChatList } from "../_conversation/types";
 import { shortDate } from "../_components/format-date";
 
 export function HistoryList({ initial, pageSize, filter }: { initial: ChatList; pageSize: number; filter: { q: string; from: string; to: string; sort: string } }) {
+  const { confirm, dialog } = useAppDialog();
   const [items, setItems] = useState(initial.items);
   const [cursor, setCursor] = useState(initial.nextCursor);
   const [pageCursors, setPageCursors] = useState([""]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function remove(id: string, revision: number) {
+  async function remove(id: string, revision: number, title: string) {
+    if (!(await confirm({ title: "이 대화를 삭제할까요?", message: "「" + title + "」 대화가 목록에서 사라져요.", confirmLabel: "삭제", cancelLabel: "취소", tone: "danger" }))) return;
     setBusy(true);
     try {
       const result = await deleteChat(id, revision);
@@ -54,7 +57,7 @@ export function HistoryList({ initial, pageSize, filter }: { initial: ChatList; 
           <p>{shortDate(row.updatedAt)} 수정</p>
           {row.expiresAt && <p>{shortDate(row.expiresAt)}까지 보관</p>}
         </div>
-        <div className="history-actions"><RenameChat chat={row} onRenamed={next=>setItems(previous=>previous.map(item=>item.id===next.id?{...item,title:next.title,revision:next.revision,updatedAt:next.updatedAt??item.updatedAt}:item))}/><button type="button" disabled={busy} onClick={() => void remove(row.id, row.revision)}
+        <div className="history-actions"><RenameChat chat={row} onRenamed={next=>setItems(previous=>previous.map(item=>item.id===next.id?{...item,title:next.title,revision:next.revision,updatedAt:next.updatedAt??item.updatedAt}:item))}/><button type="button" disabled={busy} onClick={() => void remove(row.id, row.revision, row.title)}
           aria-label={row.title + " 대화 삭제"} title="대화 삭제"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6m4-6v6" /></svg></button></div>
       </li>)}</ul>}
     <nav className="pagination" aria-label="대화 목록 페이지">
@@ -62,5 +65,6 @@ export function HistoryList({ initial, pageSize, filter }: { initial: ChatList; 
       <span className="page-status" aria-live="polite">{pageCursors.length} 페이지</span>
       <button type="button" disabled={busy || !cursor} onClick={() => void loadPage("next")} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></button>
     </nav>
+    {dialog}
   </>;
 }
