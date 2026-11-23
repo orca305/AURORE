@@ -74,6 +74,41 @@ export class LegalService {
     });
   }
 
+  /** 법령 이름 검색 결과 전체 개수(목록 아래 페이지 번호용). 이름 검색 규칙은 findAll 과 같다. */
+  async countAll(query: ListLegalsDto) {
+    const escape = (value: string) => value.normalize('NFC').replace(/[\\%_]/g, '\\$&');
+    const q = query.q?.trim();
+    const filter = q
+      ? Prisma.sql`AND (l.legal_nm ILIKE ${'%' + escape(q) + '%'} OR replace(l.legal_nm, ' ', '') ILIKE ${'%' + escape(q.replace(/\s+/g, '')) + '%'})`
+      : Prisma.empty;
+    const [row] = await this.prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`SELECT count(*) AS total FROM legal l WHERE NOT l.del_yn ${filter}`);
+    return { total: Number(row?.total ?? 0) };
+  }
+
+  /** 판례 검색 결과 전체 개수(목록 아래 페이지 번호용). 검색 조건은 precedents 와 같다. */
+  async countPrecedents(query: ListLegalsDto) {
+    const keyword = query.q?.trim() ?? '';
+    const contains = keyword.replace(/[\\%_]/g, '\\$&');
+    const period = dayRange(query.from, query.to);
+    const total = await this.prisma.legalPrecRev.count({
+      where: {
+        currentYn: true,
+        precedent: { delYn: false },
+        ...(period ? { decisionDt: period } : {}),
+        ...(keyword ? {
+          OR: [
+            { caseNo: keyword },
+            { caseNm: { contains, mode: 'insensitive' as const } },
+            { issueCont: { contains, mode: 'insensitive' as const } },
+            { summaryCont: { contains, mode: 'insensitive' as const } },
+            { decisionCont: { contains, mode: 'insensitive' as const } },
+          ],
+        } : {}),
+      },
+    });
+    return { total };
+  }
+
   async precedents(query: ListLegalsDto) {
     const keyword = query.q?.trim() ?? '';
     const contains = keyword.replace(/[\\%_]/g, '\\$&');

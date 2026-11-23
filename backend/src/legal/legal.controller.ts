@@ -37,6 +37,16 @@ export class LegalController {
     return this.legal.findAll(query);
   }
 
+  @Get('count')
+  countAll(@Query() query: ListLegalsDto) {
+    return this.legal.countAll(query);
+  }
+
+  @Get('precedents/count')
+  countPrecedents(@Query() query: ListLegalsDto) {
+    return this.legal.countPrecedents(query);
+  }
+
   @Post()
   @UseGuards(IngestGuard)
   create(@Body() input: CreateLegalDto) {

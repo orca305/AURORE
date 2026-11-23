@@ -1,3 +1,4 @@
+import { Pagination } from "../_components/pagination";
 import { KindBadge, legalKind } from "../_components/kind-badge";
 import { ShortTitle } from '../_components/short-title';
 import { ResetSearch } from '../_components/page-actions';
@@ -22,7 +23,13 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
   const offset = /^\d{1,6}$/.test(offsetValue) ? Math.min(Number(offsetValue), 100000) : 0;
   let rows: Legal[] = [];
   let unavailable = false;
+  let total: number | null = null;
   try {
+    const countUrl = new URL("/legals/count", process.env.BACKEND_URL || "http://127.0.0.1:3001");
+    countUrl.search = new URLSearchParams({ q }).toString();
+    const countResponse = await fetch(countUrl, { cache: "no-store", signal: AbortSignal.timeout(5000) }).catch(() => null);
+    const counted: unknown = countResponse?.ok ? await countResponse.json().catch(() => null) : null;
+    if (counted && typeof (counted as { total?: unknown }).total === "number") total = (counted as { total: number }).total;
     const url = new URL("/legals", process.env.BACKEND_URL || "http://127.0.0.1:3001");
     url.search = new URLSearchParams({ q, sort, offset: String(offset), limit: String(pageSize + 1) }).toString();
     const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(5000) });
@@ -59,11 +66,7 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
           </Link>
 
         </li>)}</ul>}
-      {!unavailable && <nav aria-label="검색 결과 페이지" className="pagination">
-        <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지</span>
-        {offset > 0 && <a href={pageUrl(Math.max(0, offset - pageSize))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></a>}
-        {rows.length > pageSize && offset < 100000 && <a href={pageUrl(Math.min(100000, offset + pageSize))} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></a>}
-      </nav>}
+      {!unavailable && <Pagination label="검색 결과 페이지" offset={offset} limit={pageSize} total={total} hasNext={rows.length > pageSize} href={pageUrl} />}
     </section>
   </>;
 }

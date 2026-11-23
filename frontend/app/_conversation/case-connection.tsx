@@ -1,4 +1,5 @@
 "use client";
+import { Pagination } from "../_components/pagination";
 import Link from "next/link";
 import {useState,type FormEvent} from "react";
 import {caseChoices} from "./actions";
@@ -34,7 +35,7 @@ export function CaseConnection({chat,pending,onSave}:{chat:ChatDetail;pending:bo
           {data?.items.map(row=><label className={styles.option} key={row.id}><input type="radio" name="caseId" checked={selected===row.id} onChange={()=>{setSelected(row.id);setSelectedTitle(row.title);setConfirmed(false);}}/><span>{row.title}<small>{row.typeName} · 사실관계 {row.factCount}개</small></span></label>)}
           {data&&!data.items.length&&<p>조건에 맞는 사건이 없습니다. <Link href="/cases/new" data-action-link>사건 등록 </Link></p>}
         </fieldset>
-        {data&&<nav className={styles.paging} aria-label="연결할 사건 페이지"><button type="button" disabled={loading||pending||data.offset===0} onClick={()=>void load(term,limit,Math.max(0,data.offset-limit))}>← 이전</button><span>{Math.floor(data.offset/limit)+1} 페이지 · {data.total}개</span><button type="button" disabled={loading||pending||data.nextOffset===null} onClick={()=>void load(term,limit,data.nextOffset!)}>다음 →</button></nav>}
+        {data&&<Pagination compact label="사건 목록 페이지" offset={data.offset} limit={limit} total={data.total} hasNext={data.nextOffset!==null} disabled={loading||pending} onGo={(next)=>void load(term,limit,next)} />}
         <p className={styles.selection} role="status">저장할 연결 · {selected?selectedTitle:'연결 해제'}{selected===chat.linkedCase?.id?' · 현재 연결':''}</p>
         <label className={styles.option}><input type="checkbox" checked={confirmed} onChange={event=>setConfirmed(event.target.checked)} required disabled={pending||loading||saving}/>연결하거나 해제할 내용을 확인했습니다.</label>
         {error&&<p role="alert" className={styles.error}>{error}</p>}

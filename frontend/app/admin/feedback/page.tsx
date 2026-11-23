@@ -1,3 +1,4 @@
+import { Pagination } from "../../_components/pagination";
 import Link from "next/link";
 import { requestAdmin } from "../../_admin/requests";
 import { date } from "../../_admin/format";
@@ -63,9 +64,6 @@ export default async function FeedbackPage({ searchParams }: { searchParams: Pro
         <td><Link href={"/admin/feedback/" + row.id}>자세히</Link></td>
       </tr>) : <tr><td colSpan={6}>조건에 맞는 피드백이 없어요.</td></tr>}</tbody>
     </table></div>
-    {(offset > 0 || data.nextOffset !== null) && <nav className="pagination" aria-label="피드백 페이지">
-      {offset > 0 && <Link href={pageUrl(Math.max(0, offset - limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>}
-      {data.nextOffset !== null && <Link href={pageUrl(data.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>}
-    </nav>}
+    <Pagination label="피드백 페이지" offset={offset} limit={limit} total={data.total} hasNext={data.nextOffset !== null} href={pageUrl} />
   </>;
 }

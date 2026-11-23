@@ -1,3 +1,4 @@
+import { Pagination } from "../_components/pagination";
 import {shortDate} from "../_components/format-date";
 import {isNotificationPage} from '../_components/list-response';
 import { ResetSearch } from '../_components/page-actions';
@@ -28,7 +29,7 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
  {!data?<p role="status" className="empty">알림을 불러오지 못했습니다. 잠시 후 다시 확인해 주세요.</p>:<>
  {data.sync.failed&&<p role="status" className={styles.failure}>새 알림 확인이 지연되고 있습니다. 기존 알림은 확인할 수 있으며 서버에서 다시 시도합니다.</p>}
  {!data.items.length?<p className="empty">{offset>0&&data.total>0?'이 페이지에 표시할 알림이 없습니다.':kind!=='ALL'?'현재 조건에 맞는 알림이 없습니다.':filter==='UNREAD'?'읽지 않은 알림이 없습니다.':'받은 알림이 없습니다. 관심 법령·판례를 등록하면 이후 변경 소식을 받을 수 있습니다.'}{offset>0&&<>{' '}<Link href={pageUrl(0)}>처음부터 보기</Link></>}</p>:<ul className={styles.list}>{data.items.map(row=><li key={row.id} data-unread={!row.readAt}><div className={styles.detail}><div className={styles.meta}><span>{row.targetKind==='PREC'?'판례 · ':''}{labels[row.kind]}{row.scope==='PROVISIONS'?' · 일부 조문':''}</span>{!row.readAt&&<span className={styles.unread}>새 알림</span>}<span>기준일 {row.baseDate}</span></div><h3><Link href={row.href}>{row.title}</Link></h3><p>{row.content}</p><div className={styles.meta}><span>받은 시각 {date(row.deliveredAt)}</span><Link href={row.href} data-action-link>{row.kind==='CORRECTED'?'정정 전후 비교 ':'현재 시행본 보기 '}</Link></div></div>{!row.readAt?<ReadNotification id={row.id}/>:<span className={styles.meta}>읽음</span>}</li>)}</ul>}
- <nav className="pagination" aria-label="알림 페이지"><span className="page-status">{Math.floor(offset/limit)+1} 페이지</span>{offset>0&&<Link href={pageUrl(Math.max(0,offset-limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>}{data.nextOffset!==null&&<Link href={pageUrl(data.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>}</nav>
+ <Pagination label="알림 페이지" offset={offset} limit={limit} total={data.total} hasNext={data.nextOffset !== null} href={pageUrl} />
  <p className={styles.note}>서버 실행 중 약 1분마다 새 변경을 확인합니다. 원문 정정은 저장 자료의 수정이며 법률 개정이나 새 판결 선고와 구분됩니다.</p>
  </>}
  </section></main></div>;

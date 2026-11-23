@@ -1,3 +1,4 @@
+import { Pagination } from "../_components/pagination";
 import { PeriodFields } from "../_components/period-fields";
 import { readPeriod } from "../_components/period-read";
 import { KindBadge, caseKind } from "../_components/kind-badge";
@@ -39,6 +40,19 @@ function officialUrl(value: string | null) {
   const url = value && URL.parse(value);
   return url && url.protocol === "https:" && url.hostname === "www.law.go.kr" &&
     !url.port && !url.username && !url.password ? url.href : null;
+}
+
+async function fetchPrecedentTotal(q: string, from: string, to: string): Promise<number | null> {
+  try {
+    const url = new URL("/legals/precedents/count", process.env.BACKEND_URL || "http://127.0.0.1:3001");
+    url.search = new URLSearchParams({ q, from, to }).toString();
+    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return null;
+    const data: unknown = await response.json();
+    return data && typeof (data as { total?: unknown }).total === "number" ? (data as { total: number }).total : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchPrecedents(q: string, offset: number, pageSize: number, sort: string, from: string, to: string): Promise<Precedent[] | null> {
@@ -98,7 +112,7 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
   const offset = /^\d{1,6}$/.test(rawOffset) ? Math.min(Number(rawOffset), maxOffset) : 0;
   // params 는 위에서 이미 읽었다
   const from = readPeriod(params.from), to = readPeriod(params.to);
-  const rows = await fetchPrecedents(q, offset, pageSize, sort, from, to);
+  const [rows, total] = await Promise.all([fetchPrecedents(q, offset, pageSize, sort, from, to), fetchPrecedentTotal(q, from, to)]);
   const member=Boolean(await currentMember());
   const saved=member?await bookmarkStates('PREC',(rows??[]).slice(0,pageSize).map(row=>row.id)):null;
   const pageUrl = (offset: number) => `/precedents?${new URLSearchParams({ q, sort, from, to, offset: String(offset), limit: String(pageSize) })}`;
@@ -125,12 +139,7 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
           {rows.slice(0, pageSize).map(row => <PrecedentCard key={row.sourceUrl} row={row} member={member} saved={saved?saved.has(row.id):null} />)}
         </ul>}
       {rows !== null && (rows.length > 0 || offset > 0) &&
-        <nav aria-label="판례 검색 결과 페이지" className="pagination">
-          <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지</span>
-          {offset > 0 && <a href={pageUrl(Math.max(0, offset - pageSize))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></a>}
-          {rows.length > pageSize && offset < maxOffset &&
-            <a href={pageUrl(Math.min(maxOffset, offset + pageSize))} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></a>}
-        </nav>}
+        <Pagination label="판례 검색 결과 페이지" offset={offset} limit={pageSize} total={total} hasNext={rows.length > pageSize} href={pageUrl} />}
     </section>
   </>;
 }

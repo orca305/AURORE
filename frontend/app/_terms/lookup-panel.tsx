@@ -1,4 +1,5 @@
 "use client";
+import { Pagination } from "../_components/pagination";
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import Link from 'next/link';
 import {PageSizeSelect} from '../_components/page-size-select';
@@ -23,6 +24,6 @@ export function TermLookupPanel({onClose,initialQuery=''}:{onClose:()=>void;init
  {error&&<p role="alert" className={styles.error}>{error}</p>}
  {data&&!data.items.length&&<p className={styles.help}>공개된 용어를 찾지 못했습니다. 다른 표현으로 검색해 보세요.</p>}
  {data&&<ul className={styles.results}>{data.items.map(row=><li key={row.id}><h3>{row.termName}</h3><p className={styles.definition}>{row.definition}{row.definition.length===240?'…':''}</p><p className={styles.help}>{row.sourceName}{row.sourceReference?' · '+row.sourceReference:''}</p><div className={styles.links}><Link href={'/terms/'+row.id} target="_blank" rel="noopener noreferrer">정의와 풀이 자세히 보기</Link><a href={row.sourceUrl} target="_blank" rel="noopener noreferrer">출처 원문</a></div></li>)}</ul>}
- {data&&<nav className={styles.heading} aria-label="대화 용어 검색 페이지"><button className="ui-button" type="button" disabled={pending||data.offset===0} onClick={()=>void load(data.q,Math.max(0,data.offset-limit))}>이전</button><span>{Math.floor(data.offset/data.limit)+1} 페이지</span><button className="ui-button" type="button" disabled={pending||data.nextOffset===null} onClick={()=>void load(data.q,data.nextOffset!)}>다음</button></nav>}
+ {data&&<Pagination compact label="용어 검색 페이지" offset={data.offset} limit={data.limit} hasNext={data.nextOffset!==null} disabled={pending} onGo={(next)=>void load(data.q,next)} />}
  </section>;
 }

@@ -1,3 +1,4 @@
+import { Pagination } from "../../../_components/pagination";
 import { IconLink } from "../../../_components/icon-link";
 import { ResetSearch } from '../../../_components/page-actions';
 import { parsePageSize } from "../../../_components/page-size";
@@ -91,12 +92,7 @@ async function VersionResults({ id, searchParams }: { id: string; searchParams: 
           })}
         </ul>}
       {result.status === "ok" && (result.rows.length > 0 || offset > 0) &&
-        <nav aria-label="시행본 결과 페이지" className="pagination">
-          <span className="page-status">{Math.floor(offset / pageSize) + 1} 페이지</span>
-          {offset > 0 && <Link href={pageUrl(Math.max(0, offset - pageSize))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>}
-          {result.rows.length > pageSize && offset < maxOffset &&
-            <Link href={pageUrl(Math.min(maxOffset, offset + pageSize))} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>}
-        </nav>}
+        <Pagination label="시행본 결과 페이지" offset={offset} limit={pageSize} hasNext={result.rows.length > pageSize} href={pageUrl} />}
     </section>
   </>;
 }

@@ -1,3 +1,4 @@
+import { Pagination } from "../../_components/pagination";
 import { ResetSearch } from '../../_components/page-actions';
 import Link from "next/link";
 import { requestAdmin, type MemberList } from "../../_admin/requests";
@@ -159,21 +160,7 @@ export default async function MembersPage({
           </p>
         )}
       </div>
-      <nav className="pagination" aria-label="회원 목록 페이지">
-        {offset > 0 && (
-          <Link href={pageUrl(Math.max(0, offset - limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>
-        )}
-        <span className="page-status">
-          {Math.floor(offset / limit) + 1} 페이지 ·{" "}
-          {data.items.length
-            ? `${number.format(offset + 1)}–${number.format(offset + data.items.length)}명`
-            : "0명"}{" "}
-          / {number.format(data.total)}명
-        </span>
-        {data.nextOffset !== null && (
-          <Link href={pageUrl(data.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>
-        )}
-      </nav>
+      <Pagination label="회원 목록 페이지" offset={offset} limit={limit} total={data.total} hasNext={data.nextOffset !== null} href={pageUrl} />
     </>
   );
 }

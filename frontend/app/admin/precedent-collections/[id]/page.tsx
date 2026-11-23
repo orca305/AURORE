@@ -1,3 +1,4 @@
+import { Pagination } from "../../../_components/pagination";
 import Link from "next/link";
 import {notFound} from "next/navigation";
 import {requestAdmin,type CollectionDetail} from "../../../_admin/requests";
@@ -15,5 +16,5 @@ export default async function Collection({params,searchParams}:{params:Promise<{
  return <><Link className={styles.back} href="/admin/precedent-collections">← 수집 묶음</Link><div className={styles.sectionTitle}><div><h2>{data.label}</h2><p>후보 {data.total}건 · 원문 수집 {data.collected}건 · 미수집 {data.total-data.collected}건</p></div></div>
  <p className={styles.notice}>수집된 원문만 대조할 수 있습니다. 수집 완료 표시는 DB 반영 여부와 별개입니다.</p><div className="pagination"><PageSizeSelect value={limit}/></div>
  <div className={styles.tableWrap}><table><caption>판례별 수집 상태</caption><thead><tr><th>사건번호</th><th>판례 번호</th><th>원문 상태</th><th>수집 시각</th><th>원문 검토</th></tr></thead><tbody>{data.items.map(row=><tr key={row.sourceId}><td>{row.caseNumber}</td><td>{row.sourceId}</td><td><span className={styles.badge} data-tone={row.ready?'success':undefined}>{row.ready?'수집 완료':'수집 전'}</span></td><td>{row.collectedAt?date(row.collectedAt):'—'}</td><td>{row.ready?<Link href={'/admin/precedent-collections/'+id+'/items/'+row.sourceId} data-action-link>기존 원문과 대조 </Link>:'원문 수집 후 확인'}</td></tr>)}</tbody></table></div>
- <nav className="pagination" aria-label="수집 후보 페이지">{offset>0&&<Link href={url(Math.max(0,offset-limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>}<span className="page-status">{Math.floor(offset/limit)+1} 페이지</span>{data.nextOffset!==null&&<Link href={url(data.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>}</nav></>;
+ <Pagination label="수집 후보 페이지" offset={offset} limit={limit} total={data.total} hasNext={data.nextOffset !== null} href={url} /></>;
 }

@@ -1,3 +1,4 @@
+import { Pagination } from "../../_components/pagination";
 import { IconLink } from "../../_components/icon-link";
 import Link from "next/link";
 import {LinkedChats} from "../../_cases/linked-chats";
@@ -181,17 +182,7 @@ export default async function CasePage({
             ))}
           </ul>
         )}
-        <nav className="pagination" aria-label="사실관계 페이지">
-          {pageOffset > 0 && (
-            <Link href={pageUrl(Math.max(0, pageOffset - limit))} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>
-          )}
-          <span className="page-status">
-            {Math.floor(pageOffset / limit) + 1} 페이지
-          </span>
-          {data.facts.nextOffset !== null && (
-            <Link href={pageUrl(data.facts.nextOffset)} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>
-          )}
-        </nav>
+        <Pagination label="사실관계 페이지" offset={pageOffset} limit={limit} hasNext={data.facts.nextOffset !== null} href={pageUrl} />
       </section>
       <section id="add-fact" className={styles.section}>
         <div className="section-heading">
@@ -231,22 +222,7 @@ export default async function CasePage({
             </div>
           </details>
         ))}
-        <nav className="pagination" aria-label="사건 변경 이력 페이지">
-          {historyOffset > 0 && (
-            <Link
-              href={pageUrl(
-                Math.max(0, historyOffset - limit),
-                "historyOffset",
-              )}
-             aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>
-          )}
-          <span className="page-status">
-            {Math.floor(historyOffset / limit) + 1} 페이지
-          </span>
-          {data.history.nextOffset !== null && (
-            <Link href={pageUrl(data.history.nextOffset, "historyOffset")} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>
-          )}
-        </nav>
+        <Pagination label="사건 변경 이력 페이지" offset={historyOffset} limit={limit} hasNext={data.history.nextOffset !== null} href={pageUrl} />
       </details>
     </>
   );

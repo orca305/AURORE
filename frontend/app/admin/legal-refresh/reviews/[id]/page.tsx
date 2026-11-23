@@ -1,3 +1,4 @@
+import { Pagination } from "../../../../_components/pagination";
 import {parsePageSize} from "../../../../_components/page-size";
 import {PageSizeSelect} from "../../../../_components/page-size-select";
 import { ApprovalForm } from "./approval-form";
@@ -20,6 +21,6 @@ export default async function ReviewPage({params,searchParams}:{params:Promise<{
     {data.changes.map(change=><section className={styles.change} key={change.key}><div className={styles.sectionTitle}><h3>{change.after?.number ?? change.before?.number ?? change.key} {change.after?.title ?? change.before?.title ?? ""}</h3><span className={styles.badge}>{change.change==="added" ? "추가" : change.change==="removed" ? "삭제" : "변경"}</span></div><div className={styles.comparison}><div><h4>정정 전</h4><p>{change.before?.text ?? "해당 조문 없음"}</p></div><div><h4>정정 후</h4><p>{change.after?.text ?? "해당 조문 없음"}</p></div></div></section>)}
     {!data.totalChanges && <p className={styles.empty}>조문 본문 변경은 없습니다. 원문의 다른 항목이 변경된 후보입니다.</p>}
     {data.status==="ready-to-review" && <ApprovalForm id={data.id} beforeHash={data.beforeHash} afterHash={data.afterHash}/>}
-    <nav className="pagination" aria-label="변경 조문 페이지"><PageSizeSelect value={pageSize}/>{data.offset>0 && <Link href={"?offset="+Math.max(0,data.offset-pageSize)+"&limit="+pageSize} aria-label="이전 페이지" title="이전 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg></Link>}<span className="page-status">{Math.floor(data.offset/pageSize)+1} 페이지</span>{data.nextOffset!==null && <Link href={"?offset="+data.nextOffset+"&limit="+pageSize} aria-label="다음 페이지" title="다음 페이지"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></Link>}</nav>
+    <div className="pagination"><PageSizeSelect value={pageSize}/></div><Pagination label="변경 조문 페이지" offset={data.offset} limit={pageSize} hasNext={data.nextOffset!==null} href={(next) => "?offset=" + next + "&limit=" + pageSize} />
   </>;
 }
