@@ -235,7 +235,7 @@ body main button[data-primary]:not([aria-pressed]):not(:disabled):hover { backgr
 body main dt a[data-action-link] { min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; font-weight: 500; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; display: inline; }
 
 /* 화면 크기에 맞춰 글자와 칸이 함께 커지도록, 기준 글자 크기를 화면 폭에 따라 자연스럽게 키운다 */
-html { font-size: clamp(100%, 0.7rem + 0.35vw, 125%); }
+html { font-size: clamp(80%, 0.56rem + 0.28vw, 100%); }
 
 /* ===== 크기 체계: 모든 버튼·선택칸·입력칸이 같은 높이 ===== */
 .page-size select, .pagination a, .pagination button, .list-tools select, .list-tools a[data-action-link], .ui-button, a[data-action-link] { height: var(--control-height); min-height: var(--control-height); box-sizing: border-box; }
@@ -329,3 +329,10 @@ body { word-break: keep-all; overflow-wrap: break-word; }
 @media (max-width: 40.625em) {
   .pagination { padding-right: 3.5rem; }
 }
+
+/* 화면 이동 중 진행 표시줄 */
+.nav-progress { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 100; pointer-events: none; background: linear-gradient(90deg, transparent, var(--accent), transparent) no-repeat; background-size: 40% 100%; animation: nav-progress 0.9s ease-in-out infinite; }
+@keyframes nav-progress { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+@media (prefers-reduced-motion: reduce) { .nav-progress { animation: none; background-size: 100% 100%; opacity: .6; } }
+/* 모바일은 기본 크기를 그대로 둔다(작아지면 읽기 어렵다). */
+@media (max-width: 40.625em) { html { font-size: 100%; } }

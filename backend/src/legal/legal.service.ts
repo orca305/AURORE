@@ -44,13 +44,23 @@ export class LegalService {
 
   comparison(id:bigint,query:CompareVersionsDto){return compareStoredVersions(this.prisma,id,query);}
 
+  /** 띄어쓰기를 무시하고 법령 이름을 찾는다("근로 기준법"과 "근로기준법", "상가건물임대차보호법"과 "상가건물 임대차보호법" 모두 같은 결과). */
+  private async legalIdsByName(q: string): Promise<bigint[]> {
+    const escape = (value: string) => value.normalize('NFC').replace(/[\\%_]/g, '\\$&');
+    const plain = '%' + escape(q.trim()) + '%';
+    const compact = '%' + escape(q.replace(/\s+/g, '')) + '%';
+    const rows = await this.prisma.$queryRaw<{ id: bigint }[]>(
+      Prisma.sql`SELECT id FROM legal WHERE NOT del_yn AND (legal_nm ILIKE ${plain} OR replace(legal_nm, ' ', '') ILIKE ${compact})`,
+    );
+    return rows.map((row) => row.id);
+  }
+
   async findAll(query: ListLegalsDto) {
+    const ids = query.q?.trim() ? await this.legalIdsByName(query.q) : null;
     const rows = await this.prisma.legal.findMany({
       where: {
         delYn: false,
-        ...(query.q
-          ? { legalNm: { contains: query.q, mode: 'insensitive' as const } }
-          : {}),
+        ...(ids ? { id: { in: ids } } : {}),
       },
       select: publicSelect,
       orderBy: [{ rgstDttm: query.sort==='oldest'?'asc':'desc' },{id:query.sort==='oldest'?'asc':'desc'}],

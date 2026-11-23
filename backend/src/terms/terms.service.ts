@@ -95,6 +95,8 @@ export class TermsService {
         .normalize('NFC')
         .replace(/[\\%_]/g, '\\$&'),
       pattern = '%' + term + '%',
+      // 띄어쓰기 무시: 검색어와 용어 이름·동의어의 공백을 모두 뺀 형태로도 비교한다("최고 이자"와 "최고이자" 모두 찾는다).
+      compactPattern = '%' + term.replace(/\s+/g, '') + '%',
       direction = query.sort === 'oldest' ? Prisma.sql`ASC` : Prisma.sql`DESC`;
     const visibility = administrative
       ? query.state === 'DELETED'
@@ -103,7 +105,7 @@ export class TermsService {
           ? Prisma.sql`NOT t.del_yn`
           : Prisma.sql`NOT t.del_yn AND t.stat_cd=${query.state}`
       : Prisma.sql`NOT t.del_yn AND t.stat_cd='PUBLISHED'`;
-    const filter = Prisma.sql`${visibility} ${term ? Prisma.sql`AND(t.term_nm ILIKE ${pattern} OR t.def_cont ILIKE ${pattern} OR coalesce(t.easy_cont,'') ILIKE ${pattern} OR EXISTS(SELECT 1 FROM unnest(t.aliases) a WHERE a ILIKE ${pattern}))` : Prisma.empty}`;
+    const filter = Prisma.sql`${visibility} ${term ? Prisma.sql`AND(t.term_nm ILIKE ${pattern} OR replace(t.term_nm,' ','') ILIKE ${compactPattern} OR t.def_cont ILIKE ${pattern} OR replace(t.def_cont,' ','') ILIKE ${compactPattern} OR coalesce(t.easy_cont,'') ILIKE ${pattern} OR replace(coalesce(t.easy_cont,''),' ','') ILIKE ${compactPattern} OR EXISTS(SELECT 1 FROM unnest(t.aliases) a WHERE a ILIKE ${pattern} OR replace(a,' ','') ILIKE ${compactPattern}))` : Prisma.empty}`;
     return this.db.$transaction(
       async (tx) => {
         if (administrative) await this.access.require(authorization, tx);
