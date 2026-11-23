@@ -9,7 +9,10 @@ import pg from 'pg';
 const apply = process.argv.includes('--apply');
 const refresh = process.argv.includes('--refresh'); // 이미 등록된 용어의 쉬운 풀이만 easy-explanations.txt 내용으로 바꾸고 다시 공개한다.
 const api = process.env.TERMS_API ?? 'http://127.0.0.1:3001';
-const entries = JSON.parse(await readFile(new URL('./easy-terms.json', import.meta.url), 'utf8'));
+// --file <이름>: tools 폴더의 다른 목록 파일(예: easy-terms-hard.json)을 쓴다. --direct: 관리자 로그인 없이 서비스의 용어 등록·공개 로직(TermsService)을 직접 불러 등록하고 공개한다(--actor 로 기록에 남길 관리자 번호, 기본 1).
+const fileIndex = process.argv.indexOf('--file');
+const direct = process.argv.includes('--direct');
+const entries = JSON.parse(await readFile(new URL('./' + (fileIndex >= 0 ? process.argv[fileIndex + 1] : 'easy-terms.json'), import.meta.url), 'utf8'));
 const url = URL.parse(process.env.DATABASE_URL ?? '');
 assert.ok(url && url.hostname === '127.0.0.1' && url.port === '5433' && url.pathname === '/aurore_dev_check', '로컬 개발 DB만 허용합니다');
 const db = new pg.Client({ connectionString: url.href });
@@ -58,6 +61,34 @@ await db.end();
 console.log(JSON.stringify({ entries: entries.length, prepared: prepared.length, problems }));
 if (!apply) { for (const t of prepared) console.log(t.termName + ' | ' + t.definition.slice(0, 90)); process.exit(problems.length ? 1 : 0); }
 assert.ok(!problems.length, '문제 항목을 먼저 고쳐 주세요');
+
+if (direct) {
+  // 서비스와 같은 규칙(출처 주소 검사, 요청 번호, 변경 이력)으로 등록한 뒤 바로 공개한다. 이미 같은 이름이 있으면 건너뛴다.
+  await import('reflect-metadata');
+  const { ConfigService } = await import('@nestjs/config');
+  const { PrismaService } = await import('../dist/prisma/prisma.service.js');
+  const { TermsService } = await import('../dist/terms/terms.service.js');
+  const actorIndex = process.argv.indexOf('--actor');
+  const actor = actorIndex >= 0 ? process.argv[actorIndex + 1] : '1';
+  const prisma = new PrismaService(new ConfigService({ DATABASE_URL: url.href }));
+  await prisma.$connect();
+  const service = new TermsService(prisma, { require: async () => ({ id: actor }) });
+  const known = new Set((await prisma.$queryRaw`select norm_nm from legal_term`).map(row => row.norm_nm));
+  const result = { created: 0, published: 0, skipped: 0, failed: 0 };
+  for (const t of prepared) {
+    const norm = t.termName.replace(/\s/gu, '').toLowerCase();
+    if (known.has(norm)) { result.skipped++; continue; }
+    try {
+      const created = await service.save('CREATE', null, { ...t, requestId: randomUUID() });
+      result.created++;
+      await service.save('PUBLISH', BigInt(created.id), { requestId: randomUUID(), revision: created.revision });
+      result.published++;
+    } catch (error) { result.failed++; console.log('FAILED', t.termName, String(error?.message ?? error).slice(0, 100)); }
+  }
+  await prisma.$disconnect();
+  console.log(JSON.stringify(result));
+  process.exit(result.failed ? 1 : 0);
+}
 
 const login = await fetch(api + '/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ loginId: process.env.TERMS_ADMIN_ID, password: process.env.TERMS_ADMIN_PW }) });
 assert.ok(login.ok, '관리자 로그인 실패');
