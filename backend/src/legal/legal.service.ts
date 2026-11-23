@@ -44,30 +44,34 @@ export class LegalService {
 
   comparison(id:bigint,query:CompareVersionsDto){return compareStoredVersions(this.prisma,id,query);}
 
-  /** 띄어쓰기를 무시하고 법령 이름을 찾는다("근로 기준법"과 "근로기준법", "상가건물임대차보호법"과 "상가건물 임대차보호법" 모두 같은 결과). */
-  private async legalIdsByName(q: string): Promise<bigint[]> {
-    const escape = (value: string) => value.normalize('NFC').replace(/[\\%_]/g, '\\$&');
-    const plain = '%' + escape(q.trim()) + '%';
-    const compact = '%' + escape(q.replace(/\s+/g, '')) + '%';
-    const rows = await this.prisma.$queryRaw<{ id: bigint }[]>(
-      Prisma.sql`SELECT id FROM legal WHERE NOT del_yn AND (legal_nm ILIKE ${plain} OR replace(legal_nm, ' ', '') ILIKE ${compact})`,
-    );
-    return rows.map((row) => row.id);
-  }
-
+  /**
+   * 법령 목록: 이름 검색은 띄어쓰기를 무시하고("근로 기준법"과 "근로기준법", "상가건물임대차보호법"과 "상가건물 임대차보호법" 모두 같은 결과),
+   * 정렬은 최근 개정일(가장 최근 시행본의 공포일) 기준이다. 개정일이 같으면 시행일, 그다음 id 순.
+   */
   async findAll(query: ListLegalsDto) {
-    const ids = query.q?.trim() ? await this.legalIdsByName(query.q) : null;
-    const rows = await this.prisma.legal.findMany({
-      where: {
-        delYn: false,
-        ...(ids ? { id: { in: ids } } : {}),
-      },
-      select: publicSelect,
-      orderBy: [{ rgstDttm: query.sort==='oldest'?'asc':'desc' },{id:query.sort==='oldest'?'asc':'desc'}],
-      take: query.limit,
-      skip: query.offset,
+    const escape = (value: string) => value.normalize('NFC').replace(/[\\%_]/g, '\\$&');
+    const q = query.q?.trim();
+    const filter = q
+      ? Prisma.sql`AND (l.legal_nm ILIKE ${'%' + escape(q) + '%'} OR replace(l.legal_nm, ' ', '') ILIKE ${'%' + escape(q.replace(/\s+/g, '')) + '%'})`
+      : Prisma.empty;
+    const direction = query.sort === 'oldest' ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+    const ordered = await this.prisma.$queryRaw<{ id: bigint }[]>(Prisma.sql`
+      SELECT l.id
+      FROM legal l
+      LEFT JOIN LATERAL (
+        SELECT max(v.prml_dt) AS revised, max(v.enfc_dt) AS effective
+        FROM legal_ver v WHERE v.legal_id = l.id AND NOT v.del_yn
+      ) latest ON true
+      WHERE NOT l.del_yn ${filter}
+      ORDER BY latest.revised ${direction} NULLS LAST, latest.effective ${direction} NULLS LAST, l.id ${direction}
+      LIMIT ${query.limit} OFFSET ${query.offset}`);
+    if (!ordered.length) return [];
+    const rows = await this.prisma.legal.findMany({ where: { id: { in: ordered.map((row) => row.id) } }, select: publicSelect });
+    const byId = new Map(rows.map((row) => [row.id.toString(), row]));
+    return ordered.flatMap(({ id }) => {
+      const row = byId.get(id.toString());
+      return row ? [{ ...row, id: row.id.toString() }] : [];
     });
-    return rows.map((row) => ({ ...row, id: row.id.toString() }));
   }
 
   async precedents(query: ListLegalsDto) {

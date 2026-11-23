@@ -49,7 +49,7 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
       </div>
     </form>
     <section aria-labelledby="results-title" className="results">
-      <div className="section-heading"><h2 id="results-title">{q ? `“${q}” 검색 결과` : "등록된 법규"}</h2><PageSizeSelect value={pageSize} sort={sort} sortBasis="등록일" /></div>
+      <div className="section-heading"><h2 id="results-title">{q ? `“${q}” 검색 결과` : "등록된 법규"}</h2><PageSizeSelect value={pageSize} sort={sort} sortBasis="개정일" /></div>
       {unavailable ? <p role="status" className="empty">법규 목록을 불러오지 못했습니다. 잠시 후 다시 검색해 주세요.</p>
         : rows.length === 0 ? <p className="empty">{q ? "검색 결과가 없습니다. 다른 이름으로 검색해 보세요." : "아직 등록된 법규가 없습니다."}</p>
         : <ul className="legal-list">{rows.slice(0, pageSize).map(row => <li key={row.id}>

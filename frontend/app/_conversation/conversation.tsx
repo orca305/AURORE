@@ -353,7 +353,7 @@ export function Conversation({ ask, initialChat, member = false }: {
     {fresh && <p className={styles.heroPill}>공식 법령 원문을 근거로 설명해요</p>}
     <div className={styles.context}>
       <div>
-        <div className={styles.titleRow}><h1 className={fresh ? undefined : styles.oneLine} title={detail?.title}>{detail?.title ?? (messages.length ? "나의 법률 대화" : "어떤 일이 생겼는지 편하게 말해 주세요")}</h1>
+        <div className={styles.titleRow}><h1 className={fresh ? undefined : styles.oneLine} title={detail?.title}>{detail?.title ?? (messages.length ? "나의 법률 대화" : "어떤 일이 있었는지 편하게 말해 주세요")}</h1>
         {(messages.length > 0 || detail) && <button type="button" disabled={documentBusy || submitting || (pending && !pollError)} className={styles.newChat} onClick={reset}>새 대화 </button>}</div>
         <p>{fresh ? "법률 용어를 몰라도 괜찮아요. 관련 법 조문을 찾아 쉬운 말로 풀어 드리고, 원문은 그대로 보여 드려요." : "나의 상황을 이야기하고, 필요한 사실을 함께 확인합니다."}</p>
       </div>
