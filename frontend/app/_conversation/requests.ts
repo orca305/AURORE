@@ -26,7 +26,10 @@ export async function requestChat<T>(path: string, credential: string, init?: Re
         409: "다른 화면에서 대화가 변경됐거나 답변이 진행 중입니다. 최신 내용을 다시 확인해 주세요.",
         429: "요청이 많습니다. 잠시 후 다시 시도해 주세요.",
       };
-      return { data: null, error: messages[response.status] ?? "대화를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.", status: response.status };
+      // 질문·대화 시작 횟수 제한(429)은 백엔드가 알려 주는 대기 시간 안내를 그대로 보여 준다.
+      const detail = response.status === 429 ? await response.json().catch(() => null) as { message?: unknown } | null : null;
+      const message = typeof detail?.message === "string" && detail.message.length < 200 ? detail.message : messages[response.status];
+      return { data: null, error: message ?? "대화를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.", status: response.status };
     }
     return { data: response.status === 204 ? null : await response.json() as T, error: null, status: response.status };
   } catch {

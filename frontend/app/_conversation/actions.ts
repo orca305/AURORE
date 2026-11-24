@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { authRequest, currentToken, tokenPattern, trustedOrigin } from "../_auth/session";
+import { authRequest, clientId, currentToken, tokenPattern, trustedOrigin } from "../_auth/session";
 import { chatCredential, chatIdPattern, guestCookie, loadChat, loadChatList, requestChat } from "./requests";
 import type { ChatDetail, ChatResult } from "./types";
 
@@ -15,7 +15,9 @@ async function rememberGuest(token: string, expiresAt: string, secure: boolean) 
 }
 
 async function createGuest(secure: boolean) {
-  const response = await authRequest("guest", { method: "POST" });
+  const client = await clientId();
+  const response = await authRequest("guest", { method: "POST", ...(client ? { headers: { "X-Aurore-Client": client } } : {}) });
+  if (response?.status === 429) return "limited";
   if (!response?.ok) return null;
   const data = await response.json() as { token: string; expiresAt: string };
   if (!tokenPattern.test(data.token) || !Number.isFinite(Date.parse(data.expiresAt))) return null;
@@ -29,11 +31,14 @@ async function mutation<T=ChatDetail>(path: string, body?: object, create = fals
   const member = await currentToken();
   let credential = await chatCredential();
   if (!credential && create) credential = await createGuest(origin.protocol === "https:");
+  if (credential === "limited") return { data: null, error: "비회원 대화를 너무 자주 시작했어요. 잠시 후 다시 시도해 주세요. 로그인하면 계속 쓸 수 있어요.", status: 429 };
   if (!credential) return { data: null, error: "대화 인증을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.", status: 401 };
-  const init = { method: "POST", headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) };
+  const client = await clientId();
+  const init = { method: "POST", headers: { "Content-Type": "application/json", ...(client ? { "X-Aurore-Client": client } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) };
   let result = await requestChat<T & {authExpiresAt?:string|null}>(path, credential, init);
   if (result.status === 401 && !member && create) {
     credential = await createGuest(origin.protocol === "https:");
+    if (credential === "limited") return { data: null, error: "비회원 대화를 너무 자주 시작했어요. 잠시 후 다시 시도해 주세요. 로그인하면 계속 쓸 수 있어요.", status: 429 };
     if (credential) result = await requestChat<T & {authExpiresAt?:string|null}>(path, credential, init);
   }
   if (result.data?.authExpiresAt && credential?.startsWith("Guest ")) {

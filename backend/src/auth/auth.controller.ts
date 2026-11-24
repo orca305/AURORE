@@ -23,6 +23,7 @@ import {
   Matches,
 } from 'class-validator';
 import { AuthService } from './auth.service.js';
+import { limitGuestCreate } from '../common/rate-limit.js';
 
 class LoginDto {
   @IsString()
@@ -82,7 +83,8 @@ export class AuthController {
   @Post('guest')
   @HttpCode(201)
   @Header('Cache-Control', 'no-store')
-  guest() {
+  guest(@Headers('x-aurore-client') client?: string) {
+    limitGuestCreate(client);
     return this.auth.createGuest();
   }
 

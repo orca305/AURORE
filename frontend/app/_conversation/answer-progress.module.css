@@ -1,0 +1,30 @@
+.dialog { position: fixed; inset: 0; margin: auto; width: min(26rem, calc(100vw - 2rem)); padding: 0; border: 1px solid var(--border); border-radius: 1.5rem; background: var(--card-white); color: var(--foreground); box-shadow: 0 28px 70px -14px var(--shadow), 0 4px 18px var(--shadow); animation: progress-in .2s ease-out; }
+.dialog::backdrop { background: rgb(15 23 35 / .45); backdrop-filter: blur(3px); }
+.body { display: grid; justify-items: center; gap: 0.75rem; padding: 1.75rem 1.5rem 1.5rem; text-align: center; }
+.badge { display: inline-flex; align-items: center; justify-content: center; width: 3.5rem; height: 3.5rem; border-radius: 50%; background: var(--selected); }
+.spinner { width: 1.75rem; height: 1.75rem; border: 3px solid var(--border); border-top-color: var(--button-bg); border-radius: 50%; animation: progress-spin .9s linear infinite; }
+.body h2 { margin: 0.25rem 0 0; font: 700 1.1875rem/1.4 "Noto Sans KR", "Malgun Gothic", sans-serif; letter-spacing: -.01em; }
+.sub { margin: 0; color: var(--muted); font-size: 0.8125rem; line-height: 1.7; }
+.bar { position: relative; width: 100%; height: 0.625rem; margin-top: 0.25rem; overflow: hidden; border-radius: 999px; background: var(--surface); }
+.bar i { position: relative; display: block; height: 100%; border-radius: 999px; background: var(--button-bg); transition: width .8s ease; overflow: hidden; }
+.bar i::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgb(255 255 255 / .45), transparent); transform: translateX(-100%); animation: progress-shimmer 1.4s ease-in-out infinite; }
+.steps { display: grid; gap: 0.5rem; width: 100%; margin: 0.25rem 0 0; padding: 0; list-style: none; text-align: left; }
+.steps li { display: flex; align-items: center; gap: 0.625rem; color: var(--muted); font-size: 0.875rem; }
+.steps li span { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--surface); font-size: 0.75rem; font-weight: 700; }
+.steps li[data-state="now"] { color: var(--foreground); font-weight: 600; }
+.steps li[data-state="now"] span { background: var(--button-bg); color: var(--on-accent); }
+.steps li[data-state="done"] span { background: var(--selected); color: var(--accent); }
+.time { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.78125rem; }
+.warn { margin: 0; padding: 0.625rem 0.875rem; border-radius: 0.75rem; background: var(--danger-surface); color: var(--danger); font-size: 0.8125rem; line-height: 1.65; }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+.actions:empty { display: none; }
+.ghost { min-height: 2.5rem; padding: 0 1.125rem; border: 1px solid var(--strong-border); border-radius: var(--radius-control); background: var(--background); color: var(--foreground); font: 500 0.875rem/1 "Noto Sans KR", "Malgun Gothic", sans-serif; cursor: pointer; }
+.ghost:hover:not(:disabled) { background: var(--hover); }
+.ghost:disabled { opacity: .5; cursor: default; }
+@keyframes progress-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes progress-spin { to { transform: rotate(360deg); } }
+@keyframes progress-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .dialog, .spinner, .bar i::after { animation: none; } .bar i { transition: none; } }
+@media (max-width: 40.625em) {
+  .dialog { inset: auto 0 0 0; width: 100%; margin: 0; border-radius: 1.5rem 1.5rem 0 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
+}

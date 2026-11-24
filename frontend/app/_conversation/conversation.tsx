@@ -3,17 +3,17 @@
 import { UsageNotice } from "./usage-notice";
 import {documentSelectionProblem,type DocumentSelection} from './context-selection';
 import {TermLookupPanel} from '../_terms/lookup-panel';
-import {HighlightedText} from './term-highlight';
+import {HighlightedText, useTermPlan} from './term-highlight';
 import {DocumentsPanel} from "./documents-panel";
+import {AnswerProgress} from "./answer-progress";
 import {CaseContextPanel} from "./case-context-panel";
 import { CaseConnection } from "./case-connection";
 import {CorrectionRead,CorrectionHistory} from "./correction-read";
 import {FeedbackBar} from "./feedback-bar";
-import {IconLink} from "../_components/icon-link";
 import {parseAnswer} from "./answer-sections";
 import {LawPanel} from "./law-panel";
 import Link from "next/link";
-import { startTransition, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useMemo, startTransition, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { cancelChatJob, connectChatCase, markChatRead, refreshChat, retryChatJob, sendChatMessage } from "./actions";
 import { isPendingJob, type ChatDetail, type Message, type Phase, type Reply } from "./types";
 import styles from "./conversation.module.css";
@@ -53,21 +53,31 @@ function splitBasis(text: string): { body: string; groups: BasisGroup[] } {
   return { body: match[1].trim(), groups };
 }
 
+/** 법제처 국가법령정보센터의 원문 주소(법령명, 조 번호). 법령명과 조 번호는 주소에 맞게 인코딩한다. */
+const lawUrl = (name: string) => "https://www.law.go.kr/법령/" + encodeURIComponent(name);
+const articleUrl = (name: string, article: string) => {
+  const found = /^(제\d+조(?:의\d+)?)/u.exec(article);
+  return found ? lawUrl(name) + "/" + encodeURIComponent(found[1]) : lawUrl(name);
+};
+
 function BasisChips({ groups }: { groups: BasisGroup[] }) {
   if (!groups.length) return null;
   return <span className={styles.basis} aria-label="근거 조문">
     <span className={styles.basisLabel}>근거</span>
     {groups.map(group => <span key={group.name} className={styles.basisChip}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v15M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Z" /></svg>
-      <span className={styles.basisLaw}>{group.name}</span>
-      {group.articles.length > 0 && <strong>{group.articles.join(" · ")}</strong>}
+      <a className={styles.basisLink} href={lawUrl(group.name)} target="_blank" rel="noopener noreferrer" title={group.name + " 법제처 원문 (새 창)"}><span className={styles.basisLaw}>{group.name}</span></a>
+      {group.articles.length > 0 && <strong>{group.articles.map((article, at) => <span key={article}>
+        {at > 0 && " · "}
+        <a className={styles.basisLink} href={articleUrl(group.name, article)} target="_blank" rel="noopener noreferrer" aria-label={group.name + " " + article + " 법제처 원문 (새 창)"} title={group.name + " " + article + " 법제처 원문 (새 창)"}>{article}</a>
+      </span>)}</strong>}
     </span>)}
   </span>;
 }
 
-function WithBasis({ text }: { text: string }) {
+function WithBasis({ text, allow }: { text: string; allow?: Set<string> }) {
   const { body, groups } = splitBasis(text);
-  return <><HighlightedText text={body} /><BasisChips groups={groups} /></>;
+  return <><HighlightedText text={body} allow={allow} /><BasisChips groups={groups} /></>;
 }
 
 /** 단계 본문을 글머리(· - •) 목록과 일반 문단으로 나눈다. */
@@ -90,40 +100,62 @@ function toBlocks(body: string): Block[] {
 // 근거 조문·판례 목록은 단계가 아니라 접었다 펼치는 상자로 보여 준다.
 const EVIDENCE = /^(근거 조문|근거 판례|함께 본 조문)/u;
 
-function StepContent({ blocks }: { blocks: Block[] }) {
+type Seg = { text: string; at: number };
+type PlannedBlock = { kind: "text"; seg: Seg } | { kind: "list"; items: Seg[] };
+
+function StepContent({ blocks, plan }: { blocks: PlannedBlock[]; plan: Set<string>[] }) {
   return <>{blocks.map((block, index) => block.kind === "text"
-    ? <p key={index} className={styles.messageText}><WithBasis text={block.text} /></p>
-    : <ul key={index} className={styles.stepList}>{block.items.map((item, at) => <li key={at}><WithBasis text={item} /></li>)}</ul>)}</>;
+    ? <p key={index} className={styles.messageText}><WithBasis text={block.seg.text} allow={plan[block.seg.at]} /></p>
+    : <ul key={index} className={styles.stepList}>{block.items.map((item, at) => <li key={at}><WithBasis text={item.text} allow={plan[item.at]} /></li>)}</ul>)}</>;
 }
 
-/** 해설을 "한 줄 결론"과 번호 단계로 나눠 보여 준다. 소제목이 없는 짧은 답은 그대로 보여 준다. */
-function AnswerBody({ text }: { text: string }) {
+/** 해설을 화면에 그릴 조각(결론·단계·맺음말·근거)으로 나누고, 읽는 순서대로 번호를 매긴다(용어 툴팁을 답변당 한 번만 달기 위해). */
+function buildAnswer(text: string) {
   const parsed = parseAnswer(text);
-  if (!parsed.structured) return <p className={styles.messageText}><HighlightedText text={text} /></p>;
+  if (!parsed.structured) return { structured: false as const, segments: [text] };
+  const segments: string[] = [];
+  const seg = (value: string): Seg => { segments.push(splitBasis(value).body); return { text: value, at: segments.length - 1 }; };
+  const raw = (value: string): Seg => { segments.push(value); return { text: value, at: segments.length - 1 }; };
   const all = parsed.steps.map(step => ({ heading: step.heading, blocks: toBlocks(step.body) }));
-  const steps = all.filter(step => !EVIDENCE.test(step.heading));
-  const evidence = all.filter(step => EVIDENCE.test(step.heading));
+  const rawSteps = all.filter(step => !EVIDENCE.test(step.heading));
+  const rawEvidence = all.filter(step => EVIDENCE.test(step.heading));
   // 마지막 단계 끝에 붙은 맺음말(예: "실제 분쟁이라면 전문가와 상담하세요")은 타임라인 밖으로 뺀다.
   let closing = "";
   const last = all.at(-1);
   if (last && last.blocks.length > 1 && last.blocks.some(block => block.kind === "list") && last.blocks.at(-1)?.kind === "text") {
     closing = (last.blocks.pop() as { kind: "text"; text: string }).text;
   }
+  const conclusion = parsed.conclusion ? seg(parsed.conclusion) : null;
+  const steps = rawSteps.map(step => ({
+    heading: step.heading,
+    blocks: step.blocks.map((block): PlannedBlock => block.kind === "text" ? { kind: "text", seg: seg(block.text) } : { kind: "list", items: block.items.map(seg) }),
+  }));
+  const closingSeg = closing ? raw(closing) : null;
+  const evidence = rawEvidence.map(step => ({
+    heading: step.heading,
+    items: step.blocks.flatMap(block => block.kind === "list" ? block.items : [block.text]).map(raw),
+  }));
+  return { structured: true as const, conclusion, steps, closingSeg, evidence, segments };
+}
+
+/** 해설을 "한 줄 결론"과 번호 단계로 나눠 보여 준다. 소제목이 없는 짧은 답은 그대로 보여 준다. */
+function AnswerBody({ text }: { text: string }) {
+  const model = useMemo(() => buildAnswer(text), [text]);
+  const plan = useTermPlan(model.segments);
+  if (!model.structured) return <p className={styles.messageText}><HighlightedText text={text} /></p>;
+  const { conclusion, steps, closingSeg, evidence } = model;
   return <>
-    {parsed.conclusion && <div className={styles.conclusion}><p className={styles.eyebrow}>한 줄 결론</p><p className={styles.conclusionText}><WithBasis text={parsed.conclusion} /></p></div>}
+    {conclusion && <div className={styles.conclusion}><p className={styles.eyebrow}>한 줄 결론</p><p className={styles.conclusionText}><WithBasis text={conclusion.text} allow={plan[conclusion.at]} /></p></div>}
     {steps.length > 0 && <ol className={styles.timeline}>{steps.map((step, index) => <li key={step.heading + index} className={styles.step}>
       <span className={styles.stepNo} data-tone={(index % 5) + 1}>{index + 1}</span>
       <h3>{step.heading}</h3>
-      <StepContent blocks={step.blocks} />
+      <StepContent blocks={step.blocks} plan={plan} />
     </li>)}</ol>}
-    {evidence.map(step => {
-      const items = step.blocks.flatMap(block => block.kind === "list" ? block.items : [block.text]);
-      return <details key={step.heading} className={styles.evidence}>
-        <summary><span>{step.heading.replace(/\s*\(.*$/u, "")}</span><span className={styles.evidenceCount}>{items.length}개</span></summary>
-        <ul className={styles.evidenceList}>{items.map((item, at) => <li key={at}><HighlightedText text={item} /></li>)}</ul>
-      </details>;
-    })}
-    {closing && <p className={styles.closingNote}><HighlightedText text={closing} /></p>}
+    {evidence.map(step => <details key={step.heading} className={styles.evidence}>
+      <summary><span>{step.heading.replace(/\s*\(.*$/u, "")}</span><span className={styles.evidenceCount}>{step.items.length}개</span></summary>
+      <ul className={styles.evidenceList}>{step.items.map((item, at) => <li key={at}><HighlightedText text={item.text} allow={plan[item.at]} /></li>)}</ul>
+    </details>)}
+    {closingSeg && <p className={styles.closingNote}><HighlightedText text={closingSeg.text} allow={plan[closingSeg.at]} /></p>}
   </>;
 }
 
@@ -396,6 +428,7 @@ export function Conversation({ ask, initialChat, member = false }: {
           </li>)}
         </ol>
         {pending && <p role="status" className={styles.pending}>{submitting ? "질문을 저장하는 중입니다." : ({analyze:"질문을 이해하는 중입니다. (1/3)",search:"관련 법령과 조문을 찾는 중입니다. (2/3)",write:"확인한 원문으로 답변을 쓰는 중입니다. (3/3)"} as const)[detail?.job?.stage as "analyze"] ?? "오로르가 확인 중입니다."}</p>}
+        <AnswerProgress active={pending} saving={submitting} stage={detail?.job?.stage as "analyze" | "search" | "write" | undefined} failing={Boolean(pollError)} onCancel={saved ? () => void jobAction(false) : undefined} cancelDisabled={submitting} />
         <div ref={latest} />
       </section>
     </div>}

@@ -1,3 +1,4 @@
+import { limitQuestion } from '../common/rate-limit.js';
 import {
   Body,
   Controller,
@@ -184,11 +185,14 @@ export class ChatController {
   async submit(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Headers('authorization') authorization: string | undefined,
+    @Headers('x-aurore-client') client: string | undefined,
     @Body() body: SubmitDto,
   ) {
+    const owner = await this.auth.resolveOwner(authorization, true);
+    limitQuestion(owner, client);
     return this.chat.submit(
       id,
-      await this.auth.resolveOwner(authorization, true),
+      owner,
       body.requestId,
       body.question,
       body.revision,

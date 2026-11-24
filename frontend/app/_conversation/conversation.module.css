@@ -394,3 +394,8 @@
   .conclusion { padding: 0.875rem 1rem; }
   .oneLine { font-size: 1.25rem; }
 }
+
+/* 근거 칩: 법령명·조 번호를 누르면 법제처 원문이 새 창으로 열린다 */
+.basisLink { color: inherit; text-decoration: none; }
+.basisLink:hover, .basisLink:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.basisChip:has(.basisLink:hover) { filter: brightness(.96); }

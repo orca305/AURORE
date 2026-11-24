@@ -49,20 +49,18 @@ function setup() {
 describe('법규 API 계약', () => {
   it('삭제 제외·검색·페이지 제한을 적용하고 BIGINT를 손실 없이 직렬화한다', async () => {
     const { db, service } = setup();
+    db.$queryRaw.mockResolvedValueOnce([{ id: record.id }]);
     const result = await service.findAll({
       q: '테스트',
       limit: 10,
       offset: 20,
+      sort: 'newest',
     });
+    // 정렬·검색·페이지는 raw SQL에서 처리하고(띄어쓰기 무시, 최근 개정일순), 행 본문은 id 목록으로 다시 읽는다.
+    const [sql] = db.$queryRaw.mock.calls[0] as [{ values: unknown[] }];
+    expect(sql.values).toEqual(expect.arrayContaining(['%테스트%', 10, 20]));
     expect(db.legal.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          delYn: false,
-          legalNm: { contains: '테스트', mode: 'insensitive' },
-        },
-        take: 10,
-        skip: 20,
-      }),
+      expect.objectContaining({ where: { id: { in: [record.id] } } }),
     );
     expect(JSON.parse(JSON.stringify(result))[0].id).toBe('9007199254740993');
   });
@@ -132,6 +130,7 @@ describe('법규 API 계약', () => {
       q: '동시이행관계',
       limit: 20,
       offset: 0,
+      sort: 'newest',
     });
     expect(result.excerpt).toContain('동시이행관계');
     expect(result.excerpt).not.toContain('<br/>');

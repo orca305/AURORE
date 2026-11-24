@@ -4,7 +4,6 @@ import { PageSizeSelect } from "../_components/page-size-select";
 import { parsePageSize } from "../_components/page-size";
 import { PeriodFields } from "../_components/period-fields";
 import { readPeriod } from "../_components/period-read";
-import Link from "next/link";
 import { SiteHeader } from "../_components/site-header";
 import { loadChatList } from "../_conversation/requests";
 import { HistoryList } from "./history-list";

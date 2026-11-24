@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
-import { splitByTerms, type GlossaryTerm } from "./term-match";
+import { planTerms, splitByTerms, type GlossaryTerm } from "./term-match";
 import styles from "./conversation.module.css";
 
 // 공개된 용어 목록은 화면당 한 번만 가져와 모든 답변이 공유한다. 실패하면 하이라이트 없이 원래 문장을 보여 준다.
@@ -33,22 +33,37 @@ const EXPLAIN_HEADINGS = new Set(["질문에 대한 답", "쉽게 풀면", "예�
 const CASE_HEADINGS = new Set(["관련 판례", "근거 판례 (판결 요지 확인됨)"]);
 const CASE_REF = /(대법원\s\d{2,4}[가-힣]{1,3}\d+)/u;
 
-export function HighlightedText({ text }: { text: string }) {
+function useGlossary() {
   const [terms, setTerms] = useState<GlossaryTerm[]>([]);
   useEffect(() => {
     let active = true;
     loadGlossary().then((list) => { if (active) setTerms(list); });
     return () => { active = false; };
   }, []);
+  return terms;
+}
+
+/** 한 답변 안에서 같은 용어가 여러 번 나와도 첫 번째 한 곳에만 툴팁 링크를 달도록 조각별 허용 용어를 정한다. */
+export function useTermPlan(segments: string[]) {
+  const terms = useGlossary();
+  const key = segments.join("");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => planTerms(segments, terms), [key, terms]);
+}
+
+export function HighlightedText({ text, allow }: { text: string; allow?: Set<string> }) {
+  const terms = useGlossary();
   // 해설의 소제목 줄(질문에 대한 답, 쉽게 풀면 등)은 굵게 보여 주고, 나머지 줄은 용어 하이라이트를 적용한다.
   const lines = useMemo(
-    () =>
-      text.split("\n").map((line) =>
+    () => {
+      const taken = new Set<string>();
+      return text.split("\n").map((line) =>
         EXPLAIN_HEADINGS.has(line.trim())
           ? { heading: line.trim(), kind: CASE_HEADINGS.has(line.trim()) ? "case" : "law" }
-          : { chunks: line.split(CASE_REF).map((chunk, at) => (at % 2 ? { caseRef: chunk, parts: [] as ReturnType<typeof splitByTerms> } : { caseRef: "", parts: splitByTerms(chunk, terms) })) },
-      ),
-    [text, terms],
+          : { chunks: line.split(CASE_REF).map((chunk, at) => (at % 2 ? { caseRef: chunk, parts: [] as ReturnType<typeof splitByTerms> } : { caseRef: "", parts: splitByTerms(chunk, terms, allow, taken) })) },
+      );
+    },
+    [text, terms, allow],
   );
   return (
     <>
