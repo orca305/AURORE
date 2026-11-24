@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { currentToken, authRequest } from "../_auth/session";
-import { SiteHeader } from "../_components/site-header";
 
 export default async function CasesLayout({ children }: { children: ReactNode }) {
   const token = await currentToken();
@@ -12,7 +11,7 @@ export default async function CasesLayout({ children }: { children: ReactNode })
   if (response?.status === 401) redirect("/login?expired=1");
   return (
     <>
-      <SiteHeader active="cases" />
+      
       <main className="shell">
         {response?.ok ? children : (
           <section className="intro">

@@ -1,4 +1,3 @@
-import { SiteHeader } from "../../_components/site-header";
 import { notFound } from "next/navigation";
 import { isAbsolute } from "node:path";
 import { buildDemoAnswer } from "../../../../backend/tools/law-answer-demo.mjs";
@@ -9,7 +8,7 @@ export default function LocalAiTestPage() {
   if (process.env.NODE_ENV !== "development") notFound();
 
   return <div>
-    <SiteHeader />
+    
     <main className="shell">
     <section className="intro">
       <h1>법령 답변 검증</h1>

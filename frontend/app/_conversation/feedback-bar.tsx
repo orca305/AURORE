@@ -49,8 +49,8 @@ export function FeedbackBar({ chatId, messageId, value, onChange }: { chatId: st
       ? <p role="status">{value.rating === "HELPFUL" ? "도움이 됐다고 남겨 주셨어요. 고마워요." : `개선이 필요하다고 남겨 주셨어요${value.reason ? " · " + (reasonLabel[value.reason] ?? "") : ""}. 고마워요.`}</p>
       : <p>이 답변이 도움이 됐나요?</p>}
     <div className={styles.feedbackButtons}>
-      <button type="button" aria-pressed={value?.rating === "HELPFUL"} disabled={pending} onClick={() => save("HELPFUL")}>도움 됐어요</button>
-      <button type="button" aria-pressed={value?.rating === "IMPROVE" || editing} aria-expanded={improveOpen} disabled={pending} onClick={() => setEditing(open => !open)}>개선이 필요해요</button>
+      <button type="button" data-kind="helpful" aria-pressed={value?.rating === "HELPFUL"} disabled={pending} onClick={() => save("HELPFUL")}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3ZM7 11l4-8a2.5 2.5 0 0 1 2.5 2.5V9h5.2a2 2 0 0 1 2 2.3l-1.1 7A2 2 0 0 1 17.6 20H7" /></svg>도움 됐어요</button>
+      <button type="button" data-kind="improve" aria-pressed={value?.rating === "IMPROVE" || editing} aria-expanded={improveOpen} disabled={pending} onClick={() => setEditing(open => !open)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 13V4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h3ZM7 13l4 8a2.5 2.5 0 0 0 2.5-2.5V15h5.2a2 2 0 0 0 2-2.3l-1.1-7A2 2 0 0 0 17.6 4H7" /></svg>개선이 필요해요</button>
       {value && <button type="button" className={styles.reset} disabled={pending} onClick={clear}>의견 지우기</button>}
     </div>
     {improveOpen && <form className={styles.feedbackForm} onSubmit={event => { event.preventDefault(); if (reason) save("IMPROVE"); else setError("어떤 점이 아쉬운지 골라 주세요."); }}>

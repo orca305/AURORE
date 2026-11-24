@@ -3,7 +3,6 @@ import { IconLink } from "../../../../_components/icon-link";
 import { ResetSearch } from '../../../../_components/page-actions';
 import { parsePageSize } from "../../../../_components/page-size";
 import { PageSizeSelect } from "../../../../_components/page-size-select";
-import { SiteHeader } from "../../../../_components/site-header";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { officialUrl } from "../official-source";
@@ -96,7 +95,7 @@ export default async function ProvisionsPage({ params, searchParams }: {
 }) {
   const { id, versionId } = await params;
   return <div>
-    <SiteHeader active="legals" />
+    
     <main className="shell">
       <Suspense fallback={<p role="status" className="empty">조문을 불러오는 중입니다.</p>}>
         <ProvisionResults id={id} versionId={versionId} searchParams={searchParams} />

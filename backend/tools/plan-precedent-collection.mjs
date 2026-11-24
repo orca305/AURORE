@@ -24,7 +24,7 @@ export function precedentSearchOptions({
   court = 'all',
 } = {}) {
   if (
-    !['all', 'supreme'].includes(court) ||
+    !['all', 'supreme', 'lower'].includes(court) ||
     typeof query !== 'string' ||
     query.length > 200 ||
     /[\u0000-\u001f\u007f]/u.test(query) ||
@@ -34,7 +34,7 @@ export function precedentSearchOptions({
     (!query.trim() && !from)
   )
     throw fail('SEARCH_OPTIONS_INVALID');
-  return { query: query.trim(), search, ...(from ? { from, to } : {}), ...(court === 'supreme' ? { court } : {}) };
+  return { query: query.trim(), search, ...(from ? { from, to } : {}), ...(court === 'supreme' || court === 'lower' ? { court } : {}) };
 }
 export function parsePrecedentSearchPage(payload, requestedPage) {
   const list = payload?.PrecSearch;
@@ -94,7 +94,7 @@ export async function fetchPrecedentSearchPage(
     sort: 'dasc',
     ...(options.from ? { prncYd: options.from + '~' + options.to } : {}),
     // 법원 종류: 대법원(400201)만. 생략하면 전체 법원.
-    ...(options.court === 'supreme' ? { org: '400201' } : {}),
+    ...(options.court === 'supreme' ? { org: '400201' } : options.court === 'lower' ? { org: '400202' } : {}),
   });
   try {
     const response = await fetchImpl(url, {
@@ -215,7 +215,7 @@ async function main() {
   });
   if (values.help) {
     console.log(
-      'Usage: node --env-file=local-dev/.env backend/tools/plan-precedent-collection.mjs <new-queue-file> [--query text] [--search title|body] [--from YYYYMMDD --to YYYYMMDD] [--court all|supreme]',
+      'Usage: node --env-file=local-dev/.env backend/tools/plan-precedent-collection.mjs <new-queue-file> [--query text] [--search title|body] [--from YYYYMMDD --to YYYYMMDD] [--court all|supreme|lower]',
     );
     return;
   }

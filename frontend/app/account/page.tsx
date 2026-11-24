@@ -4,7 +4,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SignOutAllForm } from "../_auth/account-form";
 import { PasswordDisclosure } from "../_auth/password-disclosure";
-import { SiteHeader } from "../_components/site-header";
 import { currentMember } from "../_auth/session";
 import styles from "../_auth/account.module.css";
 
@@ -15,7 +14,7 @@ export default async function Account({searchParams}:{searchParams:Promise<{limi
   const member = await currentMember();
   if (!member) redirect("/login");
   return <div className={styles.page}>
-    <SiteHeader signedIn active="account" />
+    
     <main className={styles.accountMain}>
       <section className={styles.accountIntro}>
         <h1>마이페이지</h1>

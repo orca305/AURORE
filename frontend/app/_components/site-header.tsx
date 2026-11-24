@@ -5,6 +5,9 @@ import { HeaderAccount } from "./header-account";
 import { PreferenceToggle } from "./ui-preferences";
 import { requestAdmin } from "../_admin/requests";
 import { SidebarHistory } from "./sidebar-history";
+import { cookies } from "next/headers";
+import { SidebarResizer } from "./sidebar-resizer";
+import { NavLink } from "./site-active";
 import Image from "next/image";
 import Link from "next/link";
 import { currentMember } from "../_auth/session";
@@ -28,16 +31,14 @@ const tabs = [
   { ...menu[4], short: "용어" },
 ] as const;
 
-export async function SiteHeader({ signedIn, active, adminAccess }: {
-  adminAccess?: boolean;
-  signedIn?: boolean;
-  active?: "conversation" | "account" | "legals" | "precedents" | "history" | "cases" | "bookmarks" | "notifications" | "terms" | "admin";
-}) {
+export async function SiteHeader() {
+  const savedWidthText = (await cookies()).get("aurore_sidebar_width")?.value;
+  const savedWidth = /^\d{3}$/.test(savedWidthText ?? "") && Number(savedWidthText) >= 224 && Number(savedWidthText) <= 480 ? Number(savedWidthText) : null;
   const member = await currentMember();
-  const hasAccount = signedIn ?? Boolean(member);
+  const hasAccount = Boolean(member);
   const unreadResponse=member?await requestNotifications('/unread'):null;
   const unread=unreadResponse?.ok?unreadValue(await unreadResponse.json().catch(()=>null)):null;
-  const isAdmin = adminAccess ?? (hasAccount && Boolean((await requestAdmin("session"))?.ok));
+  const isAdmin = hasAccount && Boolean((await requestAdmin("session"))?.ok);
   return <>
     <aside className={styles.sidebar} aria-label="서비스 탐색">
       <div className={styles.brandRow}><Link href="/" className={styles.brand} aria-label="AURORE 홈">
@@ -45,43 +46,44 @@ export async function SiteHeader({ signedIn, active, adminAccess }: {
         <span>AURORE</span>
       </Link><PreferenceToggle kind="sidebar" /></div>
       <nav id="site-menu" aria-label="주 메뉴" className={styles.nav}>
-        {menu.map(item => (item.key === "cases" || item.key === "bookmarks") && !member ? null : <Link key={item.key} href={item.href} aria-label={item.label} title={item.label} aria-current={active === item.key ? "page" : undefined}>
+        {menu.map(item => (item.key === "cases" || item.key === "bookmarks") && !member ? null : <NavLink k={item.key} key={item.key} href={item.href} aria-label={item.label} title={item.label}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={item.path} /></svg>
           <span>{item.label}</span>
-        </Link>)}
-        {isAdmin && <Link href="/admin" aria-label="운영 관리" title="운영 관리" aria-current={active === "admin" ? "page" : undefined}>
+        </NavLink>)}
+        {isAdmin && <NavLink k="admin" href="/admin" aria-label="운영 관리" title="운영 관리">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" /></svg><span>운영 관리</span>
-        </Link>}
+        </NavLink>}
         <div className={styles.recent}><SidebarHistory key={member?.loginId ?? "guest"} /></div>
       </nav>
       <div className={styles.preferences}><PreferenceToggle kind="theme" /></div>
     </aside>
+    <SidebarResizer initial={savedWidth} />
     <div className={styles.mobileBar}><Link href="/" className={styles.mobileBrand} aria-label="AURORE 홈">
       <Image src="/brand/aurore-icon.svg" alt="" width={28} height={28} unoptimized /><span>AURORE</span>
     </Link></div>
     <nav className={styles.tabbar} aria-label="하단 메뉴">
-      {tabs.map(item => <Link key={item.key} href={item.href} aria-current={active === item.key ? "page" : undefined}>
+      {tabs.map(item => <NavLink k={item.key} key={item.key} href={item.href}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={item.path} /></svg>
         <span>{item.short}</span>
-      </Link>)}
+      </NavLink>)}
       <details className={styles.more}>
         <summary aria-label="더 보기">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           <span>더보기</span>
         </summary>
         <div className={styles.sheet}>
-          {menu.filter(item => !tabs.some(tab => tab.key === item.key) && !((item.key === "cases" || item.key === "bookmarks") && !member)).map(item => <Link key={item.key} href={item.href} aria-current={active === item.key ? "page" : undefined}>
+          {menu.filter(item => !tabs.some(tab => tab.key === item.key) && !((item.key === "cases" || item.key === "bookmarks") && !member)).map(item => <NavLink k={item.key} key={item.key} href={item.href}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={item.path} /></svg>{item.label}
-          </Link>)}
-          {isAdmin && <Link href="/admin" aria-current={active === "admin" ? "page" : undefined}>
+          </NavLink>)}
+          {isAdmin && <NavLink k="admin" href="/admin">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" /></svg>운영 관리
-          </Link>}
+          </NavLink>}
           <div className={styles.sheetTheme}><PreferenceToggle kind="theme" /></div>
         </div>
       </details>
     </nav>
-    <header className={styles.header} data-site-navigation>{member&&<NotificationBell key={unread} initialCount={unread} active={active==='notifications'}/>}
-      {member ? <HeaderAccount nickname={member.nickname} active={active === "account"} /> : <Link href="/login" className={styles.account} aria-current={active === "account" ? "page" : undefined}>로그인</Link>}
+    <header className={styles.header} data-site-navigation>{member&&<NotificationBell key={unread} initialCount={unread}/>}
+      {member ? <HeaderAccount nickname={member.nickname}/> : <NavLink k="account" href="/login" className={styles.account}>로그인</NavLink>}
     </header>
   </>;
 }

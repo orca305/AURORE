@@ -2,8 +2,10 @@
 import Link from 'next/link';
 import {useEffect,useState} from 'react';
 import {notificationCount} from '../_notifications/actions';
+import {useActiveKey} from './site-active';
 import styles from './site-header.module.css';
-export function NotificationBell({initialCount,active}:{initialCount:number|null;active:boolean}){
+export function NotificationBell({initialCount}:{initialCount:number|null}){
+ const active=useActiveKey()==='notifications';
  const [count,setCount]=useState(initialCount);
  useEffect(()=>{let stopped=false,running=false;async function refresh(){if(running||document.hidden)return;running=true;try{const result=await notificationCount();if(!stopped)setCount(result);}catch{if(!stopped)setCount(null);}finally{running=false;}}const timer=setInterval(()=>void refresh(),60000);const focus=()=>void refresh();window.addEventListener('focus',focus);window.addEventListener('aurore:notifications',focus);return()=>{stopped=true;clearInterval(timer);window.removeEventListener('focus',focus);window.removeEventListener('aurore:notifications',focus);};},[]);
  const total=Number.isSafeInteger(count)&&count!==null&&count>0?count:0;

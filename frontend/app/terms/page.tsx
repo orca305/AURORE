@@ -1,7 +1,6 @@
 import { Pagination } from "../_components/pagination";
 import { IconLink } from "../_components/icon-link";
 import Link from "next/link";
-import { SiteHeader } from "../_components/site-header";
 import { PageSizeSelect } from "../_components/page-size-select";
 import { parsePageSize } from "../_components/page-size";
 import { ResetSearch } from "../_components/page-actions";
@@ -36,7 +35,7 @@ export default async function Terms({
   };
   return (
     <>
-      <SiteHeader active="terms" />
+      
       <main className="shell">
         <section className="intro">
           <h1>용어사전</h1>

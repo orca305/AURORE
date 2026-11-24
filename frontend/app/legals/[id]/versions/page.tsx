@@ -4,7 +4,6 @@ import { ResetSearch } from '../../../_components/page-actions';
 import { parsePageSize } from "../../../_components/page-size";
 import { PageSizeSelect } from "../../../_components/page-size-select";
 import Link from "next/link";
-import { SiteHeader } from "../../../_components/site-header";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { officialUrl } from "./official-source";
@@ -102,7 +101,7 @@ export default async function LegalVersionsPage({ params, searchParams }: {
 }) {
   const { id } = await params;
   return <div>
-    <SiteHeader active="legals" />
+    
     <main className="shell">
       <Suspense fallback={<p role="status" className="empty">시행본을 불러오는 중입니다.</p>}>
         <VersionResults id={id} searchParams={searchParams} />

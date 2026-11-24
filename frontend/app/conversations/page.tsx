@@ -4,7 +4,6 @@ import { PageSizeSelect } from "../_components/page-size-select";
 import { parsePageSize } from "../_components/page-size";
 import { PeriodFields } from "../_components/period-fields";
 import { readPeriod } from "../_components/period-read";
-import { SiteHeader } from "../_components/site-header";
 import { loadChatList } from "../_conversation/requests";
 import { HistoryList } from "./history-list";
 
@@ -20,7 +19,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
   const sort = params.sort === "oldest" ? "oldest" : "newest";
   const result = await loadChatList(undefined, pageSize, { q, from, to, sort });
   return <div>
-    <SiteHeader active="history" />
+    
     <main className="shell">
       <section className="intro">
         <h1>대화 기록</h1>

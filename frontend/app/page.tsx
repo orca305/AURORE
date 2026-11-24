@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentMember } from "./_auth/session";
-import { SiteHeader } from "./_components/site-header";
 import { Conversation } from "./_conversation/conversation";
 import { loadChat } from "./_conversation/requests";
 import styles from "./_conversation/conversation.module.css";
@@ -21,7 +20,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
   const member = await currentMember();
   const selected = typeof chat === "string" ? await loadChat(chat) : null;
   return <div className={styles.home}>
-    <SiteHeader signedIn={Boolean(member)} active="conversation" />
+    
     <main className={styles.main}>
       {selected?.error ? <div className="empty" role="alert">
         <h1>대화를 열 수 없습니다</h1>

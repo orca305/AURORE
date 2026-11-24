@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { SiteHeader } from "../../_components/site-header";
 import { WithdrawalForm } from "../../_auth/withdrawal-form";
 import { authRequest, currentToken } from "../../_auth/session";
 import styles from "../../_auth/account.module.css";
@@ -17,7 +16,7 @@ export default async function Withdrawal() {
     : null;
   return (
     <>
-      <SiteHeader signedIn active="account" />
+      
       <main className={styles.accountMain}>
         <section className={styles.accountIntro}>
           <h1>회원 탈퇴</h1>

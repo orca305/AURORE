@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { SiteHeader } from "../_components/site-header";
 import styles from "./account.module.css";
 
 /** 로그인·회원가입: 사이드바 없이 화면 가운데에 카드 하나만 보여 준다. 비회원으로도 바로 시작할 수 있다. */
@@ -31,7 +30,7 @@ export function AccountPanel({ title, children, signedIn = false }: {
   signedIn?: boolean;
 }) {
   return <div className={styles.page}>
-    <SiteHeader signedIn={signedIn} active="account" />
+    
     <main className={styles.main}>
       <section className={styles.panel} aria-labelledby="account-title">
         <h1 id="account-title">{title}</h1>

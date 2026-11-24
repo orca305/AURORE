@@ -399,3 +399,13 @@
 .basisLink { color: inherit; text-decoration: none; }
 .basisLink:hover, .basisLink:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
 .basisChip:has(.basisLink:hover) { filter: brightness(.96); }
+
+/* 답변 평가 버튼: 도움 됐어요(청록)와 개선이 필요해요(주황)를 색으로 구분 */
+.feedbackButtons button[data-kind="helpful"] { border-color: var(--accent); background: var(--card-1); color: var(--card-1-text); font-weight: 600; }
+.feedbackButtons button[data-kind="helpful"]:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+.feedbackButtons button[data-kind="helpful"][aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.feedbackButtons button[data-kind="improve"] { border-color: var(--card-2-text); background: var(--card-2); color: var(--card-2-text); font-weight: 600; }
+.feedbackButtons button[data-kind="improve"]:hover:not(:disabled) { background: var(--card-2-text); color: var(--card-2); }
+.feedbackButtons button[data-kind="improve"][aria-pressed="true"] { background: var(--card-2-text); color: var(--card-2); }
+.feedbackButtons button[data-kind] { display: inline-flex; align-items: center; gap: 0.4rem; }
+.feedbackButtons button[data-kind] svg { flex: none; }

@@ -1,4 +1,3 @@
-import { SiteHeader } from "../../_components/site-header";
 import { notFound } from "next/navigation";
 import { isAbsolute } from "node:path";
 import { answerDemoConversation } from "../../../../backend/tools/demo-conversation.mjs";
@@ -25,7 +24,7 @@ export default function ConversationPage() {
   if (process.env.NODE_ENV !== "development") notFound();
 
   return <div>
-    <SiteHeader active="conversation" />
+    
     <main className="shell pb-10">
       <p className="dev-note">개발용 대화 · 임대차 보증금 예제만 검증 중입니다. 실제 개인정보는 입력하지 마세요.</p>
       <Conversation ask={ask} />

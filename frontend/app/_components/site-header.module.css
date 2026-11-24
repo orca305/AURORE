@@ -169,3 +169,45 @@
   .header a, .header button { min-height: 2.25rem; height: 2.25rem; font-size: 0.8125rem; }
   .header button[aria-label], .header a[aria-label] { width: 2.25rem; padding: 0; }
 }
+
+/* ===== 사이드바 다듬기: 부드러운 선택 표시, 둥근 항목, 가는 스크롤 ===== */
+.sidebar { scrollbar-width: thin; scrollbar-color: var(--border) transparent; border-right-color: var(--soft-border); }
+.brandRow { padding-right: 0.5rem; }
+.nav { gap: 0.25rem; padding: 0 0.75rem 1.25rem; }
+.nav > a, .history summary { position: relative; border-radius: 0.75rem; min-height: 2.625rem; padding: 0.5rem 0.8rem; gap: 0.75rem; color: var(--secondary); font-size: 0.9375rem; font-weight: 500; transition: background .15s, color .15s; }
+.nav > a svg, .history summary svg { color: var(--muted); transition: color .15s; }
+.nav > a:hover, .history summary:hover { background: var(--hover); color: var(--foreground); }
+.nav > a:hover svg, .history summary:hover svg { color: var(--accent); }
+.nav > a[aria-current] { background: var(--selected); color: var(--accent); font-weight: 700; }
+.nav > a[aria-current] svg { color: var(--accent); }
+.nav > a[aria-current]::before { content: ""; position: absolute; left: -0.375rem; top: 0.625rem; bottom: 0.625rem; width: 0.25rem; border-radius: 0 4px 4px 0; background: var(--accent); }
+.recent { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--soft-border); }
+.history summary { font-size: 0.8125rem; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
+.history[open] summary { color: var(--muted); }
+.historyBody { margin: 0.125rem 0 0.5rem 0; padding: 0; }
+.historyBody li { gap: 0; border-radius: 0.625rem; transition: background .15s; }
+.historyBody li:hover { background: var(--hover); }
+.historyBody li a { border-radius: 0.625rem; font-size: 0.875rem; font-weight: 400; padding: 0.5rem 0.4rem; }
+.historyBody li a:hover { background: transparent; }
+.historyBody li a[aria-current] { background: transparent; color: var(--accent); font-weight: 700; }
+.historyBody li:has(a[aria-current]) { background: var(--selected); }
+.historyBody li > button { width: 1.75rem; height: 1.75rem; border-radius: 0.5rem; }
+.historyBody li > button:hover { background: var(--surface); }
+.historyBody li > .pin { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); opacity: .45; transition: opacity .15s, color .15s; }
+.historyBody li:hover > .pin, .historyBody li:focus-within > .pin { opacity: .9; }
+.historyBody li > .pin.pinOn { opacity: 1; color: var(--accent) !important; }
+.preferences { border-top-color: var(--soft-border); }
+
+/* 사이드바 폭 조절 손잡이: 오른쪽 가장자리를 잡아 끌면 넓이가 바뀐다 */
+.resizer { position: fixed; top: 0; bottom: 0; left: calc(var(--site-sidebar-width) - 0.25rem); z-index: 25; width: 0.5rem; cursor: col-resize; touch-action: none; background: transparent; border: 0; padding: 0; }
+.resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0.1875rem; width: 2px; background: transparent; transition: background .15s; }
+.resizer:hover::after, .resizer:focus-visible::after, .resizer[data-dragging="true"]::after { background: var(--accent); }
+.resizer:focus-visible { outline: none; }
+:global(html[data-sidebar="collapsed"]) .resizer { display: none; }
+@media (max-width:50em) { .resizer { display: none; } }
+
+/* 메뉴 이름은 본문과 다른 글꼴(IBM Plex Sans KR)로 */
+.nav > a, .tabbar a, .tabbar summary, .sheet a { font-family: var(--font-menu), "Noto Sans KR", "Malgun Gothic", sans-serif; letter-spacing: -.01em; }
+.nav > a { font-weight: 500; }
+.nav > a[aria-current] { font-weight: 600; }
+.history summary { font-family: "Noto Sans KR", "Malgun Gothic", sans-serif; }

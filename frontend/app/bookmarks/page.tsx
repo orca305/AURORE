@@ -6,7 +6,6 @@ import { ShortTitle } from '../_components/short-title';
 import { ResetSearch } from '../_components/page-actions';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { SiteHeader } from '../_components/site-header';
 import { currentMember } from '../_auth/session';
 import { parsePageSize } from '../_components/page-size';
 import { PageSizeSelect } from '../_components/page-size-select';
@@ -25,7 +24,7 @@ export default async function BookmarksPage({searchParams}:{searchParams:Promise
   const payload=response?.ok?await response.json().catch(()=>null):null;
   const data=isBookmarkPage(payload,limit,offset)?payload:null;
   const pageUrl=(n:number)=>'/bookmarks?'+new URLSearchParams({q,kind,sort,from,to,limit:String(limit),offset:String(n)});
-  return <div><SiteHeader active="bookmarks"/><main className="shell">
+  return <div><main className="shell">
     <section className="intro"><h1>관심 항목</h1><p>다시 확인할 법령과 판례를 모아 보세요. 법령은 특정 시행본이 아닌 법령 자체에 등록됩니다.</p></section>
     <form className="search" action="/bookmarks" role="search"><label htmlFor="bookmark-query">관심 항목 검색</label><input type="hidden" name="limit" value={limit}/><div className="search-row"><select name="kind" aria-label="관심 항목 종류" defaultValue={kind}><option value="ALL">전체</option><option value="LEGAL">법령</option><option value="PREC">판례</option></select><input id="bookmark-query" name="q" defaultValue={q} maxLength={200} placeholder="법령명·판례명·사건번호"/><input type="hidden" name="sort" value={sort} /><button type="submit" data-primary aria-label="검색" title="검색"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.5-4.5" /></svg></button><ResetSearch/></div><PeriodFields from={from} to={to}/></form>
     <section className="results"><div className="section-heading"><h2>저장한 관심 항목{data?` · ${data.total}개`:''}</h2><PageSizeSelect value={limit} sort={sort} sortBasis="관심 등록일" /></div>

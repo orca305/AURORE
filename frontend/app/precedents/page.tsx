@@ -10,7 +10,6 @@ import { currentMember } from '../_auth/session';
 import { parsePageSize } from "../_components/page-size";
 import { PageSizeSelect } from "../_components/page-size-select";
 import type { Metadata } from "next";
-import { SiteHeader } from "../_components/site-header";
 import { Suspense } from "react";
 
 export const metadata: Metadata = { title: "판례 검색 | AURORE" };
@@ -146,7 +145,7 @@ async function PrecedentResults({ searchParams }: { searchParams: SearchParams }
 
 export default function PrecedentsPage({ searchParams }: { searchParams: SearchParams }) {
   return <div>
-    <SiteHeader active="precedents" />
+    
     <main className="shell">
       <section className="intro">
         <h1>판례 검색</h1>

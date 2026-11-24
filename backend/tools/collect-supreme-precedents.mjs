@@ -11,9 +11,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { from: { type: 'string' }, to: { type: 'string' }, 'no-apply': { type: 'boolean' } },
+  options: { from: { type: 'string' }, to: { type: 'string' }, court: { type: 'string' }, query: { type: 'string' }, 'no-apply': { type: 'boolean' } },
 });
-const root = positionals[0] ?? 'D:/DATA/precedent-supreme';
+// --court lower 면 하급심(법원 코드 400202) 판례를 받는다(기본 폴더 D:/DATA/precedent-lower).
+const court = values.court === 'lower' ? 'lower' : 'supreme';
+// --query "법령 이름" 이면 판결문 본문에 그 말이 들어 있는 판례만 받는다(기본 폴더 D:/DATA/precedent-law/<검색어>).
+const query = (values.query ?? '').trim();
+const root = positionals[0] ?? (query ? 'D:/DATA/precedent-law/' + query.replace(/[^0-9A-Za-z가-힣]+/gu, '_') : null) ?? (court === 'lower' ? 'D:/DATA/precedent-lower' : 'D:/DATA/precedent-supreme');
 // 2000년 이전 판례는 생활 법률 질문에 쓸모가 적어 기본으로 받지 않는다(2026-11-21 사용자 결정).
 const firstYear = Number(values.from ?? 2000);
 const lastYear = Number(values.to ?? new Date().getFullYear());
@@ -52,7 +56,7 @@ async function period(from, to) {
   const folder = join(root, from + '-' + to);
   if (existsSync(join(folder, 'applied.json')) || existsSync(join(folder, 'empty.json'))) return;
   if (!existsSync(join(folder, 'input.json'))) {
-    const plan = run('plan-precedent-collection.mjs', [join(folder, 'input.json'), '--court', 'supreme', '--from', from, '--to', to]);
+    const plan = run('plan-precedent-collection.mjs', [join(folder, 'input.json'), '--court', court, ...(query ? ['--query', query, '--search', 'body'] : []), '--from', from, '--to', to]);
     if (!plan.ok && plan.err.includes('SEARCH_TOO_BROAD')) {
       if (days(from, to) < 2) throw new Error('하루 선고 건수가 1000건을 넘어 나눌 수 없습니다: ' + from);
       const mid = new Date(Date.parse(from.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')) + Math.floor(days(from, to) / 2) * 86400000);

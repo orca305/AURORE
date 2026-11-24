@@ -2,7 +2,6 @@ import { Pagination } from "../../../_components/pagination";
 import { parsePageSize } from "../../../_components/page-size";
 import Link from "next/link";
 import {notFound} from "next/navigation";
-import {SiteHeader} from "../../../_components/site-header";
 import {officialUrl} from "../versions/official-source";
 import {IconLink} from "../../../_components/icon-link";
 import styles from "./page.module.css";
@@ -30,7 +29,7 @@ export default async function VersionComparison({params,searchParams}:{params:Pr
  const correction=Boolean(data&&data.before.versionId===data.after.versionId&&data.before.revisionId!==data.after.revisionId);
  const source=(url:string|null)=>{const href=officialUrl(url);return href?<a href={href} target="_blank" rel="noopener noreferrer" data-action-link>법제처 원문 </a>:null;};
  const names:Record<string,string>={added:'추가',removed:'삭제',modified:'변경',unchanged:'동일'};
- return <><SiteHeader active="legals"/><main className="shell"><section className="intro"><IconLink href={'/legals/'+id+'/versions'} kind="list" label="시행본 목록으로" /><h1>{law?.legalNm??'법령'} · {correction?'정정 전후 비교':'시행본 비교'}</h1><p>저장된 조문과 부칙을 나란히 비교합니다. 추가·삭제·변경된 부분을 강조해 표시합니다.</p></section>
+ return <><main className="shell"><section className="intro"><IconLink href={'/legals/'+id+'/versions'} kind="list" label="시행본 목록으로" /><h1>{law?.legalNm??'법령'} · {correction?'정정 전후 비교':'시행본 비교'}</h1><p>저장된 조문과 부칙을 나란히 비교합니다. 추가·삭제·변경된 부분을 강조해 표시합니다.</p></section>
  {!law||!versionsResponse?.ok?<p role="status" className="empty">시행본을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>:<>
  {correction&&data?<div className={styles.correctionInfo}><p>같은 시행본의 정정 전 원문과 정정 후 원문을 비교하고 있습니다.</p><Link href={path} data-action-link>다른 시행본 선택 </Link></div>:<form action={path} className={styles.picker}>
  <label>비교 전 시행본<select name="beforeVersionId" defaultValue={beforeId}>{[...selected.values()].map(v=><option key={v.id} value={v.id}>{label(v.enfcDt)}</option>)}</select></label>

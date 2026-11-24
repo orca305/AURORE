@@ -5,7 +5,6 @@ import { ResetSearch } from '../_components/page-actions';
 import Link from 'next/link';
 import {redirect} from 'next/navigation';
 import {currentMember} from '../_auth/session';
-import {SiteHeader} from '../_components/site-header';
 import {parsePageSize} from '../_components/page-size';
 import {PageSizeSelect} from '../_components/page-size-select';
 import {requestNotifications} from '../_notifications/requests';
@@ -23,7 +22,7 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
  const response=await requestNotifications('?'+query),payload=response?.ok?await response.json().catch(()=>null):null;
  const data=isNotificationPage(payload,limit,offset)?payload:null;
  const pageUrl=(n:number)=>'/notifications?'+new URLSearchParams({filter,kind,sort,limit:String(limit),offset:String(n)});
- return <div><SiteHeader active="notifications"/><main className="shell"><section className="intro"><h1>알림</h1><p>관심 등록 이후의 공포·시행·원문 정정 소식을 확인하세요. 저장된 법령·판례 자료를 기준으로 안내합니다.</p></section>
+ return <div><main className="shell"><section className="intro"><h1>알림</h1><p>관심 등록 이후의 공포·시행·원문 정정 소식을 확인하세요. 저장된 법령·판례 자료를 기준으로 안내합니다.</p></section>
  <form className="search" action="/notifications"><label htmlFor="notice-filter">알림 보기</label><input type="hidden" name="limit" value={limit}/><div className="search-row"><select id="notice-filter" name="filter" defaultValue={filter}><option value="ALL">전체 알림</option><option value="UNREAD">읽지 않은 알림</option></select><select name="kind" aria-label="알림 종류" defaultValue={kind}><option value="ALL">모든 종류</option><option value="PROMULGATED">공포</option><option value="EFFECTIVE">시행</option><option value="CORRECTED">원문 정정</option></select><input type="hidden" name="sort" value={sort} /><button type="submit" data-primary>조회</button><ResetSearch/></div></form>
  <section className="results"><div className="section-heading"><h2>{data?`읽지 않은 알림 ${data.unreadCount}개`:'받은 알림'}</h2><div className={styles.tools}><PageSizeSelect value={limit} sort={sort} sortBasis="수신일" />{data?.unreadCount&&data.readThroughId?<ReadNotification key={data.readThroughId} id={data.readThroughId} all/>:null}</div></div>
  {!data?<p role="status" className="empty">알림을 불러오지 못했습니다. 잠시 후 다시 확인해 주세요.</p>:<>

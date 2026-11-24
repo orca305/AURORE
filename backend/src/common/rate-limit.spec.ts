@@ -46,8 +46,8 @@ describe('접속 제한 적용', () => {
     expect(() => limitGuestCreate('c'.repeat(32))).not.toThrow();
   });
 
-  it('비회원 질문은 1시간 20번까지, 회원은 별도로 센다', () => {
-    for (let i = 0; i < 20; i += 1) limitQuestion({ userId: null }, client);
+  it('비회원 질문은 1시간 3번까지, 회원은 별도로 센다', () => {
+    for (let i = 0; i < 3; i += 1) limitQuestion({ userId: null }, client);
     expect(() => limitQuestion({ userId: null }, client)).toThrow(HttpException);
     expect(() => limitQuestion({ userId: 7n }, client)).not.toThrow();
   });

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { SiteHeader } from "../../_components/site-header";
 import { requestTerms, validTermId } from "../../_terms/requests";
 import type { Term } from "../../_terms/types";
 import { date } from "../../_admin/format";
@@ -48,7 +47,7 @@ export default async function TermDetail({
   const data = response?.ok ? ((await response.json()) as Term) : null;
   return (
     <>
-      <SiteHeader active="terms" />
+      
       <main className="shell">
         <section className="intro">
           <Link href="/terms">← 용어사전</Link>

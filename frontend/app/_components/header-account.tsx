@@ -2,9 +2,11 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { signOut } from "../_auth/actions";
+import { useActiveKey } from "./site-active";
 import styles from "./site-header.module.css";
 
-export function HeaderAccount({nickname, active}: {nickname: string; active: boolean}) {
+export function HeaderAccount({nickname}: {nickname: string}) {
+  const active = useActiveKey() === "account";
   const [error, action, pending] = useActionState(signOut, null);
   return <div className={styles.memberMenu}>
     <Link href="/account" className={styles.nickname} aria-current={active ? "page" : undefined} title={nickname + " · 마이페이지"}>{nickname}</Link>

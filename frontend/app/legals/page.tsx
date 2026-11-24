@@ -9,7 +9,6 @@ import { parsePageSize } from "../_components/page-size";
 import { PageSizeSelect } from "../_components/page-size-select";
 import { Suspense } from "react";
 import Link from "next/link";
-import { SiteHeader } from "../_components/site-header";
 
 type Legal = { id: string; srcCd: string; srcKey: string; legalNm: string };
 type Search = Promise<{ limit?: string | string[]; q?: string | string[]; sort?: string | string[]; offset?: string | string[] }>;
@@ -73,7 +72,7 @@ async function LegalResults({ searchParams }: { searchParams: Search }) {
 
 export default function LegalSearchPage({ searchParams }: { searchParams: Search }) {
   return <div>
-    <SiteHeader active="legals" />
+    
     <main className="shell">
       <section className="intro"><h1>법규 검색</h1><p>법규 이름으로 저장된 시행본과 조문을 찾아볼 수 있습니다.</p></section>
       <Suspense fallback={<p role="status" className="empty">법규 목록을 불러오는 중입니다.</p>}><LegalResults searchParams={searchParams} /></Suspense>

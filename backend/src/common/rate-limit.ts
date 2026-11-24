@@ -33,11 +33,11 @@ export class SlidingLimiter {
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
-// 방문자(접속 주소를 해시한 값)당: 비회원 대화 시작은 1시간 5번·하루 15번, 비회원 질문은 1시간 20번·하루 60번.
+// 방문자(접속 주소를 해시한 값)당: 비회원 대화 시작은 1시간 5번·하루 15번, 비회원 질문은 1시간 3번·하루 15번.
 const guestCreate = new SlidingLimiter([{ max: 5, windowMs: HOUR }, { max: 15, windowMs: DAY }]);
-const guestQuestion = new SlidingLimiter([{ max: 20, windowMs: HOUR }, { max: 60, windowMs: DAY }]);
-// 회원은 계정당 1시간 60번·하루 300번.
-const memberQuestion = new SlidingLimiter([{ max: 60, windowMs: HOUR }, { max: 300, windowMs: DAY }]);
+const guestQuestion = new SlidingLimiter([{ max: 3, windowMs: HOUR }, { max: 15, windowMs: DAY }]);
+// 회원은 계정당 1시간 10번·하루 50번.
+const memberQuestion = new SlidingLimiter([{ max: 10, windowMs: HOUR }, { max: 50, windowMs: DAY }]);
 
 const clientPattern = /^[a-f0-9]{16,64}$/;
 
@@ -68,5 +68,5 @@ export function limitQuestion(owner: { userId: bigint | null }, client: string |
   }
   if (!client || !clientPattern.test(client)) return;
   const result = guestQuestion.check('c:' + client);
-  if (!result.ok) refuse('비회원은 질문을 한 시간에 20번까지 보낼 수 있어요. 로그인하면 더 많이 쓸 수 있어요.', result.retryAfterSec);
+  if (!result.ok) refuse('비회원은 질문을 한 시간에 3번까지 보낼 수 있어요. 로그인하면 더 많이 쓸 수 있어요.', result.retryAfterSec);
 }
