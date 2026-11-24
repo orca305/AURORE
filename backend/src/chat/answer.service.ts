@@ -447,21 +447,22 @@ export class ChatAnswerService implements OnApplicationBootstrap {
         load: () => Promise<unknown>,
       ) => Promise<DemoReply>;
     };
-    const reply = await tools.answerDemoConversation(
-      question,
-      phase,
-      async () => {
-        const directory = process.env.AURORE_LAW_SNAPSHOT_DIR;
-        if (!directory || !isAbsolute(directory))
-          throw new Error('Source directory unavailable');
-        const evidence = (await import(
-          new URL('../../tools/law-evidence.mjs', import.meta.url).href
-        )) as {
-          loadEvidence: (directory: string) => Promise<unknown>;
-        };
-        return evidence.loadEvidence(directory);
-      },
-    );
+    // 처음 만든 "예제 대화 스크립트"(보증금·갱신 같은 특정 문장에 미리 정한 되묻기와 고정 답을 낸다)는 기본으로 쓰지 않는다.
+    // 모든 질문을 검색·생성형 답변으로 처리한다. 예전 방식이 필요할 때만 AURORE_DEMO_SCRIPT=1 로 켠다.
+    const reply: DemoReply =
+      process.env.AURORE_DEMO_SCRIPT === '1'
+        ? await tools.answerDemoConversation(question, phase, async () => {
+            const directory = process.env.AURORE_LAW_SNAPSHOT_DIR;
+            if (!directory || !isAbsolute(directory))
+              throw new Error('Source directory unavailable');
+            const evidence = (await import(
+              new URL('../../tools/law-evidence.mjs', import.meta.url).href
+            )) as {
+              loadEvidence: (directory: string) => Promise<unknown>;
+            };
+            return evidence.loadEvidence(directory);
+          })
+        : { phase: 'start', text: '', search: true };
     if (reply.search) {
       const intent = await classifyQuestion(
         question,
