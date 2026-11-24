@@ -9,6 +9,7 @@ from pydantic import BaseModel, StringConstraints
 
 import call_log
 from document_answer import router as document_router
+from document_ocr import router as document_ocr_router
 from intent_api import router as intent_router
 from legal_explain import router as legal_explain_router
 from legal_answer import router as legal_answer_router
@@ -16,6 +17,7 @@ from local_intent import router as local_intent_router
 
 app = FastAPI(title="AURORE AI", version="3.2.0")
 app.include_router(document_router)
+app.include_router(document_ocr_router)
 app.include_router(intent_router)
 app.include_router(local_intent_router)
 app.include_router(legal_explain_router)

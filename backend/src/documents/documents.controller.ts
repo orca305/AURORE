@@ -12,6 +12,8 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -30,7 +32,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { AuthService } from '../auth/auth.service.js';
 import {
   DocumentsService,
@@ -114,6 +116,22 @@ export class DocumentsController {
     @Req() req: MemberRequest,
   ) {
     return this.docs.read(chatId, id, req.documentOwner);
+  }
+  @Get(':id/original')
+  @Header('Cache-Control', 'no-store')
+  async original(
+    @Param('chatId', new ParseUUIDPipe({ version: '4' })) chatId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Req() req: MemberRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const file = await this.docs.original(chatId, id, req.documentOwner);
+    res.set({
+      'Content-Type': file.mime,
+      'Content-Disposition': "attachment; filename*=UTF-8''" + encodeURIComponent(file.filename),
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return new StreamableFile(file.buffer);
   }
   @Post(':id/delete')
   @HttpCode(200)

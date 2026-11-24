@@ -613,7 +613,19 @@ model AttachDoc {
  chat ChatSess @relation(fields:[chatSessId,userId],references:[id,userId],onDelete:Restrict,onUpdate:Restrict,map:"fk_attach_doc_owner")
  @@unique([chatSessId,id],map:"uq_attach_doc_chat")
  @@index([chatSessId,delYn,rgstDttm(sort:Desc),id(sort:Desc)],map:"idx_attach_doc_chat")
+ source AttachDocSrc?
  @@map("attach_doc")
+}
+
+/// 올린 원본 파일(가리지 않은 그대로). 내려받기용이며 첨부자료 삭제(소프트)를 따른다.
+model AttachDocSrc {
+ attachDocId String @id @map("attach_doc_id") @db.Uuid
+ origNm String @map("orig_nm") @db.VarChar(200)
+ mimeCd String @map("mime_cd") @db.VarChar(100)
+ srcCont Bytes @map("src_cont")
+ rgstDttm DateTime @default(now()) @map("rgst_dttm") @db.Timestamptz(0)
+ document AttachDoc @relation(fields:[attachDocId],references:[id],onDelete:Restrict,onUpdate:Restrict)
+ @@map("attach_doc_src")
 }
 
 model AiJobDoc {

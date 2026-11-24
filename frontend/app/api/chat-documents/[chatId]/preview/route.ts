@@ -16,7 +16,7 @@ export async function POST(request:Request,{params}:{params:Promise<{chatId:stri
  }catch{return Response.json({error:'5MB 이하 파일 하나를 선택해 주세요.'},{status:400});}
  try{
   const body=new FormData();body.set('file',file);
-  const response=await fetch(new URL('/chat-sessions/'+chatId+'/documents/preview',process.env.BACKEND_URL||'http://127.0.0.1:3001'),{method:'POST',headers:{Authorization:'Bearer '+token},body,cache:'no-store',signal:AbortSignal.timeout(25000)});
+  const response=await fetch(new URL('/chat-sessions/'+chatId+'/documents/preview',process.env.BACKEND_URL||'http://127.0.0.1:3001'),{method:'POST',headers:{Authorization:'Bearer '+token},body,cache:'no-store',signal:AbortSignal.timeout(95000)});
   const data=await response.json();
   if(!response.ok)return Response.json({error:typeof data.message==='string'?data.message:'문서를 변환하지 못했습니다.'},{status:response.status});
   return Response.json(data,{headers:{'Cache-Control':'private, no-store'}});

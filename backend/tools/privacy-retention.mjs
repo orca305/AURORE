@@ -35,6 +35,8 @@ const metrics = {
     'SELECT count(*) FROM case_hist h WHERE h.user_case_id IN(SELECT id FROM removed_cases) OR h.fact_id IN(SELECT id FROM removed_facts) OR h.user_id IN(SELECT id FROM removed_users)',
   retainedDocumentBodies:
     'SELECT count(*) FROM attach_doc d WHERE d.id IN(SELECT id FROM removed_documents) AND octet_length(d.md_cont)>0',
+  retainedDocumentOriginals:
+    'SELECT count(*) FROM attach_doc_src s WHERE s.attach_doc_id IN(SELECT id FROM removed_documents) AND octet_length(s.src_cont)>0',
   retainedDocumentQuotes:
     'SELECT count(*) FROM doc_quote q WHERE (q.attach_doc_id IN(SELECT id FROM removed_documents) OR q.msg_id IN(SELECT id FROM removed_messages)) AND octet_length(q.quote)>0',
   retainedLegalCitations:
@@ -117,8 +119,8 @@ export async function auditPrivacyRetention(db, now = new Date()) {
         },
         {
           code: 'DOCUMENT',
-          count: counts.retainedDocumentBodies,
-          dependency: '정제본·첨부 인용·AI 입력 링크·해시 사본을 함께 검토.',
+          count: counts.retainedDocumentBodies + counts.retainedDocumentOriginals,
+          dependency: '정제본·올린 원본 파일(가리지 않은 그대로)·첨부 인용·AI 입력 링크·해시 사본을 함께 검토.',
         },
         {
           code: 'MEMBER_LINKS',

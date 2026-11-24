@@ -105,6 +105,15 @@ def extract(data, kind):
             text = "\n".join(xml_text(z.read(n)) for n in names)
     elif kind == "hwp":
         text = hwp_text(data)
+    elif kind in ("csv", "tsv"):
+        import document_formats as formats
+        text = formats.table_text(data, "," if kind == "csv" else "	")
+    elif kind == "rtf":
+        import document_formats as formats
+        text = formats.rtf_text(data)
+    elif kind in ("xlsx", "pptx", "odt", "ods", "odp"):
+        import document_formats as formats
+        text = {"xlsx": formats.xlsx_text, "pptx": formats.pptx_text}.get(kind, formats.odf_text)(data)
     else:
         raise ValueError("UNSUPPORTED_FORMAT")
     text = text.replace("\r\n", "\n").replace("\r", "\n").strip()

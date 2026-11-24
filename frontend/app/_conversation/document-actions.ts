@@ -2,7 +2,7 @@
 import {currentToken,trustedOrigin} from "../_auth/session";
 import {chatIdPattern,requestChat} from "./requests";
 import type {ChatDetail,ChatResult} from "./types";
-export type DocumentList={items:{id:string;name:string;format:string;size:number;characterCount?:number;partial:boolean;createdAt:string}[];total:number;offset:number;nextOffset:number|null};
+export type DocumentList={items:{id:string;name:string;format:string;size:number;characterCount?:number;partial:boolean;hasOriginal?:boolean;originalName?:string|null;createdAt:string}[];total:number;offset:number;nextOffset:number|null};
 async function credential(){const token=await currentToken();return token?'Bearer '+token:null;}
 const invalid=<T,>():ChatResult<T>=>({data:null,error:'요청과 로그인 상태를 확인해 주세요.',status:400});
 export async function listDocuments(chatId:string,limit=20,offset=0):Promise<ChatResult<DocumentList>>{
