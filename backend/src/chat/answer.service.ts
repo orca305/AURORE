@@ -359,6 +359,10 @@ export class ChatAnswerService implements OnApplicationBootstrap {
     // 'law': 저장된 법령 조문 후보 검토(법령 전용 기준). 생략하면 사용자 첨부자료 기준.
     source?: 'law',
   ): Promise<PreparedAnswer> {
+    // 사용자 첨부자료는 인용만 보여 주지 않고, 문서 내용을 바탕으로 한 쉬운 설명을 함께 만든다(실패하면 인용만 보여 준다).
+    const discussion = source
+      ? Promise.resolve('')
+      : this.discussDocuments(question, documents, context);
     const response = await fetch(this.documentUrl('/documents/answer'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -423,14 +427,43 @@ export class ChatAnswerService implements OnApplicationBootstrap {
       seen.add(key);
       return { documentId: source.id, quote: row.quote, mdHash: source.mdHash };
     });
+    const explanation = await discussion;
+    const lead = quotes.length
+      ? '선택한 첨부자료에서 질문과 관련된 내용을 찾았습니다. 아래 인용문을 확인해 주세요.'
+      : '선택한 첨부자료에서 질문에 직접 관련된 원문을 확인하지 못했습니다. 자료나 질문을 구체적으로 확인해 주세요.';
     return {
       phase: 'start',
-      text: quotes.length
-        ? '선택한 첨부자료에서 질문과 관련된 내용을 찾았습니다. 아래 인용문을 확인해 주세요.'
-        : '선택한 첨부자료에서 질문에 직접 관련된 원문을 확인하지 못했습니다. 자료나 질문을 구체적으로 확인해 주세요.',
-      resultCd: quotes.length ? 'EVIDENCE_FOUND' : 'DOCUMENT_GAP',
+      text: explanation ? explanation + (quotes.length ? '\n\n' + lead : '') : lead,
+      resultCd: quotes.length || explanation ? 'EVIDENCE_FOUND' : 'DOCUMENT_GAP',
       documentQuotes: quotes,
     };
+  }
+
+  private async discussDocuments(
+    question: string,
+    documents: DocumentInput[],
+    context?: string,
+  ): Promise<string> {
+    try {
+      const response = await fetch(this.documentUrl('/documents/discuss'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: redactDocument(question).slice(0, 1000) || '질문',
+          ...(context ? { context: redactDocument(context).slice(0, 8000) } : {}),
+          documents: documents.map(({ id, name, markdown }) => ({ id, name, markdown })),
+        }),
+        signal: AbortSignal.timeout(150000),
+        redirect: 'error',
+      });
+      if (!response.ok) return '';
+      const value = (await response.json()) as { text?: unknown };
+      return typeof value.text === 'string'
+        ? redactDocument(value.text).trim().slice(0, 2500)
+        : '';
+    } catch {
+      return '';
+    }
   }
 
   async generate(

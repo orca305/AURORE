@@ -156,6 +156,7 @@ model ChatSess {
   userId      BigInt?  @map("user_id")
   guestSessId String?  @map("guest_sess_id") @db.Uuid
   sessNm      String   @map("sess_nm") @db.VarChar(80)
+  caseSum     String?  @map("case_sum") @db.VarChar(600)
   phaseCd     String   @default("start") @map("phase_cd") @db.VarChar(32)
   revNo       Int      @default(0) @map("rev_no")
   nextMsgSeq  Int      @default(1) @map("next_msg_seq")

@@ -828,7 +828,14 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         });
       await tx.chatSess.update({
         where: { id },
-        data: { revNo: { increment: 1 }, nextMsgSeq: { increment: 1 } },
+        data: {
+          revNo: { increment: 1 },
+          nextMsgSeq: { increment: 1 },
+          // 첫 질문은 자동으로 이 대화의 "사건 개요"가 되어 이어지는 모든 질문의 공통 맥락으로 쓰인다.
+          ...(room.nextMsgSeq === 1 && !room.caseSum
+            ? { caseSum: redactDocument(text).slice(0, 600) }
+            : {}),
+        },
       });
     });
     this.kick();
@@ -1432,7 +1439,16 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     beforeSeq: number,
     question: string,
   ) {
-    if (!isFollowUpQuestion(question)) return undefined;
+    const room = await this.db.chatSess.findUnique({
+      where: { id: chatId },
+      select: { caseSum: true },
+    });
+    // 첫 질문에서 정리한 사건 개요는 후속 질문마다 공통 맥락으로 붙인다(첫 질문 자체에는 붙이지 않는다).
+    const overview =
+      room?.caseSum && beforeSeq > 1
+        ? '사건 개요(첫 질문, 사용자 설명, 확인되지 않은 사실): ' + room.caseSum
+        : '';
+    if (!isFollowUpQuestion(question)) return overview || undefined;
     const rows = await this.db.chatMsg.findMany({
       where: {
         chatSessId: chatId,
@@ -1444,14 +1460,28 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       take: 2,
       select: { msgCont: true },
     });
-    if (!rows.length) return undefined;
-    return (
-      '이전 질문(사용자 설명, 확인되지 않은 사실): ' +
-      rows
-        .reverse()
-        .map((row) => redactDocument(row.msgCont).slice(0, 300))
-        .join(' / ')
-    );
+    const lastAnswer = await this.db.chatMsg.findFirst({
+      where: {
+        chatSessId: chatId,
+        roleCd: 'ASSISTANT',
+        delYn: false,
+        msgSeq: { lt: beforeSeq },
+      },
+      orderBy: { msgSeq: 'desc' },
+      select: { msgCont: true },
+    });
+    const recent = rows.length
+      ? '이전 질문(사용자 설명, 확인되지 않은 사실): ' +
+        rows
+          .reverse()
+          .map((row) => redactDocument(row.msgCont).slice(0, 300))
+          .join(' / ')
+      : '';
+    const answered = lastAnswer
+      ? '직전 답변 요약: ' +
+        redactDocument(lastAnswer.msgCont).replace(/\s+/g, ' ').slice(0, 300)
+      : '';
+    return [overview, recent, answered].filter(Boolean).join('\n') || undefined;
   }
 
   async drain() {
