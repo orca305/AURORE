@@ -1,4 +1,4 @@
-# Cloudflare 터널을 켠다(외부 공개). 먼저 docs/DEPLOY_EXTERNAL_20261122.md 의 준비 단계를 끝내야 한다.
+# Cloudflare 터널을 켠다(외부 공개). 먼저 docs/OPERATIONS.md 의 외부 공개 준비를 끝내야 한다.
 # 사용: powershell -NoProfile -ExecutionPolicy Bypass -File local-dev/deploy/start-tunnel.ps1
 # 중지: 이 스크립트가 띄운 cloudflared 프로세스를 종료하면 바로 외부 접속이 끊긴다.
 $ErrorActionPreference = 'Stop'
@@ -7,7 +7,7 @@ $config = Join-Path $PSScriptRoot 'cloudflared-config.yml'
 if (-not (Test-Path -LiteralPath $config)) { throw "설정 파일이 없습니다: $config (cloudflared-config.example.yml 을 복사해 채워 주세요)" }
 $local = Join-Path $PSScriptRoot 'bin/cloudflared.exe'
 $cloudflared = if (Test-Path -LiteralPath $local) { $local } else { (Get-Command cloudflared.exe -ErrorAction SilentlyContinue).Source }
-if (-not $cloudflared) { throw 'cloudflared 가 없습니다(local-dev/deploy/bin/cloudflared.exe). docs/DEPLOY_EXTERNAL_20261122.md 의 1단계를 먼저 하세요.' }
+if (-not $cloudflared) { throw 'cloudflared 가 없습니다(local-dev/deploy/bin/cloudflared.exe). docs/OPERATIONS.md 의 외부 공개 1단계를 먼저 하세요.' }
 
 # 공개 전에 이 컴퓨터의 서비스가 정상이고, 접속 코드 보호가 켜져 있는지 확인한다.
 function Test-Local([string]$Url) { try { (Invoke-WebRequest -Uri $Url -TimeoutSec 4 -UseBasicParsing -MaximumRedirection 0 -ErrorAction Stop).StatusCode } catch { $_.Exception.Response.StatusCode.value__ } }
