@@ -78,6 +78,29 @@ export async function embedTexts(texts: string[], timeoutMs = 20_000): Promise<I
     return null;
   }
 }
+// 조문 문장은 바뀌지 않고 같은 법령이 자주 다시 나오므로 벡터를 기억해 둔다(약 20MB, 오래 안 쓴 것부터 버린다).
+const chunkVectors = new Map<string, Int8Array>();
+const CHUNK_CACHE_LIMIT = 20_000;
+/** embedTexts 와 같지만 이미 계산한 문장은 다시 보내지 않는다. 하나라도 실패하면 null. */
+export async function embedChunks(texts: string[]): Promise<Int8Array[] | null> {
+  const found = new Map<string, Int8Array>();
+  for (const text of texts) {
+    const hit = chunkVectors.get(text);
+    if (hit) found.set(text, hit);
+  }
+  const missing = [...new Set(texts.filter((text) => !found.has(text)))];
+  if (missing.length) {
+    const fresh = await embedTexts(missing);
+    if (!fresh) return null;
+    missing.forEach((text, at) => found.set(text, fresh[at]));
+  }
+  for (const [text, vector] of found) {
+    chunkVectors.delete(text);
+    chunkVectors.set(text, vector);
+  }
+  while (chunkVectors.size > CHUNK_CACHE_LIMIT) chunkVectors.delete(chunkVectors.keys().next().value!);
+  return texts.map((text) => found.get(text)!);
+}
 export function cosine(a: Int8Array, b: Int8Array): number {
   let sum = 0;
   for (let i = 0; i < a.length; i++) sum += a[i] * b[i];

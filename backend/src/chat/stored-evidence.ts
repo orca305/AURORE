@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { DocumentInput, PreparedCitation } from './answer.service.js';
-import { cosine, embedTexts, fuseRanks, searchVectorsMulti, topWithin, vectorEnabled } from './vector-search.js';
+import { cosine, embedChunks, embedTexts, fuseRanks, searchVectorsMulti, topWithin, vectorEnabled } from './vector-search.js';
 import { searchLawTitles } from './law-titles.js';
 import { EvidenceCache, PINNED_LAWS, isPinnedLaw } from './evidence-cache.js';
 import { matchSituations, toNormNo } from './situations.js';
@@ -271,6 +271,8 @@ export function ensureLawSlots<T>(rows: T[], reserved: T[], limit: number, keyOf
   return [...head, ...missing, ...tail, ...rest];
 }
 
+const SEMANTIC_ROWS = 8;
+
 export async function retrieveStoredEvidence(
   db: PrismaService,
   question: string,
@@ -306,7 +308,9 @@ export async function retrieveStoredEvidence(
       : Prisma.sql`0`;
   // ponytail: bounded lexical retrieval for the beta corpus; index/search service when corpus measurements require it.
   const lawRank = Prisma.sql`(${rank(Prisma.sql`concat(l.legal_nm,' ',p.provi_nm)`)}*3 + ${rank(Prisma.sql`p.provi_cont`)})`;
-  const caseRank = Prisma.sql`(${rank(Prisma.sql`concat(r.case_no,' ',r.case_nm)`)}*3 + ${rank(Prisma.sql`concat(r.issue_cont,' ',r.summary_cont,' ',r.decision_cont)`)})`;
+  // 판례는 판시사항·판결요지만 훑는다. 판결문 전문(수백 MB)을 질문마다 훑는 것이 검색에서 가장 느린 부분이었다.
+  // 요지가 둘 다 없는 소수의 판례만 판결문 앞부분을 대신 본다.
+  const caseRank = Prisma.sql`(${rank(Prisma.sql`concat(r.case_no,' ',r.case_nm)`)}*3 + ${rank(Prisma.sql`concat(r.issue_cont,' ',r.summary_cont,' ',CASE WHEN coalesce(r.issue_cont,'')='' AND coalesce(r.summary_cont,'')='' THEN left(r.decision_cont,1500) ELSE '' END)`)})`;
   const namedLawSelector = selectors.namedLaw
     ? Prisma.sql`position(regexp_replace(l.legal_nm,'[[:space:]]','','g') in ${question.normalize('NFKC').replace(/\s/gu, '')})>0`
     : Prisma.sql`TRUE`;
@@ -537,12 +541,13 @@ export async function retrieveStoredEvidence(
   const prepared = rows.map(prepare);
   // 의미 검색이 켜져 있으면 각 조문 안에서 질문과 가장 뜻이 가까운 항(원문 필드)을 먼저 고른다. 실패하면 단어 일치 순서를 그대로 쓴다.
   if (options.vectorQuery && vectorEnabled() && !selectors.article && !selectors.caseNumber && process.env.AURORE_SEMANTIC_CHUNK !== '0') {
-    const picks = prepared.map((item) => (item && item.ranked.length > 1 ? item.ranked.slice(0, 6) : null));
+    // 답에는 앞쪽 후보(상위 6개, 법령 검사에서 일부가 빠질 여유 2개)만 쓰이므로 그만큼만 계산한다.
+    const picks = prepared.map((item, at) => (at < SEMANTIC_ROWS && item && item.ranked.length > 1 ? item.ranked.slice(0, 6) : null));
     const chunkTexts = picks.flatMap((list) => (list ?? []).map((entry) => entry.chunk.text.slice(0, 500)));
     // 질문 벡터는 의미 검색에서 이미 구했으면 재사용한다(없을 때만 한 번에 함께 임베딩).
     const embedded = chunkTexts.length
       ? queryVector
-        ? await embedTexts(chunkTexts)
+        ? await embedChunks(chunkTexts)
         : await embedTexts([options.vectorQuery, ...chunkTexts])
       : null;
     const vectors = embedded ? (queryVector ? [queryVector, ...embedded] : embedded) : null;

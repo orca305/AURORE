@@ -112,6 +112,28 @@ class AnswerTests(unittest.TestCase):
             self.assertEqual(answer(req()), {"legal": False, "verified": True})
 
 
+class RefCheckTests(unittest.TestCase):
+    def run_with(self, second):
+        with patch("legal_answer.model_control.provider", return_value="external"), patch("legal_answer.external_blocked", return_value=None), patch("legal_answer._model_json", side_effect=[good(), second]) as model:
+            return answer(req()), model
+
+    def test_swapped_and_unrelated_refs_are_corrected(self):
+        result, model = self.run_with({"results": [{"id": 0, "refs": [0]}, {"id": 1, "refs": []}, {"id": 2, "refs": [0, 9]}]})
+        self.assertEqual(model.call_count, 2)
+        self.assertEqual(result["conclusionRefs"], [0])
+        self.assertEqual(result["details"][0]["refs"], [])  # 관계없는 근거는 뗀다
+        self.assertEqual(result["cautions"][0]["refs"], [0])  # 범위 밖 번호는 버린다
+
+    def test_failed_check_keeps_original_refs(self):
+        result, _ = self.run_with({"unexpected": True})
+        self.assertEqual(result["details"][0]["refs"], [1])
+
+    def test_local_model_skips_the_check(self):
+        with patch("legal_answer.model_control.provider", return_value="local"), patch("legal_answer._model_json", return_value=good()) as model:
+            answer(req())
+        self.assertEqual(model.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
 

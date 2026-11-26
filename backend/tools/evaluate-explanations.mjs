@@ -258,7 +258,35 @@ const prec10b = [
   ['r-trade-secret', ['부정경쟁방지'], '퇴사한 직원이 영업비밀을 들고 경쟁사로 갔어요. 어떻게 해야 하나요?'],
 ];
 
-const activeScenarios = process.env.EVAL_SET === 'prec10b' ? prec10b : process.env.EVAL_SET === 'prec10' ? prec10 : process.env.EVAL_SET === 'holdout' ? holdout : process.env.EVAL_SET === 'fresh' ? fresh : process.env.EVAL_SET === 'prec' ? prec : scenarios;
+// 판례 추가 수집(2만 4천 건)·참조조문 색인 갱신 후 측정용 새 질문 10개(2026-11-26). EVAL_SET=prec10c 로 실행한다.
+const prec10c = [
+  ['r-ordinary-wage', ['근로기준법'], '두 달마다 나오는 정기상여금도 통상임금에 들어가나요?'],
+  ['r-title-trust', ['부동산 실권리자명의', '민법'], '세금 때문에 친척 이름으로 등기해 둔 집을 돌려받을 수 있나요?'],
+  ['r-dinner-accident', ['산업재해보상보험법'], '회사 회식을 마치고 집에 가다가 다쳤는데 산재가 되나요?'],
+  ['r-fraudulent-transfer', ['민법'], '빚진 사람이 하나뿐인 아파트를 가족에게 넘겨 버렸는데 되돌릴 수 있나요?'],
+  ['r-restore', ['주택임대차보호법', '민법'], '이사 나갈 때 집주인이 오래 써서 바랜 벽지까지 새로 해 놓으래요. 해야 하나요?'],
+  ['r-noncompete', ['민법', '근로기준법', '부정경쟁방지'], '퇴사하면 동종업계에 2년간 못 간다는 서약을 썼는데 꼭 지켜야 하나요?'],
+  ['r-loan-or-invest', ['민법', '상법'], '돈을 빌려줬는데 상대가 투자받은 돈이라며 안 갚겠대요. 어떻게 입증하나요?'],
+  ['r-breath-refusal', ['도로교통법'], '음주 측정을 거부하면 어떻게 처벌되나요?'],
+  ['r-used-car', ['민법', '자동차관리법'], '산 중고차가 주행거리를 속인 차였어요. 계약을 취소할 수 있나요?'],
+  ['r-medical-consent', ['의료법', '민법'], '수술 부작용을 미리 설명해 주지 않았는데 병원에 위자료를 청구할 수 있나요?'],
+];
+
+// 답변 속도 개선(판례 검색 범위·질문 분석·임베딩) 전후 비교용 새 질문 10개(2026-11-26). EVAL_SET=speed10 로 실행한다.
+const speed10 = [
+  ['s-holiday-pay', ['근로기준법'], '공휴일에 일을 시키면서 휴일수당을 안 줘요'],
+  ['s-lease-repair', ['민법', '주택임대차보호법'], '세 든 집 천장에서 물이 새는데 집주인이 고쳐 주지 않아요'],
+  ['s-online-insult', ['형법', '정보통신망'], '게임 채팅에서 모르는 사람이 심한 욕을 했는데 고소할 수 있나요?'],
+  ['s-loan-limit', ['민법'], '10년 전에 빌려준 돈을 지금도 받을 수 있나요?'],
+  ['s-scooter', ['도로교통법', '민법'], '술 마시고 전동킥보드를 타면 어떤 처벌을 받나요?'],
+  ['s-package-trip', ['민법', '관광진흥법', '소비자기본법'], '예약한 패키지여행을 출발 전에 취소하면 위약금을 얼마나 내야 하나요?'],
+  ['s-support-arrears', ['가사소송법', '민법', '양육비'], '이혼한 상대가 양육비를 계속 안 보내요 어떻게 받아내나요?'],
+  ['s-shop-term', ['상가건물 임대차보호법'], '가게를 5년째 운영 중인데 건물주가 계약을 끝내자고 해요'],
+  ['s-cctv-work', ['개인정보 보호법', '근로자참여'], '회사가 사무실에 CCTV를 달아 직원을 감시해도 되나요?'],
+  ['s-dog-bite', ['민법', '동물보호법', '형법'], '산책하던 개가 달려들어 아이가 다쳤어요 주인에게 무엇을 청구할 수 있나요?'],
+];
+
+const activeScenarios = process.env.EVAL_SET === 'speed10' ? speed10 : process.env.EVAL_SET === 'prec10c' ? prec10c : process.env.EVAL_SET === 'prec10b' ? prec10b : process.env.EVAL_SET === 'prec10' ? prec10 : process.env.EVAL_SET === 'holdout' ? holdout : process.env.EVAL_SET === 'fresh' ? fresh : process.env.EVAL_SET === 'prec' ? prec : scenarios;
 
 async function main() {
   const [out, asOf] = process.argv.slice(2);

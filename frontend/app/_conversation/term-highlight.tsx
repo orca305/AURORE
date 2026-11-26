@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useId, useMemo, useState } from "react";
-import { planTerms, splitByTerms, type GlossaryTerm } from "./term-match";
+import { planTerms, splitByTerms, termsForContext, type GlossaryTerm } from "./term-match";
 import styles from "./conversation.module.css";
 
 // 공개된 용어 목록은 화면당 한 번만 가져와 모든 답변이 공유한다. 실패하면 하이라이트 없이 원래 문장을 보여 준다.
@@ -44,11 +44,11 @@ function useGlossary() {
 }
 
 /** 한 답변 안에서 같은 용어가 여러 번 나와도 첫 번째 한 곳에만 툴팁 링크를 달도록 조각별 허용 용어를 정한다. */
-export function useTermPlan(segments: string[]) {
+export function useTermPlan(segments: string[], context: string) {
   const terms = useGlossary();
   const key = segments.join("");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => planTerms(segments, terms), [key, terms]);
+  return useMemo(() => planTerms(segments, termsForContext(terms, context)), [key, context, terms]);
 }
 
 export function HighlightedText({ text, allow }: { text: string; allow?: Set<string> }) {
@@ -57,10 +57,12 @@ export function HighlightedText({ text, allow }: { text: string; allow?: Set<str
   const lines = useMemo(
     () => {
       const taken = new Set<string>();
+      // 표시할 용어가 미리 정해지지 않은 짧은 답은 그 글의 맥락으로 거른다.
+      const usable = allow ? terms : termsForContext(terms, text);
       return text.split("\n").map((line) =>
         EXPLAIN_HEADINGS.has(line.trim())
           ? { heading: line.trim(), kind: CASE_HEADINGS.has(line.trim()) ? "case" : "law" }
-          : { chunks: line.split(CASE_REF).map((chunk, at) => (at % 2 ? { caseRef: chunk, parts: [] as ReturnType<typeof splitByTerms> } : { caseRef: "", parts: splitByTerms(chunk, terms, allow, taken) })) },
+          : { chunks: line.split(CASE_REF).map((chunk, at) => (at % 2 ? { caseRef: chunk, parts: [] as ReturnType<typeof splitByTerms> } : { caseRef: "", parts: splitByTerms(chunk, usable, allow, taken) })) },
       );
     },
     [text, terms, allow],

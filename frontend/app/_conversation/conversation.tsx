@@ -141,7 +141,7 @@ function buildAnswer(text: string) {
 /** 해설을 "한 줄 결론"과 번호 단계로 나눠 보여 준다. 소제목이 없는 짧은 답은 그대로 보여 준다. */
 function AnswerBody({ text }: { text: string }) {
   const model = useMemo(() => buildAnswer(text), [text]);
-  const plan = useTermPlan(model.segments);
+  const plan = useTermPlan(model.segments, text);
   if (!model.structured) return <p className={styles.messageText}><HighlightedText text={text} /></p>;
   const { conclusion, steps, closingSeg, evidence } = model;
   return <>

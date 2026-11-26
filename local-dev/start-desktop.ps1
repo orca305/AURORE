@@ -40,6 +40,8 @@ $env:AURORE_AI_MOCK = '0'
 # 모델은 local-dev/model-profile.txt(fast|quality)로 고른다. 바꾸려면 local-dev/switch-model.ps1 을 쓴다.
 . (Join-Path $PSScriptRoot 'model-profiles.ps1')
 $env:AURORE_OLLAMA_MODEL = Get-AuroreModel
+# 질문 분석에 작은 모델을 쓰면 약 1초 빨라지지만 핵심 법률용어를 놓쳐 검색 품질이 떨어졌다(2026-11-26 측정). 시험할 때만 아래 줄의 주석을 푼다.
+# $env:AURORE_ANALYZE_MODEL = 'aurore-local:e4b'
 $answerer = Set-AuroreExternalEnv
 $env:AURORE_INTENT_CLASSIFY = '0'
 $env:AURORE_INTENT_ENABLE_ROUTING = '0'

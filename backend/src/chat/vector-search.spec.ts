@@ -45,3 +45,23 @@ describe('law level factor', () => {
     expect(levelFactor('국민연금공단법 제3조')).toBe(0.6);
   });
 });
+
+describe('embedChunks', () => {
+  it('sends only texts it has not embedded yet', async () => {
+    const sent: string[][] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (_url: unknown, init: { body: string }) => {
+      const { input } = JSON.parse(init.body) as { input: string[] };
+      sent.push(input);
+      return new Response(JSON.stringify({ embeddings: input.map(() => Array.from({ length: 1024 }, () => 1)) }));
+    }) as typeof fetch;
+    try {
+      const { embedChunks } = await import('./vector-search.js');
+      expect(await embedChunks(['캐시 시험 가', '캐시 시험 나'])).toHaveLength(2);
+      expect(await embedChunks(['캐시 시험 나', '캐시 시험 다', '캐시 시험 가'])).toHaveLength(3);
+      expect(sent).toEqual([['캐시 시험 가', '캐시 시험 나'], ['캐시 시험 다']]);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

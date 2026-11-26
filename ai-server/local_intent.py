@@ -41,11 +41,13 @@ class IntentAnalysis(BaseModel):
 
 @router.post("/analyze")
 def analyze_intent(payload: IntentQuestion):
-    model = os.getenv("AURORE_OLLAMA_MODEL", "").strip()
+    # 질문 분석은 검색 힌트일 뿐이라 답변 전체를 기다리게 하지 않도록 더 작은 모델(AURORE_ANALYZE_MODEL)을 쓸 수 있다.
+    override = os.getenv("AURORE_ANALYZE_MODEL", "").strip()
+    model = override or os.getenv("AURORE_OLLAMA_MODEL", "").strip()
     try:
         result = IntentAnalysis.model_validate(local_json(
             SYSTEM, {"question": payload.question}, schema=IntentAnalysis.model_json_schema(),
-            timeout=12, num_predict=384, think=False,
+            timeout=12, num_predict=384, think=False, **({"model": override} if override else {}),
         ))
         return {**result.model_dump(), "available": True, "model": model, "routingEnabled": False}
     except Exception:

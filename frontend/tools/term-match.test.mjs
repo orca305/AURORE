@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {splitByTerms} from '../app/_conversation/term-match.ts';
+import {splitByTerms,termsForContext} from '../app/_conversation/term-match.ts';
 const term=(id,termName,aliases=[])=>({id,termName,aliases,brief:'합성 설명',easy:true});
 const glossary=[term('1','임금'),term('2','평균임금'),term('3','임차권등기명령',['임차권 등기명령']),term('4','해지'),term('5','a.b')];
 const join=parts=>parts.map(p=>p.text).join('');
@@ -24,4 +24,15 @@ test('text is preserved, regex characters are literal, and empty input is safe',
 });
 test('one-character names are ignored to avoid false matches',()=>{
  assert.deepEqual(splitByTerms('법을 지키세요',[term('9','법')]),[{text:'법을 지키세요'}]);
+});
+test('a term name wins over another term alias with the same text',()=>{
+ const parts=splitByTerms('과실이 있었나요',[term('7','천연과실',['과실']),term('8','과실')]);
+ assert.deepEqual(parts.filter(p=>p.term).map(p=>p.term.id),['8']);
+});
+test('terms from a specialised law appear only when the answer mentions that law',()=>{
+ const rows=[{...term('1','해고의 제한'),law:'근로기준법'},{...term('2','동시이행'),law:'민법'},{...term('3','잠정조치'),law:'스토킹범죄의 처벌 등에 관한 법률'},{...term('4','적전'),law:'군형법'},term('5','직접등록')];
+ const ids=context=>termsForContext(rows,context).map(row=>row.id);
+ assert.deepEqual(ids('스토킹 신고 — 근거: 스토킹범죄의 처벌 등에 관한 법률 제8조'),['2','3','5']);
+ assert.deepEqual(ids('— 근거: 근로기준법 시행령 제2조'),['1','2','5']);
+ assert.deepEqual(ids('— 근거: 형법 제1조'),['2','5']);
 });

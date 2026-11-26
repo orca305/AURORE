@@ -515,15 +515,15 @@ export class ChatAnswerService implements OnApplicationBootstrap {
         };
       // 의도 분석은 검색어 힌트로만 쓴다. 차단·분기·인용 근거로는 쓰지 않는다.
       // 후속 질문은 이전 질문과 함께 분석해야 "법원에 뭘 신청해?" 같은 흔한 단어에 검색이 끌려가지 않는다.
-      const hints = await this.searchHints(
-        history
-          ? (history.replace(/^[^:]*:\s*/u, '').slice(-600) + ' ' + question).slice(-900)
-          : question,
-      );
+      const analysisQuery = history
+        ? (history.replace(/^[^:]*:\s*/u, '').slice(-600) + ' ' + question).slice(-900)
+        : question;
+      const hints = await this.searchHints(analysisQuery);
       const text = [history, hints.length ? '검색어 힌트: ' + hints.join(' ') : '']
         .filter(Boolean)
         .join('\n');
-      return this.generateStored(question, text ? { text } : undefined);
+      // 같은 분석 결과를 검색에서 다시 쓴다(후속 질문에서 분석 모델을 두 번 부르지 않는다).
+      return this.generateStored(question, text ? { text, analysisQuery } : undefined);
     }
     if (!reply.source)
       return {
@@ -543,7 +543,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
 
   async generateStored(
     question: string,
-    context?: { text: string; asOf?: string },
+    context?: { text: string; asOf?: string; analysisQuery?: string },
     supplement = false,
   ): Promise<PreparedAnswer> {
     // 생성형 답변(AURORE_ANSWER_MODE=generative): 모델이 적용 조문을 직접 짚고(그 조문을 DB에서 바로 찾아 후보 맨 앞에 넣는다),
@@ -566,7 +566,7 @@ export class ChatAnswerService implements OnApplicationBootstrap {
           .catch(() => null)
       : Promise.resolve(null);
     reportStage('analyze');
-    const analysis = await this.analyzeQuery(question);
+    const analysis = await this.analyzeQuery(context?.analysisQuery ?? question);
     reportStage('search');
     // 인용 법령 일치 검사: 인용할 조문의 법령이 질문 분석이 짚은 법령이나 질문과 뜻이 가까운 법령(또는 그 시행령·시행규칙)에
     // 없으면 근거로 확정하지 않는다(다른 후보를 보거나 근거 없음으로 처리). 짚은 법령이 하나도 없으면 판단하지 않는다.
