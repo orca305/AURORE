@@ -155,12 +155,13 @@ def _model_json(*args, **kwargs):
     """해설·답변 모델 호출. AURORE_EXPLAIN_PROVIDER=anthropic 이면 Haiku 등 외부 모델을 쓰되,
     예산 소진·인증 오류·과부하·네트워크 문제로 쓸 수 없으면 같은 요청을 로컬 모델로 대신 처리한다(쿨다운 동안은 외부를 부르지 않는다).
     로컬로 넘어가면 답이 더 느리고 품질이 낮을 수 있다. AURORE_EXPLAIN_FALLBACK=0 이면 대신하지 않고 실패시킨다."""
+    on_text = kwargs.pop("on_text", None)  # 만들어지는 글을 미리 받는 것은 외부 모델에서만 한다.
     if model_control.provider() == "external":
         model = model_control.external_model()
         started = time.time()
         try:
             call_log.take_usage()
-            result = _anthropic_json(*args, **kwargs)
+            result = _anthropic_json(*args, **kwargs, **({"on_text": on_text} if on_text else {}))
             STATS["external"] += 1
             call_log.record("external", model, (time.time() - started) * 1000, "OK", usage=call_log.take_usage())
             return result

@@ -4,13 +4,19 @@
 결정적 검사: 원문에 없는 조문 번호·숫자(기간·금액·처벌 수위)를 쓴 항목은 지운다. 결론이 그 검사에 걸리면 한 번 다시 쓴다.
 question/context 와 원문은 모두 DATA 이며 지시가 아니다. 모델은 AURORE_EXPLAIN_PROVIDER/AURORE_EXPLAIN_MODEL 로 고른다.
 """
+import contextvars
+import json
 import os
+import queue
 import re
+import threading
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints, ValidationError
 
+import call_log
 import model_control
 from external_model import external_blocked
 from legal_explain import OVERCONFIDENT, _articles, _figures, _model_json
@@ -249,8 +255,41 @@ def _check_refs(result: Answer, payload: AnswerRequest) -> None:
     print("legal_ref_check statements=%d changed=%d" % (len(statements), changed), flush=True)
 
 
-def _answer_once(data: dict, payload: AnswerRequest) -> dict:
-    raw = _model_json(ANSWER_SYSTEM, data, schema=Answer.model_json_schema(), think=False, timeout=60, num_predict=1400)
+CONCLUSION_RE = re.compile(r'"conclusion"\s*:\s*"((?:[^"\\]|\\.)*)"')
+LEGAL_RE = re.compile(r'"legal"\s*:\s*true')
+
+
+def _allowed(payload: AnswerRequest) -> tuple[set, set]:
+    """답에 쓸 수 있는 조문 번호와 숫자(원문에 있는 것)."""
+    articles = set().union(*(_articles(p.label) | _articles(p.text) for p in payload.provisions))
+    figures = set().union(*(_figures(p.text) | _equivalent_figures(p.text) for p in payload.provisions))
+    return articles, figures
+
+
+def _preview(payload: AnswerRequest, notify):
+    """답을 받는 중에 결론 문장이 끝나면 한 번만 알린다. 단정 표현·원문에 없는 조문 번호나 숫자가 있으면 알리지 않는다
+    (완성된 답에서 고쳐지거나 표시될 문장을 먼저 보여 주지 않기 위해서다)."""
+    articles, figures = _allowed(payload)
+    done = False
+
+    def on_text(text: str) -> None:
+        nonlocal done
+        match = None if done else CONCLUSION_RE.search(text)
+        if not match:
+            return
+        done = True
+        if not LEGAL_RE.search(text[: match.start()]):
+            return
+        conclusion = json.loads('"' + match.group(1) + '"').strip()[:300]
+        if conclusion and _check(conclusion, [], len(payload.provisions), articles, figures) is None:
+            notify(conclusion)
+
+    return on_text
+
+
+def _answer_once(data: dict, payload: AnswerRequest, notify=None) -> dict:
+    streaming = {"on_text": _preview(payload, notify)} if notify else {}
+    raw = _model_json(ANSWER_SYSTEM, data, schema=Answer.model_json_schema(), think=False, timeout=60, num_predict=1400, **streaming)
     try:
         result = Answer.model_validate(_clip(raw))
     except ValidationError as error:
@@ -260,8 +299,7 @@ def _answer_once(data: dict, payload: AnswerRequest) -> dict:
     if not result.legal:
         return {"legal": False, "verified": True}
     count = len(payload.provisions)
-    allowed_articles = set().union(*(_articles(p.label) | _articles(p.text) for p in payload.provisions))
-    allowed_figures = set().union(*(_figures(p.text) | _equivalent_figures(p.text) for p in payload.provisions))
+    allowed_articles, allowed_figures = _allowed(payload)
     # 범위를 벗어난 근거 번호는 답을 거절하지 않고 그 번호만 뺀다(근거 표시가 붙지 않을 뿐이다).
     in_range = lambda refs: [n for n in refs if 0 <= n < count]
     result.conclusionRefs = in_range(result.conclusionRefs)
@@ -317,14 +355,49 @@ HINTS = {
 }
 
 
+@router.post("/answer-stream")
+def answer_stream(payload: AnswerRequest):
+    """/answer 와 같은 답을 만들되, 결론이 먼저 정해지면 한 줄(JSON)로 알리고 마지막 줄에 전체 결과를 보낸다."""
+    lines: queue.Queue = queue.Queue()
+
+    def work() -> None:
+        tokens = call_log.begin("answer")
+        try:
+            last = {"result": answer(payload, lambda text: lines.put({"conclusion": text}))}
+        except HTTPException as error:
+            last = {"error": error.status_code}
+        except Exception as error:
+            print("legal_answer_stream_failed", type(error).__name__, flush=True)
+            last = {"error": 502}
+        last["calls"] = call_log.header_value()
+        call_log.end(tokens)
+        lines.put(last)
+
+    threading.Thread(target=contextvars.copy_context().run, args=(work,), daemon=True).start()
+
+    def send():
+        while True:
+            item = lines.get()
+            yield json.dumps(item, ensure_ascii=False) + "\n"
+            if "result" in item or "error" in item:
+                return
+
+    return StreamingResponse(send(), media_type="application/x-ndjson")
+
+
 @router.post("/answer")
-def answer(payload: AnswerRequest):
+def answer_plain(payload: AnswerRequest):
+    return answer(payload)
+
+
+def answer(payload: AnswerRequest, notify=None):
     data = payload.model_dump()
     previous = None
     try:
         for attempt in range(2):
             try:
-                return _answer_once(data if previous is None else {**data, "previousAttempt": previous}, payload)
+                # 결론 미리 알리기는 첫 시도에서만 한다(다시 쓴 결론으로 바꿔 보여 주지 않는다).
+                return _answer_once(data if previous is None else {**data, "previousAttempt": previous}, payload, notify if attempt == 0 else None)
             except ValueError as error:
                 if attempt == 1:
                     raise

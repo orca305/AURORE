@@ -251,7 +251,8 @@ export function Conversation({ ask, initialChat, member = false }: {
         if (result.data) {
           setPollError(null);
           applyChat(result.data);
-          if (isPendingJob(result.data.job)) schedule(800);
+          // 답을 쓰는 단계에서는 결론이 곧 오므로 조금 더 자주 확인한다.
+          if (isPendingJob(result.data.job)) schedule(result.data.job?.stage === "write" ? 500 : 800);
         } else {
           setPollError(result.error);
           if (result.status >= 500) schedule(4000);
@@ -428,7 +429,7 @@ export function Conversation({ ask, initialChat, member = false }: {
           </li>)}
         </ol>
         {pending && <p role="status" className={styles.pending}>{submitting ? "질문을 저장하는 중입니다." : ({analyze:"질문을 이해하는 중입니다. (1/3)",search:"관련 법령과 조문을 찾는 중입니다. (2/3)",write:"확인한 원문으로 답변을 쓰는 중입니다. (3/3)"} as const)[detail?.job?.stage as "analyze"] ?? "오로르가 확인 중입니다."}</p>}
-        <AnswerProgress active={pending} saving={submitting} stage={detail?.job?.stage as "analyze" | "search" | "write" | undefined} failing={Boolean(pollError)} onCancel={saved ? () => void jobAction(false) : undefined} cancelDisabled={submitting} />
+        <AnswerProgress active={pending} saving={submitting} stage={detail?.job?.stage as "analyze" | "search" | "write" | undefined} preview={detail?.job?.preview} failing={Boolean(pollError)} onCancel={saved ? () => void jobAction(false) : undefined} cancelDisabled={submitting} />
         <div ref={latest} />
       </section>
     </div>}

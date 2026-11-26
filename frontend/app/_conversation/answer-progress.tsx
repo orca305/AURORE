@@ -47,10 +47,12 @@ function Dial({ stageKey }: { stageKey: string }) {
  * 답변을 만드는 동안 화면 가운데에 띄우는 최소한의 진행 창(저울 아이콘, 게이지, 지금 단계 문구). 모달이라 이 동안 다른 조작은 막힌다.
  * 작은 "취소"로 언제든 빠져나올 수 있고, 상태를 확인하지 못하면 창을 닫고 화면으로 돌아갈 수 있다.
  */
-export function AnswerProgress({ active, saving, stage, failing, onCancel, cancelDisabled }: {
+export function AnswerProgress({ active, saving, stage, preview, failing, onCancel, cancelDisabled }: {
   active: boolean;
   saving: boolean;
   stage?: Stage;
+  /** 답이 완성되기 전에 먼저 온 결론 문장. */
+  preview?: string;
   failing: boolean;
   onCancel?: () => void;
   cancelDisabled?: boolean;
@@ -71,13 +73,18 @@ export function AnswerProgress({ active, saving, stage, failing, onCancel, cance
 
   return <dialog
     ref={dialog}
-    className={styles.dialog}
+    className={preview && !saving ? styles.dialog + " " + styles.wide : styles.dialog}
     aria-label="답변을 만드는 중"
     onCancel={(event) => event.preventDefault()}
   >
     <div className={styles.body}>
       <Dial key={key} stageKey={key} />
       <p key={"label-" + key} className={styles.label} role="status" aria-live="polite">{labels[key]}</p>
+      {preview && !saving && <section className={styles.preview} aria-live="polite">
+        <h2>먼저 보는 결론 <span>확인 중</span></h2>
+        <p>{preview}</p>
+        <small>근거 조문을 확인하고 있어요. 완성된 답에서 달라질 수 있어요.</small>
+      </section>}
       {onCancel && !saving && <button type="button" className={styles.close} aria-label="답변 취소" title="답변 취소" disabled={cancelDisabled} onClick={onCancel}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>}

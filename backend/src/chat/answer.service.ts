@@ -1,5 +1,6 @@
 import { classifyQuestion } from './intent-routing.js';
-import { reportStage } from './job-stage.js';
+import { inJob, reportPreview, reportStage } from './job-stage.js';
+import { readAnswerStream } from './answer-stream.js';
 import type { JobResultCode } from './job-diagnostics.js';
 import { missingEvidence, type ClarifyCode } from './clarification.js';
 import { retrieveStoredEvidence, warmPinnedEvidence, type StoredEvidence } from './stored-evidence.js';
@@ -928,7 +929,9 @@ export class ChatAnswerService implements OnApplicationBootstrap {
       short: `${p.courtNm} ${p.caseNo}`,
       full: `${p.courtNm} ${p.caseNo} (${p.decisionDt} 선고)${p.caseNm ? ' · ' + p.caseNm : ''}`,
     }));
-    const response = await fetch(this.documentUrl('/legal/answer'), {
+    // 답변 작업 중이면 결론이 정해지는 대로 먼저 받아 화면에 보여 준다(AURORE_ANSWER_STREAM=0 이면 끈다).
+    const streaming = inJob() && process.env.AURORE_ANSWER_STREAM !== '0';
+    const response = await fetch(this.documentUrl(streaming ? '/legal/answer-stream' : '/legal/answer'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -940,9 +943,15 @@ export class ChatAnswerService implements OnApplicationBootstrap {
       signal: AbortSignal.timeout(110_000),
       redirect: 'error',
     });
-    void recordAiCalls(this.db, response.headers.get('x-aurore-calls'));
+    if (!streaming || !response.ok) void recordAiCalls(this.db, response.headers.get('x-aurore-calls'));
     if (!response.ok) return;
-    const result = (await response.json()) as GenerativeResult;
+    let result: GenerativeResult;
+    if (streaming) {
+      const streamed = await readAnswerStream(response, (conclusion) => reportPreview(redactDocument(conclusion)));
+      void recordAiCalls(this.db, streamed.calls);
+      if (!streamed.result) return;
+      result = streamed.result as GenerativeResult;
+    } else result = (await response.json()) as GenerativeResult;
     if (result?.verified !== true) return;
     if (!result.legal) return missingEvidence('RELEVANCE_GAP', false);
     const text = formatGenerative(result, provisions.map((p) => p.label), precedentLabels);

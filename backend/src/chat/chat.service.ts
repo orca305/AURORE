@@ -1,6 +1,6 @@
 import { periodRange } from '../common/period.js';
 import { generationErrorCode } from './job-diagnostics.js';
-import { runWithJobStage, stageOf } from './job-stage.js';
+import { previewOf, runWithJobStage, stageOf } from './job-stage.js';
 import { isFollowUpQuestion, isUncertainSupplement } from './clarification.js';
 import { redactDocument } from '../documents/document-text.js';
 import { validateQuestion } from './input-filter.js';
@@ -451,6 +451,10 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
             id: room.jobs[0].id,
             status: room.jobs[0].statCd,
             ...(stageOf(room.jobs[0].id) ? { stage: stageOf(room.jobs[0].id) } : {}),
+            // 아직 만드는 중인 답의 결론(취소·실패한 작업에는 보여 주지 않는다).
+            ...(room.jobs[0].statCd === 'RUNNING' && previewOf(room.jobs[0].id)
+              ? { preview: previewOf(room.jobs[0].id) }
+              : {}),
             ...(room.jobs[0].errorCd === 'CASE_CONTEXT_CHANGED'
               ? { reason: 'CASE_CONTEXT_CHANGED' }
               : {}),

@@ -58,7 +58,36 @@ def _classify(error: Exception) -> ExternalUnavailable | None:
     return None
 
 
-def anthropic_json(system, data, *, schema=None, timeout=60, num_predict=1200, think=None):
+def _read_stream(response, on_text) -> str:
+    """흘려 받는 응답(SSE)을 읽으며 지금까지의 글을 on_text 에 알리고, 끝까지 받은 글을 돌려준다."""
+    text, finished = "", False
+    tokens = {"in": None, "out": None}
+    for raw in response:
+        if not raw.startswith(b"data:"):
+            continue
+        event = json.loads(raw[5:])
+        kind = event.get("type")
+        if kind == "message_start":
+            tokens["in"] = (event.get("message", {}).get("usage") or {}).get("input_tokens")
+        elif kind == "content_block_delta" and event.get("delta", {}).get("type") == "text_delta":
+            text += event["delta"].get("text", "")
+            try:
+                on_text(text)
+            except Exception as error:  # 미리 보여 주기는 보조 기능이라 실패해도 답은 계속 받는다.
+                print("external_model_preview_failed", type(error).__name__, flush=True)
+        elif kind == "message_delta":
+            tokens["out"] = (event.get("usage") or {}).get("output_tokens")
+        elif kind == "message_stop":
+            finished = True
+        elif kind == "error":
+            raise ConnectionError("stream error")
+    call_log.note_usage(tokens["in"], tokens["out"])
+    if not finished:
+        raise ConnectionError("stream ended early")
+    return text
+
+
+def anthropic_json(system, data, *, schema=None, timeout=60, num_predict=1200, think=None, on_text=None):
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not key:
         # 키가 없으면 외부 모델을 쓸 수 없는 상태로 본다(로컬 모델로 대신 처리).
@@ -74,6 +103,8 @@ def anthropic_json(system, data, *, schema=None, timeout=60, num_predict=1200, t
     # Sonnet·Opus 계열은 "disabled" 를 받지 않으므로(400) thinking 항목을 보내지 않는다(생각 없이 바로 답한다).
     if "haiku" in model:
         payload["thinking"] = {"type": "disabled"}
+    if on_text:
+        payload["stream"] = True
     body = json.dumps(payload).encode()
     request = urllib.request.Request(
         "https://api.anthropic.com/v1/messages", data=body, method="POST",
@@ -85,10 +116,13 @@ def anthropic_json(system, data, *, schema=None, timeout=60, num_predict=1200, t
         raise ExternalUnavailable(blocked, _blocked_until - time.time())
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            body_json = json.load(response)
-            usage = body_json.get("usage") or {}
-            call_log.note_usage(usage.get("input_tokens"), usage.get("output_tokens"))
-            text = "".join(b.get("text", "") for b in body_json.get("content", []) if b.get("type") == "text")
+            if on_text:
+                text = _read_stream(response, on_text)
+            else:
+                body_json = json.load(response)
+                usage = body_json.get("usage") or {}
+                call_log.note_usage(usage.get("input_tokens"), usage.get("output_tokens"))
+                text = "".join(b.get("text", "") for b in body_json.get("content", []) if b.get("type") == "text")
     except Exception as error:
         unavailable = _classify(error)
         if unavailable is None:

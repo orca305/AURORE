@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 from fastapi import HTTPException
-from legal_answer import AnswerRequest, ProposeRequest, answer, propose
+from legal_answer import AnswerRequest, ProposeRequest, _preview, answer, propose
 
 PROV = [
     {"label": "민법 제759조(동물의 점유자의 책임)", "text": "①동물의 점유자는 그 동물이 타인에게 가한 손해를 배상할 책임이 있다. 그러나 동물의 종류와 성질에 따라 그 보관에 상당한 주의를 해태하지 아니한 때에는 그러하지 아니하다."},
@@ -132,6 +132,32 @@ class RefCheckTests(unittest.TestCase):
         with patch("legal_answer.model_control.provider", return_value="local"), patch("legal_answer._model_json", return_value=good()) as model:
             answer(req())
         self.assertEqual(model.call_count, 1)
+
+
+class PreviewTests(unittest.TestCase):
+    def feed(self, text):
+        seen = []
+        on_text = _preview(req(), seen.append)
+        for end in range(1, len(text) + 1):
+            on_text(text[:end])
+        return seen
+
+    def test_conclusion_is_announced_once_when_its_sentence_is_complete(self):
+        text = '{"legal": true, "conclusion": "네, \\"주인\\"이 책임을 질 수 있어요.", "conclusionRefs": [0], "conclusion": "두 번째"}'
+        self.assertEqual(self.feed(text), ['네, "주인"이 책임을 질 수 있어요.'])
+
+    def test_unsafe_or_non_legal_conclusions_are_not_announced(self):
+        self.assertEqual(self.feed('{"legal": true, "conclusion": "무조건 배상해야 해요.", '), [])
+        self.assertEqual(self.feed('{"legal": true, "conclusion": "제999조에 따라 배상해요.", '), [])
+        self.assertEqual(self.feed('{"legal": true, "conclusion": "3년 안에 청구해요.", '), [])
+        self.assertEqual(self.feed('{"legal": false, "conclusion": "법률 질문이 아니에요.", '), [])
+
+    def test_only_the_first_attempt_may_announce(self):
+        bad = good(conclusion="무조건 100% 배상해야 해요.")
+        with patch("legal_answer._model_json", side_effect=[bad, good()]) as model:
+            answer(req(), lambda text: None)
+        self.assertIn("on_text", model.call_args_list[0].kwargs)
+        self.assertNotIn("on_text", model.call_args_list[1].kwargs)
 
 
 if __name__ == "__main__":
